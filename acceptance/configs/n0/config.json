@@ -1,0 +1,38 @@
+{
+  "id": "n0",
+  "family": "F0",
+  "q_frac": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "psi_target": 0.0,
+  "species": [
+    "Fe",
+    "Fe",
+    "Bi",
+    "Bi",
+    "O",
+    "O",
+    "O",
+    "O",
+    "O",
+    "O"
+  ],
+  "magnetic_indices": [
+    0,
+    1
+  ],
+  "moment_ref": [
+    4.24,
+    4.24
+  ],
+  "eps": [
+    1,
+    -1
+  ],
+  "dirs": {
+    "stage2": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref",
+    "dump_P": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0"
+  }
+}

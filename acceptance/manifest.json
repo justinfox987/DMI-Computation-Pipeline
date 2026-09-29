@@ -1,0 +1,657 @@
+{
+  "schema_version": 2,
+  "milestone": "N0",
+  "meta": {
+    "noise_model": null
+  },
+  "material": {
+    "ref": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref",
+    "dump_C": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C",
+    "cso_dir": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\cso",
+    "cso_provenance": {
+      "kind": "dump_C",
+      "passed": true,
+      "when": "2026-09-15T23:48:36.873697+00:00",
+      "files": {
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\INCAR": "2e7ad13e016274d9aedc24cbfbf672d8b4e6a3ac470c8b971c955d34f4d865b0",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\OUTCAR": "f3a7c745dc9a2724348496cc33d0c7d6d6cacfc8d592981318e43748b60a6d52",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\POSCAR": "559c80c20ce8ead1c0072598aba9888016bcc1468f12763e1d66fe06ad69ac2c",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\KPOINTS": "886a919ed69c200eb96655a05a93f2d05fe5a664283bb9247c8734ee79158bc9",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\POTCAR": "c491fabce121759ba724f9a2533963b022e324b03dae0692254045bc88c68bed",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\configs\\n0\\config.json": "5452ae2775e66522bb7e36e73819f2551bf961cfdc7f3644cf18be25a3185193",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\CSO.dat": "72d1637af66424f8105036ce561208ec569b321ad3941a98c6f582595a053730",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\cso\\CSO_z.dat": "72d1637af66424f8105036ce561208ec569b321ad3941a98c6f582595a053730"
+      },
+      "checks": {
+        "incar_echo": {
+          "passed": true,
+          "checked_tags": [
+            "ALGO",
+            "BMIX",
+            "BMIX_MAG",
+            "EDIFF",
+            "EDIFFG",
+            "ENCUT",
+            "GGA",
+            "GGA_COMPAT",
+            "IBRION",
+            "ICHARG",
+            "ISEARCH",
+            "ISIF",
+            "ISMEAR",
+            "ISPIN",
+            "ISTART",
+            "ISYM",
+            "KPAR",
+            "LASPH",
+            "LDAU",
+            "LDAUJ",
+            "LDAUL",
+            "LDAUPRINT",
+            "LDAUTYPE",
+            "LDAUU",
+            "LDUMPCSO",
+            "LMAXMIX",
+            "LNONCOLLINEAR",
+            "LORBIT",
+            "LREAL",
+            "LSORBIT",
+            "LSPIRAL",
+            "MAGMOM",
+            "NBANDS",
+            "NCORE",
+            "NELM",
+            "NELMIN",
+            "NSW",
+            "POTIM",
+            "SIGMA",
+            "SYSTEM"
+          ]
+        },
+        "C0": {
+          "name": "C0",
+          "passed": true,
+          "value": {
+            "errors": {
+              "dd_plus_uu": 0.0,
+              "uu_real": 0.0,
+              "uu_antisymmetry": 0.0,
+              "uu_diagonal": 0.0,
+              "flip_hermiticity": 0.0
+            },
+            "max_abs_per_ion": [
+              0.13946105929133168,
+              0.13946105973124157,
+              2.1298450901446326,
+              2.129845090113523,
+              0.0272073619322151,
+              0.027207361946038455,
+              0.02720736182328807,
+              0.02720736193231764,
+              0.027207361837326766,
+              0.027207361932497086
+            ],
+            "max_ud_per_ion": [
+              0.13946105929133168,
+              0.13946105973124157,
+              2.1298450901446326,
+              2.129845090113523,
+              0.0272073619322151,
+              0.027207361946038455,
+              0.02720736182328807,
+              0.02720736193231764,
+              0.027207361837326766,
+              0.027207361932497086
+            ]
+          },
+          "threshold": 1e-12,
+          "detail": "Full CSO Hermiticity and z-axis structure checked"
+        }
+      },
+      "build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+      "reference_build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+      "same_build_as_reference": true,
+      "potential_source": {
+        "declared_reference": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref",
+        "input_hash_verified": false
+      },
+      "wall_seconds": 7.916230599978007
+    }
+  },
+  "config_dir": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\configs\\n0",
+  "configs": [
+    {
+      "id": "n0",
+      "family": "F0",
+      "q_frac": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "psi_target": 0.0,
+      "species": [
+        "Fe",
+        "Fe",
+        "Bi",
+        "Bi",
+        "O",
+        "O",
+        "O",
+        "O",
+        "O",
+        "O"
+      ],
+      "magnetic_indices": [
+        0,
+        1
+      ],
+      "moment_ref": [
+        4.24,
+        4.24
+      ],
+      "eps": [
+        1,
+        -1
+      ],
+      "dirs": {
+        "stage2": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref",
+        "dump_P": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0"
+      }
+    }
+  ],
+  "runs": {
+    "ref": {
+      "kind": "ref",
+      "passed": true,
+      "when": "2026-09-15T23:26:43.205874+00:00",
+      "files": {
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\INCAR": "32d84e0a4bb0685ec0e9cba10b03cd7bfb2624e3d4a2891ffad2a775be4736a2",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\OUTCAR": "043276c079d4a78f105875b90aa6608e7993378994368e427d825982ef91c065",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\POSCAR": "559c80c20ce8ead1c0072598aba9888016bcc1468f12763e1d66fe06ad69ac2c",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\KPOINTS": "886a919ed69c200eb96655a05a93f2d05fe5a664283bb9247c8734ee79158bc9",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\POTCAR": "c491fabce121759ba724f9a2533963b022e324b03dae0692254045bc88c68bed",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\WAVECAR": "62908898cbc943d8d0e96498b41a67a12f07956fb7342d6c5103641bb1dee418",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref\\CHGCAR": "8f0f8e510da8901f2fc2e8e780d46dbe6ffb3ce40f5afcf319b722fb3a7388d6"
+      },
+      "checks": {
+        "incar_echo": {
+          "passed": true,
+          "checked_tags": [
+            "ALGO",
+            "BMIX",
+            "BMIX_MAG",
+            "EDIFF",
+            "EDIFFG",
+            "ENCUT",
+            "GGA",
+            "GGA_COMPAT",
+            "IBRION",
+            "ICHARG",
+            "ISEARCH",
+            "ISIF",
+            "ISMEAR",
+            "ISPIN",
+            "ISTART",
+            "ISYM",
+            "KPAR",
+            "LASPH",
+            "LDAU",
+            "LDAUJ",
+            "LDAUL",
+            "LDAUPRINT",
+            "LDAUTYPE",
+            "LDAUU",
+            "LMAXMIX",
+            "LNONCOLLINEAR",
+            "LORBIT",
+            "LREAL",
+            "LSORBIT",
+            "LSPIRAL",
+            "MAGMOM",
+            "NBANDS",
+            "NCORE",
+            "NELM",
+            "NELMIN",
+            "NSW",
+            "POTIM",
+            "SIGMA",
+            "SYSTEM"
+          ]
+        },
+        "R0": {
+          "name": "R0",
+          "passed": true,
+          "frame": "unwound",
+          "global_phase_deg": 0.0,
+          "phase_error_deg": [
+            0.0,
+            0.0
+          ],
+          "theta_error_deg": [
+            0.0,
+            0.0
+          ],
+          "moment_relative_error": [
+            0.0018867924528301902,
+            0.0018867924528301902
+          ],
+          "transverse_max_muB": 0.0,
+          "moments_muB": [
+            [
+              4.248,
+              -0.0,
+              0.0
+            ],
+            [
+              -4.248,
+              -0.0,
+              0.0
+            ],
+            [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            [
+              -0.0,
+              -0.0,
+              0.0
+            ],
+            [
+              0.06,
+              -0.0,
+              0.0
+            ],
+            [
+              0.06,
+              -0.0,
+              0.0
+            ],
+            [
+              0.06,
+              -0.0,
+              0.0
+            ],
+            [
+              -0.06,
+              -0.0,
+              0.0
+            ],
+            [
+              -0.06,
+              -0.0,
+              0.0
+            ],
+            [
+              -0.06,
+              -0.0,
+              0.0
+            ]
+          ]
+        }
+      },
+      "build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+      "wall_seconds": 4.671105099958368
+    },
+    "dump_C": {
+      "kind": "dump_C",
+      "passed": true,
+      "when": "2026-09-15T23:48:36.873697+00:00",
+      "files": {
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\INCAR": "2e7ad13e016274d9aedc24cbfbf672d8b4e6a3ac470c8b971c955d34f4d865b0",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\OUTCAR": "f3a7c745dc9a2724348496cc33d0c7d6d6cacfc8d592981318e43748b60a6d52",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\POSCAR": "559c80c20ce8ead1c0072598aba9888016bcc1468f12763e1d66fe06ad69ac2c",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\KPOINTS": "886a919ed69c200eb96655a05a93f2d05fe5a664283bb9247c8734ee79158bc9",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\POTCAR": "c491fabce121759ba724f9a2533963b022e324b03dae0692254045bc88c68bed",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\configs\\n0\\config.json": "5452ae2775e66522bb7e36e73819f2551bf961cfdc7f3644cf18be25a3185193",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\CSO.dat": "72d1637af66424f8105036ce561208ec569b321ad3941a98c6f582595a053730",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\cso\\CSO_z.dat": "72d1637af66424f8105036ce561208ec569b321ad3941a98c6f582595a053730"
+      },
+      "checks": {
+        "incar_echo": {
+          "passed": true,
+          "checked_tags": [
+            "ALGO",
+            "BMIX",
+            "BMIX_MAG",
+            "EDIFF",
+            "EDIFFG",
+            "ENCUT",
+            "GGA",
+            "GGA_COMPAT",
+            "IBRION",
+            "ICHARG",
+            "ISEARCH",
+            "ISIF",
+            "ISMEAR",
+            "ISPIN",
+            "ISTART",
+            "ISYM",
+            "KPAR",
+            "LASPH",
+            "LDAU",
+            "LDAUJ",
+            "LDAUL",
+            "LDAUPRINT",
+            "LDAUTYPE",
+            "LDAUU",
+            "LDUMPCSO",
+            "LMAXMIX",
+            "LNONCOLLINEAR",
+            "LORBIT",
+            "LREAL",
+            "LSORBIT",
+            "LSPIRAL",
+            "MAGMOM",
+            "NBANDS",
+            "NCORE",
+            "NELM",
+            "NELMIN",
+            "NSW",
+            "POTIM",
+            "SIGMA",
+            "SYSTEM"
+          ]
+        },
+        "C0": {
+          "name": "C0",
+          "passed": true,
+          "value": {
+            "errors": {
+              "dd_plus_uu": 0.0,
+              "uu_real": 0.0,
+              "uu_antisymmetry": 0.0,
+              "uu_diagonal": 0.0,
+              "flip_hermiticity": 0.0
+            },
+            "max_abs_per_ion": [
+              0.13946105929133168,
+              0.13946105973124157,
+              2.1298450901446326,
+              2.129845090113523,
+              0.0272073619322151,
+              0.027207361946038455,
+              0.02720736182328807,
+              0.02720736193231764,
+              0.027207361837326766,
+              0.027207361932497086
+            ],
+            "max_ud_per_ion": [
+              0.13946105929133168,
+              0.13946105973124157,
+              2.1298450901446326,
+              2.129845090113523,
+              0.0272073619322151,
+              0.027207361946038455,
+              0.02720736182328807,
+              0.02720736193231764,
+              0.027207361837326766,
+              0.027207361932497086
+            ]
+          },
+          "threshold": 1e-12,
+          "detail": "Full CSO Hermiticity and z-axis structure checked"
+        }
+      },
+      "build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+      "reference_build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+      "same_build_as_reference": true,
+      "potential_source": {
+        "declared_reference": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref",
+        "input_hash_verified": false
+      },
+      "wall_seconds": 7.916230599978007
+    },
+    "dump_P": {
+      "kind": "dump_P",
+      "passed": true,
+      "when": "2026-09-15T23:46:58.297000+00:00",
+      "files": {
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\INCAR": "537b5cdfc70ed4da87d4326ad5c6dbe895887797f6aa30126db77d0bc8d166c0",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\OUTCAR": "dc50a7a1967d9870a93f5f5f273d75103067c6392be40312add4d9ebbd3ae58c",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\POSCAR": "559c80c20ce8ead1c0072598aba9888016bcc1468f12763e1d66fe06ad69ac2c",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\KPOINTS": "886a919ed69c200eb96655a05a93f2d05fe5a664283bb9247c8734ee79158bc9",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\POTCAR": "c491fabce121759ba724f9a2533963b022e324b03dae0692254045bc88c68bed",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\configs\\n0\\config.json": "5452ae2775e66522bb7e36e73819f2551bf961cfdc7f3644cf18be25a3185193",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\WAVECAR": "62908898cbc943d8d0e96498b41a67a12f07956fb7342d6c5103641bb1dee418",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CHGCAR": "8f0f8e510da8901f2fc2e8e780d46dbe6ffb3ce40f5afcf319b722fb3a7388d6",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0000.0000.bin": "4e21d513d8354836923b5051c427e263d4225a159aa789536680179d25bc2e33",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0000.0001.bin": "c9657d9c252bef23be3fd4dbdf7ca2888477bf1df85f846e532a9eb31f114751",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0000.0002.bin": "8037ae8698cddb2b5a48d73f50d85625d73407efbda479a1a71f814df6556100",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0000.0003.bin": "4eba6553ee043697ecb19f8b97590808f8f90cbf1335267693c5a115c6709327",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0001.0000.bin": "817110e125bd52e60e9eed5f52ea438e07e33689074bcd5cfc0fd0f852dcd2d9",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0001.0001.bin": "6adba9f42fe0f26df00e39d47bfe7dbdb96b77f2020053642dffddb9f60c7788",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0001.0002.bin": "319744cb9e9c89c9a3af92c40b0826be8e7c76a24a1e47a5d50404051a30ea4d",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0001.0003.bin": "d0b77f3cfd9a5f9c5465a15bfbfe6fca284d6ed6133c1aa77ec74b9d6c428e12",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0002.0000.bin": "270ed3ca7e2b20608c17d4c9e04f736d89f40dfda8fb77a9fdc0517721069a8a",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0002.0001.bin": "813e7075ca883abf5bc4e52d7bbb9ea6c8992dbb769e929f6563cd803fd05e8d",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0002.0002.bin": "b77e5c9c7221e5610700cf46d9d0da13c02916499ba51196d13d2f27768accfc",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0002.0003.bin": "ff0a6f086509ef7775829af37b56c97d7d272a8e97b494d4ae18be5f625f70bd",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0003.0000.bin": "4a3e638c935513386b9da71ba8e2264d52b9c4b45bea3ba71dddde51132abb19",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0003.0001.bin": "e2e14709e3d2f141cd3c1d7c830740879409ff9f6470a63181969c9fd5ce630d",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0003.0002.bin": "5e36e74633ed3aea5df0368f151202dd1a706f175f894c86d4e6d40f8dde5f31",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\CPROJ.0003.0003.bin": "fc4bbcf5d1e8e6037fe0c929cbdce372af3e0486b7a909e1f94eba2f4b4c42f3",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\FERWE.dat": "bc607a7ccaa5b4b266ef393e38a01516a79252987917ccbf087ffe96ad3dcd57",
+        "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-P0\\COCC.dat": "b3e5e3adeae05f2e16338a194902e7822cb2e789f404547d3785f1a6ddd29337"
+      },
+      "checks": {
+        "incar_echo": {
+          "passed": true,
+          "checked_tags": [
+            "ALGO",
+            "BMIX",
+            "BMIX_MAG",
+            "EDIFF",
+            "EDIFFG",
+            "ENCUT",
+            "GGA",
+            "GGA_COMPAT",
+            "IBRION",
+            "ICHARG",
+            "ISEARCH",
+            "ISIF",
+            "ISMEAR",
+            "ISPIN",
+            "ISTART",
+            "ISYM",
+            "KPAR",
+            "LASPH",
+            "LCHARG",
+            "LDAU",
+            "LDAUJ",
+            "LDAUL",
+            "LDAUPRINT",
+            "LDAUTYPE",
+            "LDAUU",
+            "LDUMPCOCC",
+            "LDUMPCPROJ",
+            "LMAXMIX",
+            "LNONCOLLINEAR",
+            "LORBIT",
+            "LREAL",
+            "LSORBIT",
+            "LSPIRAL",
+            "LWAVE",
+            "MAGMOM",
+            "NBANDS",
+            "NCORE",
+            "NELM",
+            "NELMIN",
+            "NSW",
+            "POTIM",
+            "SIGMA",
+            "SYSTEM"
+          ]
+        },
+        "W0": {
+          "passed": true
+        },
+        "M1": {
+          "name": "M1",
+          "passed": true,
+          "value": 5.3291074533414665e-15,
+          "threshold": 1e-10,
+          "detail": "Maximum mismatch at (IS, ION, I, J)=(3, 2, 2, 2)"
+        }
+      },
+      "build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 08:43:24) complex",
+      "reference_build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+      "same_build_as_reference": false,
+      "format_build_id": "VASP 6.4.2 HEIDE PATCH B",
+      "header": {
+        "magic": "HEIDE_CPROJ_PATCH_B",
+        "format_version": 1,
+        "build_id": "VASP 6.4.2 HEIDE PATCH B",
+        "dump_tag": "PRE_LOOP",
+        "call_counter": 1,
+        "nions": 10,
+        "lmdim": 18,
+        "ncdij": 4,
+        "nrspinors": 2,
+        "nbands_local": 38,
+        "nbands_global": 152,
+        "nkpts_global": 512,
+        "ispin": 1,
+        "nb_low": 1,
+        "nb_par": 4,
+        "comm_kinter_node_me": 1,
+        "comm_kinter_ncpu": 4,
+        "comm_inter_node_me": 1,
+        "comm_inter_ncpu": 4,
+        "lsorbit": false,
+        "lnoncollinear": true,
+        "lspiral": false,
+        "qspiral": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "saxis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "nelect": 82.0,
+        "enmax": 650.0,
+        "lmmax_ion": [
+          18,
+          18,
+          18,
+          18,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8
+        ],
+        "lmbase": [
+          0,
+          18,
+          36,
+          54,
+          72,
+          80,
+          88,
+          96,
+          104,
+          112
+        ],
+        "npro": 240,
+        "abi": {
+          "byte_order": "<",
+          "integer_bytes": 4,
+          "logical_bytes": 4,
+          "real_bytes": 8
+        }
+      },
+      "wall_seconds": 36.03621549997479
+    }
+  },
+  "gates": {
+    "W0": {
+      "passed": true
+    },
+    "M1": {
+      "name": "M1",
+      "passed": true,
+      "value": 5.3291074533414665e-15,
+      "threshold": 1e-10,
+      "detail": "Maximum mismatch at (IS, ION, I, J)=(3, 2, 2, 2)"
+    },
+    "C0": {
+      "name": "C0",
+      "passed": true,
+      "value": {
+        "errors": {
+          "dd_plus_uu": 0.0,
+          "uu_real": 0.0,
+          "uu_antisymmetry": 0.0,
+          "uu_diagonal": 0.0,
+          "flip_hermiticity": 0.0
+        },
+        "max_abs_per_ion": [
+          0.13946105929133168,
+          0.13946105973124157,
+          2.1298450901446326,
+          2.129845090113523,
+          0.0272073619322151,
+          0.027207361946038455,
+          0.02720736182328807,
+          0.02720736193231764,
+          0.027207361837326766,
+          0.027207361932497086
+        ],
+        "max_ud_per_ion": [
+          0.13946105929133168,
+          0.13946105973124157,
+          2.1298450901446326,
+          2.129845090113523,
+          0.0272073619322151,
+          0.027207361946038455,
+          0.02720736182328807,
+          0.02720736193231764,
+          0.027207361837326766,
+          0.027207361932497086
+        ]
+      },
+      "threshold": 1e-12,
+      "detail": "Full CSO Hermiticity and z-axis structure checked"
+    },
+    "I0": {
+      "name": "I0",
+      "passed": true,
+      "value": 1.4098257061040608e-19,
+      "threshold": 1e-06,
+      "detail": "Maximum absolute imaginary trace, total and per ion"
+    },
+    "N0": {
+      "name": "N0",
+      "passed": true,
+      "value": {
+        "total_eV": -5.1878291032873435e-08,
+        "per_ion_eV": {
+          "1": -3.7847429183798155e-09,
+          "2": -3.1743996287336255e-08,
+          "3": -2.015403357260723e-09,
+          "4": -5.3751277351309276e-09,
+          "5": -1.921513079774492e-09,
+          "6": -3.3470159211614955e-09,
+          "7": -2.229616750711528e-09,
+          "8": -7.042270543975826e-10,
+          "9": 5.20976743618943e-10,
+          "10": -1.277624672339545e-09
+        },
+        "Bi_eV": {
+          "3": -2.015403357260723e-09,
+          "4": -5.3751277351309276e-09
+        },
+        "Bi_near_threshold": false,
+        "sigma_restart_eV": null
+      },
+      "threshold": 5e-05,
+      "detail": "Frozen-state null: total and every ion must pass"
+    }
+  },
+  "acceptance": "PASS"
+}

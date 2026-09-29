@@ -1,0 +1,109 @@
+{
+  "kind": "dump_C",
+  "passed": true,
+  "when": "2026-09-15T23:48:36.873697+00:00",
+  "files": {
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\INCAR": "2e7ad13e016274d9aedc24cbfbf672d8b4e6a3ac470c8b971c955d34f4d865b0",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\OUTCAR": "f3a7c745dc9a2724348496cc33d0c7d6d6cacfc8d592981318e43748b60a6d52",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\POSCAR": "559c80c20ce8ead1c0072598aba9888016bcc1468f12763e1d66fe06ad69ac2c",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\KPOINTS": "886a919ed69c200eb96655a05a93f2d05fe5a664283bb9247c8734ee79158bc9",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\POTCAR": "c491fabce121759ba724f9a2533963b022e324b03dae0692254045bc88c68bed",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\configs\\n0\\config.json": "5452ae2775e66522bb7e36e73819f2551bf961cfdc7f3644cf18be25a3185193",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\dump-C\\CSO.dat": "72d1637af66424f8105036ce561208ec569b321ad3941a98c6f582595a053730",
+    "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\acceptance\\cso\\CSO_z.dat": "72d1637af66424f8105036ce561208ec569b321ad3941a98c6f582595a053730"
+  },
+  "checks": {
+    "incar_echo": {
+      "passed": true,
+      "checked_tags": [
+        "ALGO",
+        "BMIX",
+        "BMIX_MAG",
+        "EDIFF",
+        "EDIFFG",
+        "ENCUT",
+        "GGA",
+        "GGA_COMPAT",
+        "IBRION",
+        "ICHARG",
+        "ISEARCH",
+        "ISIF",
+        "ISMEAR",
+        "ISPIN",
+        "ISTART",
+        "ISYM",
+        "KPAR",
+        "LASPH",
+        "LDAU",
+        "LDAUJ",
+        "LDAUL",
+        "LDAUPRINT",
+        "LDAUTYPE",
+        "LDAUU",
+        "LDUMPCSO",
+        "LMAXMIX",
+        "LNONCOLLINEAR",
+        "LORBIT",
+        "LREAL",
+        "LSORBIT",
+        "LSPIRAL",
+        "MAGMOM",
+        "NBANDS",
+        "NCORE",
+        "NELM",
+        "NELMIN",
+        "NSW",
+        "POTIM",
+        "SIGMA",
+        "SYSTEM"
+      ]
+    },
+    "C0": {
+      "name": "C0",
+      "passed": true,
+      "value": {
+        "errors": {
+          "dd_plus_uu": 0.0,
+          "uu_real": 0.0,
+          "uu_antisymmetry": 0.0,
+          "uu_diagonal": 0.0,
+          "flip_hermiticity": 0.0
+        },
+        "max_abs_per_ion": [
+          0.13946105929133168,
+          0.13946105973124157,
+          2.1298450901446326,
+          2.129845090113523,
+          0.0272073619322151,
+          0.027207361946038455,
+          0.02720736182328807,
+          0.02720736193231764,
+          0.027207361837326766,
+          0.027207361932497086
+        ],
+        "max_ud_per_ion": [
+          0.13946105929133168,
+          0.13946105973124157,
+          2.1298450901446326,
+          2.129845090113523,
+          0.0272073619322151,
+          0.027207361946038455,
+          0.02720736182328807,
+          0.02720736193231764,
+          0.027207361837326766,
+          0.027207361932497086
+        ]
+      },
+      "threshold": 1e-12,
+      "detail": "Full CSO Hermiticity and z-axis structure checked"
+    }
+  },
+  "build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+  "reference_build_banner": "vasp.6.4.2 20Jul23 (build Sep 14 2026 07:13:49) complex",
+  "same_build_as_reference": true,
+  "potential_source": {
+    "declared_reference": "C:\\Users\\finny\\Desktop\\LBL 2026\\vasp patch\\pipeline v3\\noq\\ref",
+    "input_hash_verified": false
+  },
+  "wall_seconds": 7.916230599978007
+}

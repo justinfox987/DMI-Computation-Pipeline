@@ -1,0 +1,60 @@
+# Python environments and generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+OLD-STUFF/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.vscode/
+
+# Bulk/local calculation locations; add the actual site's paths before import.
+/runs/
+/scratch/
+/data/local/
+/artifacts/local/
+/vendor/vasp/
+/vasp-source/
+
+# Large restart/dataset/executable files, wherever encountered
+noq/
+WAVECAR*
+CHGCAR*
+POTCAR*
+!POTCAR.spec
+!POTCAR.sha256
+!POTCAR.hashes
+vasp_std
+vasp_ncl
+vasp_gam
+
+# LaTeX intermediates (the .tex source is tracked)
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
+*.bbl
+*.blg
+
+# OS/editor temporary files
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Do not globally ignore OUTCAR, OSZICAR, *.json or *.dat:
+# deliberate small fixtures/evidence may need them.

@@ -1,0 +1,998 @@
+% Standalone editable source. Compile with latexmk -pdf heide_math_v2.tex.
+% No external figures, bibliography database, or shell escape required.
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=25mm,headheight=14pt]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,array,tabularx}
+\usepackage{enumitem,microtype,xcolor,fancyhdr,needspace}
+\usepackage[colorlinks=true,linkcolor=blue!45!black,citecolor=blue!45!black,
+ urlcolor=blue!45!black,breaklinks=true]{hyperref}
+\usepackage{bookmark}
+\hypersetup{pdftitle={From Heide's Force Theorem to the VASP Trace},
+ pdfauthor={DMI extraction project},pdfsubject={Practical DFT and VASP foundation for paired DMI extraction}}
+\numberwithin{equation}{section}
+\setcounter{tocdepth}{1}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt plus 1pt minus 1pt}
+\setlength{\emergencystretch}{2em}
+\setlist{nosep,leftmargin=1.5em,topsep=5pt}
+\renewcommand{\arraystretch}{1.17}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small DMI from DFT: the VASP trace}
+\fancyhead[R]{\small Revision 2.4}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\newcommand{\vct}[1]{\bm{#1}}
+\newcommand{\nh}{\hat{\vct n}}
+\newcommand{\qh}{\vct q}
+\newcommand{\kh}{\vct k}
+\newcommand{\Nm}{N_{\mathrm m}}
+\newcommand{\ii}{\mathrm i}
+\newcommand{\Tr}{\operatorname{Tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+
+\begin{document}
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+\vspace*{15mm}
+{\large DMI extraction pipeline\par}
+\vspace{12mm}
+{\LARGE\bfseries From Heide's Force Theorem\\[3pt] to the VASP Trace\par}
+\vspace{8mm}
+{\large Computing DMI exchange vectors\\
+from paired, SOC-free spin spirals\par}
+\vspace{10mm}
+{\large Revision 2.4 \quad | \quad 26 September 2026\par}
+\vspace{13mm}
+\begin{abstract}
+\noindent
+The calculation has three parts. First, VASP prepares a SOC-free spin spiral
+with the required sublattice directions. Second, a frozen-state PAW trace
+gives its first-order spin--orbit energy. Third, differences between paired
+spirals determine the bond Dzyaloshinskii--Moriya vectors.
+
+This document derives the quantities needed for those steps and maps them
+to VASP inputs and the Patch B dumps. Initial moments, constraint targets
+and realized site directions are expressed in one lab-frame convention.
+OSZICAR sphere moments supply the magnetic readback; VASP handles the
+internal spiral representation. The bond model uses the measured unit vectors directly, without
+extracting site angles or introducing an intermediate unwinding step.
+
+The formulation covers the flat, phase-decorated and conical families used
+by the implementation. It retains the checks needed to establish that the
+DFT states, trace and bond model agree, without developing a general theory
+of constrained magnetism or statistical inference.
+\end{abstract}
+\vfill
+\textbf{Source and scope.} This revision keeps the lab-frame
+interface and removes the redundant angular parametrizations. Only two
+input controls remain: an F1 offset and an F2 tilt. Readback, constraints,
+pairing and fitting use vectors. The bcc Fe tests and supplied VASP source support the interface;
+they do not certify the pending BFO campaign or external DMI validation.
+The pipeline readers and writers must adopt the revised contract.
+
+\textbf{Build.} Run \code{latexmk -pdf heide_math_v2.tex}, or run
+\code{pdflatex} twice. All text, equations and references are in this file.
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+\section{What the calculation measures}\label{sec:overview}
+
+We seek bond vectors $\vct d_{ij}$ in a unit-spin Hamiltonian whose DMI term is
+$\vct d_{ij}\cdot(\hat{\vct S}_i\times\hat{\vct S}_j)$.
+The electronic calculation follows the first-order spin-spiral method of
+Heide, Bihlmayer and Bl\"ugel~\cite{heide}. SOC-free Kohn--Sham states are
+converged first; SOC is then inserted as a perturbation. We do not obtain
+each data point by subtracting two fully self-consistent SOC total energies.
+
+For one accepted spin state, the quantity evaluated by the pipeline is
+\begin{equation}\label{eq:trace}
+ \boxed{T(\nh)=
+ \sum_{\mu n\kh s}w_{\kh}f^{(0)}_{n\kh}
+ \,[\vct c^\mu_{n\kh s}]^\dagger C^\mu_{ss}(\nh)
+ \,\vct c^\mu_{n\kh s}.}
+\end{equation}
+Here $\mu$ labels an atom, $n$ a band, $\kh$ a $k$ point, and $s$ an
+internal-$z$ spin component. The entries of $\vct c$ are PAW projector
+coefficients, as in the original companion. $C^\mu$ is the on-site SOC matrix.
+The direction $\nh$ selects the DMI component to be measured; it is introduced
+by rotating the operator, while the production spin states remain in the
+internal-$z$ convention. The superscript $(0)$ means occupations of the
+SOC-free state.
+
+Each measurement uses two separately computed states, denoted $+$ and $-$.
+The negative target reverses the wavevector and the $y$ component of
+each target moment, keeping $x$ and $z$ unchanged. The data point is
+\begin{equation}\label{eq:y}
+ \boxed{y=\frac{T_+-T_-}{\Nm}.}
+\end{equation}
+$\Nm$ is the number of magnetic sites in the calculation cell, two in the
+stated two-Fe setup. The traces are energies per calculation cell, so $y$ is
+in eV per magnetic site. There is \emph{no additional factor of one-half}.
+The often-used expression $2T_+/\Nm$ is an ideal symmetry limit, not the
+production measurement rule.
+
+The minimum chain of evidence is therefore straightforward: the input spin
+state must be realized, its projections and occupations must describe that
+same frozen state, and the model row must use the realized directions of both
+members of the pair. An error in any of these steps can produce a precise
+fit to the wrong physical problem.
+
+Throughout, $\qh_{\rm frac}$ denotes reciprocal fractional coordinates and
+$\vct r_{\rm frac}$ direct fractional coordinates:
+$\qh\cdot\vct r=2\pi\qh_{\rm frac}\cdot\vct r_{\rm frac}$.
+Moments have VASP's magnetic-moment units; $\hat{\vct S}$ denotes a unit
+direction. The bond vectors have energy units. Moment magnitudes are not
+silently absorbed into $\vct d$.
+
+\section{The DFT state and the first-order SOC energy}\label{sec:dft}
+
+\subsection{What is frozen}
+
+For each target spiral, VASP solves the noncollinear SOC-free
+Kohn--Sham problem,
+\begin{equation}\label{eq:ks}
+ H^{(0)}_{\rm KS}[\rho,\vct m]\,\Psi^{(0)}_{n\kh}
+ =\varepsilon^{(0)}_{n\kh}\Psi^{(0)}_{n\kh}.
+\end{equation}
+The effective Hamiltonian contains the kinetic, ionic, Hartree and
+exchange-correlation terms, together with the selected DFT+$U$ terms when
+used. A constrained calculation also includes the potential generated by
+the moment penalty described in Section~\ref{sec:constraint}.
+The density, magnetization, occupations and selected electronic branch all
+belong to that converged state.
+
+The first-order SOC insertion is
+\begin{equation}\label{eq:firstorder}
+ \Delta E^{(1)}=
+ \sum_{n\kh}w_{\kh}f^{(0)}_{n\kh}
+ \langle\Psi^{(0)}_{n\kh}|H_{\rm SOC}|\Psi^{(0)}_{n\kh}\rangle.
+\end{equation}
+This is the derivative of the stationary electronic energy with respect to
+a small SOC coupling, evaluated at zero SOC with the specified occupations.
+Stationarity is why the first-order result can be evaluated on the
+unperturbed orbitals. It is not a claim that the finite-SOC density or
+orbitals remain unchanged to all orders.
+
+In practice, the trace uses the SOC-free input orbitals without an
+intervening SOC orbital update. For a metal or a nearly degenerate manifold,
+occupations and smearing must be treated consistently; arbitrary changes of
+occupations are not part of Eq.~\eqref{eq:firstorder}. At finite constraint
+strength the reference is stationary for the \emph{constrained} functional.
+That makes the insertion well defined, but does not by itself show that the
+extracted DMI is independent of the constraining field.
+
+The quantity in Eq.~\eqref{eq:firstorder} is an SOC expectation, not VASP's
+full \code{TOTEN}. In particular, neither the full DFT energy nor the
+constraint penalty is added to the trace. Higher-order SOC response is tested
+by the external comparisons, not included through an ad hoc correction.
+
+\subsection{Why a spin spiral fits in the chemical cell}
+
+Without SOC, the electronic functional is invariant under a common spin
+rotation, provided the selected additional terms and constraint targets
+respect that rotation. Spin orientation is then not tied to the lattice.
+This permits a translation to be accompanied by a spin rotation. VASP's
+\code{LNONCOLLINEAR = T}, \code{LSPIRAL = T} representation uses
+\begin{equation}\label{eq:gb}
+ \Psi_{n\kh}(\vct r)=
+ \begin{pmatrix}
+ e^{\ii(\kh-\qh/2)\cdot\vct r}\,u_{n\kh\uparrow}(\vct r)\\
+ e^{\ii(\kh+\qh/2)\cdot\vct r}\,u_{n\kh\downarrow}(\vct r)
+ \end{pmatrix},
+ \qquad u(\vct r+\vct R)=u(\vct r).
+\end{equation}
+The transverse magnetization rotates by $\qh\cdot\vct R$ between cells,
+while its $z$ component is periodic. Thus the electronic functions stored
+in the working representation are periodic even when the physical spin
+directions are not. This is the generalized Bloch construction; it avoids
+building a magnetic supercell for every \code{QSPIRAL}~\cite{spiralwiki}.
+
+SOC generally breaks this spin-rotation freedom because it ties spin to
+orbital motion in the lattice. The present method consequently prepares the
+spiral with \code{LSORBIT = F} and evaluates SOC perturbatively afterward.
+A conical spiral is compatible with the construction: its longitudinal
+component stays periodic while its transverse component winds.
+
+\clearpage
+\section{Lab-frame spin targets and OSZICAR readback}\label{sec:frames}
+
+\subsection{Specify vectors; keep angles only as input controls}
+
+Use \code{SAXIS = 0 0 1} throughout the production SOC-free SCFs and
+projection dumps. Here \emph{lab frame} means these fixed Cartesian spin
+axes, independent of the propagation direction $\qh$.
+Write $\hat{\vct S}_a$ for the unit moment on basis atom $a$ in the
+calculation cell and $\hat{\vct S}_a^0$ for its requested direction.
+The superscript $0$ means target, not a different frame.
+
+Only one geometric operation is needed: rotation about the fixed $z$ axis,
+\begin{equation}\label{eq:Rz}
+ R_z(t)=
+ \begin{pmatrix}
+ \cos t&-\sin t&0\\
+ \sin t& \cos t&0\\
+ 0&0&1
+ \end{pmatrix}.
+\end{equation}
+Here $t$ is just the argument of the rotation, positive from $+x$ toward
+$+y$; it is not an additional state variable. Trigonometric arguments
+are in radians unless degrees are shown.
+VASP's spiral boundary condition then fixes every translated copy:
+\begin{equation}\label{eq:spin}
+ \boxed{\hat{\vct S}_{\vct R a}
+ =R_z(2\pi\qh_{\rm frac}\cdot\vct R_{\rm frac})\hat{\vct S}_a.}
+\end{equation}
+\code{QSPIRAL} fixes this advance \emph{between cells}. The moments
+inside the calculation cell remain separate inputs and measured outputs.
+
+For the existing two-Fe G-type families, the entire target recipe is
+\begin{equation}\label{eq:target}
+ \hat{\vct S}_a^0(\qh)=
+ R_z(2\pi\qh_{\rm frac}\cdot\vct\tau_{a,\rm frac})
+ \hat{\vct S}_a^0(0),
+\end{equation}
+with the vectors in the following table. The argument $0$ specifies the
+recipe before adding the position-dependent spiral rotation; it does not
+require another $q=0$ calculation.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lccY@{}}
+\toprule Family & $\hat{\vct S}_1^0(0)$ & $\hat{\vct S}_2^0(0)$ & Purpose\\\midrule
+F0 & $(1,0,0)$ & $(-1,0,0)$ & Flat reference.\\
+F1 & $(1,0,0)$ & $(-\cos\psi,-\sin\psi,0)$ & Offset Fe2 in the plane.\\
+F2a & $(\sin\theta,0,\cos\theta)$ & $(0,0,-1)$ & Tilt Fe1; keep Fe2 axial.\\
+F2b & $(0,0,1)$ & $(-\sin\theta,0,-\cos\theta)$ & Tilt Fe2; keep Fe1 axial.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+These recipes use only two adjustable angles:
+\begin{itemize}
+\item $\psi$ is F1's signed extra rotation of Fe2 relative to its F0
+target, positive from $+x$ toward $+y$. It is not the angle between the
+two moments.
+\item $\theta$ is F2's tilt away from the active site's axial reference:
+from $+z$ toward $+x$ for Fe1, or from $-z$ toward $-x$ for Fe2,
+before the position rotation in Eq.~\eqref{eq:target}.
+At $\theta=0$ that site is axial; at $90^\circ$ it is planar.
+\end{itemize}
+The baseline uses $\psi=30^\circ$ or $\theta=30^\circ$ as applicable.
+These are input controls only. Once the target vectors have been written,
+neither angle is needed by the readback or bond fit. The reference spin
+signs are already in the vectors; no separate sign factors are required.
+
+\subsection{VASP handles the internal conversion}
+
+Write the target vectors $\hat{\vct S}_a^0(\qh)$ into \code{M_CONSTR}
+and multiply them by the chosen seed magnitudes for \code{MAGMOM}.
+\textbf{Do not pre-unwind either input.} In the supplied VASP source,
+\code{main.F} calls \code{COUNTER_SPIRAL} on \code{ATOMOM} before the
+initial-density construction. The routine applies
+$R_z(-2\pi\qh_{\rm frac}\cdot\vct\tau_{a,\rm frac})$ to each initial
+moment~\cite{fetest}.
+VASP therefore performs the internal compensation for \code{MAGMOM} itself.
+The Fe constraint test independently supports lab-frame \code{M_CONSTR}.
+
+For example, at $q=(1/4,0,0)$ and $\tau_2=(1/2,1/2,1/2)$, a requested
+physical $+x$ seed is entered as $(M,0,0)$. VASP internally rotates it
+by $-45^\circ$. Applying that rotation ourselves first would compensate
+twice and seed the wrong direction. Equation~\eqref{eq:target}
+constructs the physical target; it is not an instruction to undo VASP's
+internal rotation.
+
+On a magnetic restart, changing \code{MAGMOM} does not rotate the inherited
+state. Keep the established continuation and near-target cold-start rules.
+The common \code{SAXIS} basis and the SOC operator rotation used to select
+an $x$ or $y$ DMI component are separate matters
+(Section~\ref{sec:rotation})~\cite{saxis}. No moment conversion is to be
+applied to \code{CPROJ}, \code{COCC} or \code{CSO}.
+
+\subsection{Read the realized directions from OSZICAR}
+
+Use the final complete per-ion sphere-moment block of the converged parent
+SCF, in POSCAR ion order. Enable \code{I_CONSTRAINED_M = 1} and provide
+\code{RWIGS} for every species; use \code{LAMBDA = 0} for unconstrained
+readback and the selected positive value for constrained states. At zero
+$\lambda$ the penalty energy and potential vanish. VASP recommends this
+sphere readback for spirals because standard \code{LORBIT} analysis does
+not account for their nonperiodic magnetization~\cite{spiralhowto}.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule Quantity & Role in this revision\\\midrule
+OSZICAR \code{M_int} & Unweighted sphere moment: primary site direction
+and magnitude for geometry and the bond fit. Read as lab components.\\
+OSZICAR \code{MW_int} & Smoothed sphere moment: signed constraint alignment,
+penalty and field checks. Read as lab components.\\
+OUTCAR projected moments & Optional diagnostics only; not a fallback for
+missing sphere data and not the source of fitted spin directions.\\
+OUTCAR and Patch B files & Retain settings, convergence/provenance and
+the separate electronic data required by the SOC trace.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+\code{LORBIT = 11} ignores \code{RWIGS} for its projector analysis;
+the constraint-sphere integration still needs \code{RWIGS}~\cite{rwigs}.
+The three moment definitions need not agree in magnitude. Fix the sphere
+radii and compare each magnitude only with a reference of the same definition.
+Do not substitute the total-cell \code{mag=} vector for the per-ion data.
+
+Normalize each resolved \code{M_int} vector:
+\begin{equation}\label{eq:real}
+ \boxed{\hat{\vct S}_a=
+ \frac{\vct M_a^{\rm int}}{|\vct M_a^{\rm int}|}.}
+\end{equation}
+That is the complete conversion required for the bond model. There is no
+site-angle extraction, phase subtraction or reconstruction. An axial
+moment remains an ordinary vector with its sign intact.
+Check that \code{MW_int} and \code{M_int} directions agree within the
+declared tolerance; a significant difference requires resolving the
+local-spin definition before fitting, rather than switching readouts.
+
+
+The signed realization check R0 compares these directions with the lab
+targets. Family geometry may allow one common rotation about $z$ because
+SOC-free energies are invariant under a common rotation about $z$.
+Absolute \code{MW_int} alignment and field checks use the actual
+\code{M_CONSTR} vectors, without such an offset. Never align ions
+independently or use absolute dot products to hide a wrong spin sign.
+Require a complete converged record; a truncated block or unresolved
+moment cannot supply an accepted model row.
+
+\subsection{Evidence and limits of the convention choice}
+
+In two-atom bcc Fe, at $q=(1/4,0,0)$, the site phases differ by $45^\circ$.
+The reported final azimuths were~\cite{fetest}:
+\begin{center}
+\begin{tabular}{@{}lccc@{}}
+\toprule Run & \code{M_int} $(1,2)$ & \code{MW_int} $(1,2)$
+ & OUTCAR $(1,2)$\\\midrule
+$\lambda=0$ & $(-22.67,22.67)$ & $(-22.65,22.65)$ & $(-22.68,-22.35)$\\
+$\lambda=1$, both targets $+x$ & $(-0.84,0.84)$ & $(-1.39,1.39)$ & $(-0.96,-44.06)$\\
+\bottomrule
+\end{tabular}
+\end{center}
+Angles are in degrees from $+x$ toward $+y$. The readouts differ by approximately $45^\circ$ on
+site 2 and zero on site 1. The constraint drives the sphere moments toward
+the two lab targets, supporting the conventions above. The $q=0$ control
+also reproduced the nonspiral moments. That control alone cannot identify
+frames, since the position-dependent phase vanishes.
+
+These are convention tests, not a BFO realization or DMI validation.
+In particular, the $\lambda=1$ weighted directions still miss the targets
+by $1.39^\circ$. Preserve the test records and supplied source excerpts
+with the executable identity before transferring their conclusions to a
+different build. The earlier assumption that \code{M_CONSTR} must be
+unwound is superseded; no generic winding/unwinding layer is required for
+the chosen input and OSZICAR interface.
+
+\section{Holding the target with VASP constraints}\label{sec:constraint}
+
+\code{MAGMOM} starts the electronic calculation but does not hold its
+directions during self-consistency. The F1 or F2 state could relax toward
+another configuration, losing the independent information needed for the
+DMI fit. We therefore supply physical target directions in \code{M_CONSTR},
+increase \code{LAMBDA} only as needed, and verify the resulting OSZICAR
+moments. The penalty prepares the state; it is not the SOC energy we fit.
+
+The mode-1 constraint uses the \emph{weighted} sphere moment,
+$\vct{MW}_I$, printed as \code{MW_int}. It is the integral of magnetization
+with the smoothing weight that vanishes at the \code{RWIGS} boundary.
+It is not interchangeable with the unweighted \code{M_int} or projected
+\code{OUTCAR} moment~\cite{constraintwiki}. With unit target
+$\hat{\vct S}_I^0$ from \code{M_CONSTR}, the added energy and potential
+coefficient are
+\begin{align}
+ E_p&=\lambda\sum_I\left|\vct{MW}_I-
+ \hat{\vct S}_I^0(\hat{\vct S}_I^0\cdot\vct{MW}_I)\right|^2,
+ \label{eq:penalty}\\
+ \vct B_I^c&=2\lambda\left[\vct{MW}_I-
+ \hat{\vct S}_I^0(\hat{\vct S}_I^0\cdot\vct{MW}_I)\right].
+ \label{eq:field}
+\end{align}
+The corresponding local potential is proportional to
+$\vct B_I^c\cdot\vct\sigma$ times that same smoothing weight.
+$\lambda$ is \code{LAMBDA}; this vector is a constraining-field coefficient,
+not itself an angular torque.
+
+The vector equations already explain the two initialization problems.
+Parallel and antiparallel moments both have zero perpendicular component,
+so mode 1 does not select their sign. For an exactly perpendicular moment,
+the penalty is large but its first derivative under a small rotation is
+zero: the field coefficient is parallel to the moment and supplies no
+angular push. Other SCF effects can move it, but this is an avoidable
+starting point.
+
+These properties explain the prescribed initialization: continue F1 through
+signed decorations such as $\pm30^\circ$, $\pm60^\circ$ and $\pm90^\circ$,
+and start F2 near its requested cone rather than at a flat, orthogonal
+dead point. Use the smallest member of the $\lambda=1,3,10,30$ ladder that
+passes the required realization checks. A larger $\lambda$ can improve
+alignment while changing the electronic state, so a small penalty alone is
+not evidence of an unbiased DMI vector.
+The dedicated diagnostic $\lambda$ scans still run their prescribed rungs;
+the first-passing rule selects the production state.
+
+The nominal R0 direction tolerance remains $1^\circ$. For normalized
+vectors, test their signed dot product against $\cos(1^\circ)$.
+For nonaxial sites, also apply that test to their \emph{normalized $xy$
+projections}; this retains the phase tolerance even near the axis,
+where a large in-plane error can look small in three dimensions.
+Use the same common rotation, if allowed for family geometry, for all
+sites. An axial target instead needs its signed axial direction checked.
+A nonaxial target with unresolved transverse readback fails R0.
+Never replace a signed dot product by its absolute value.
+
+Apply the geometry checks to \code{M_int} and the absolute constraint
+alignment check to \code{MW_int}, retaining both results.
+The existing phase RMS diagnostic remains; a $1^\circ$ bound on every
+resolved phase error already bounds its RMS by $1^\circ$.
+Also require magnitude drift below $5\%$, using matching sphere-moment
+definitions, and recorded $E_p<10^{-3}$ eV for constrained rows.
+These are the campaign thresholds~\cite{projectcp} expressed as vector
+checks, not additional fitted angles. Check the signed state even when
+$E_p$ is zero.
+
+In the Fe test, $\lambda=1$, $MW_{1y}\simeq-0.044$ and
+$MW_{2y}\simeq0.044$ gave $E_p=0.003924$ eV. The vector printed under
+\code{lambda*MW_perp} had $y$ entries $-0.088590$ and $0.088589$:
+numerically it matches $\vct B^c=2\lambda\vct{MW}_{\perp}$ despite the
+label. Its squared norm summed over both sites, divided by $4\lambda$,
+reproduces the penalty. Preserve that factor convention in the reader;
+the three-decimal moment output alone limits the precision of this check.
+
+Do not add or subtract $E_p$ from Eq.~\eqref{eq:trace}. It shaped the
+SOC-free reference state; the inserted operator is still SOC alone.
+The $\lambda$, decoration and cross-family comparisons test whether these
+states support one transferable set of DMI parameters. The F1
+\code{LZEROZ} policy remains a probe decision; conical F2 states require a
+nonzero longitudinal component. Zero Bi/O constraint targets also require
+the specified source/binary check that they are skipped correctly.
+
+\section{From the PAW expression to the trace}\label{sec:paw}
+
+\subsection{Why the all-electron on-site matrix appears}
+
+VASP represents the smooth spinor orbitals $\tilde\Psi$ and restores the
+near-nucleus structure through PAW partial waves. Define the projector
+coefficients and all-electron on-site SOC matrix by
+\begin{equation}\label{eq:pawobjects}
+ c^\mu_{i,n\kh s}=
+ \langle\tilde p_i^\mu|\tilde\Psi_{n\kh s}\rangle,\qquad
+ C^{\mu,ss'}_{ij}=
+ \langle\phi_i^\mu|H_{\rm SOC}^{ss'}|\phi_j^\mu\rangle.
+\end{equation}
+Indices $i,j$ label orbital/partial-wave channels on atom $\mu$.
+The PAW expectation of a local operator consists of its smooth expectation
+and an all-electron-minus-pseudo on-site correction:
+\begin{equation}\label{eq:paw}
+ \langle H_{\rm SOC}\rangle=
+ \langle\tilde\Psi|H_{\rm SOC}|\tilde\Psi\rangle+
+ \sum_{\mu ijss'}c_{i,s}^{\mu *}
+ \left[
+ \langle\phi_i^\mu|H_{\rm SOC}^{ss'}|\phi_j^\mu\rangle-
+ \langle\tilde\phi_i^\mu|H_{\rm SOC}^{ss'}|\tilde\phi_j^\mu\rangle
+ \right]c_{j,s'}^\mu .
+\end{equation}
+Within the completeness of the one-center expansion, the smooth contribution
+inside a sphere cancels its pseudo subtraction. Neglecting the remaining
+SOC outside the spheres leaves the all-electron on-site matrix. This is the
+approximation used by VASP~\cite{lsorbit}. Smooth or nodeless pseudo waves
+do \emph{not} independently make their SOC matrix elements zero.
+
+The usual atomic form is proportional to
+$\xi(r)\,\vct L\cdot\vct\sigma$, with prefactors included in $\xi$.
+The radial factor comes from the reference potential; the orbital matrices
+come from angular momentum in VASP's harmonic basis. Angular momentum
+couples equal-$l$ channels. No additional hand-built radial integral is
+needed when the validated \code{CSO} dump already supplies these matrix
+elements.
+
+\subsection{Rotate the full operator, then select spin blocks}\label{sec:rotation}
+
+In the $z$ spin basis, its spin structure is
+\begin{equation}\label{eq:blocks}
+ \vct L\cdot\vct\sigma=
+ \begin{pmatrix}
+ L_z&L_x-\ii L_y\\
+ L_x+\ii L_y&-L_z
+ \end{pmatrix}.
+\end{equation}
+The spin-flip blocks are generally nonzero. Hermiticity requires
+$C_{\uparrow\downarrow}=C_{\downarrow\uparrow}^{\dagger}$; it does not
+require either flip block to be Hermitian on its own.
+
+The campaign measures the three Cartesian components, so no Euler
+angles are needed. Use these fixed spin-basis matrices:
+\begin{equation}\label{eq:rotation}
+ U_z=I,\qquad
+ U_x=\frac{1}{\sqrt2}\begin{pmatrix}1&-1\\1&1\end{pmatrix},
+ \qquad
+ U_y=\frac{1}{\sqrt2}\begin{pmatrix}1&-1\\\ii&\ii\end{pmatrix},
+ \qquad C(\nh)=U_{\nh}^{\dagger}C_zU_{\nh}.
+\end{equation}
+Here $\nh$ is simply $\hat{\vct x}$, $\hat{\vct y}$ or $\hat{\vct z}$.
+Each matrix satisfies $U_{\nh}\sigma_zU_{\nh}^{\dagger}
+=\nh\cdot\vct\sigma$; a common complex phase of $U$ has no effect.
+The orbital indices are unaffected. After conjugating the full operator,
+retain $C_{\uparrow\uparrow}(\nh)$ and $C_{\downarrow\downarrow}(\nh)$
+for Eq.~\eqref{eq:trace}. For the atomic form these are proportional to
+$+\xi\,\nh\cdot\vct L$ and $-\xi\,\nh\cdot\vct L$.
+
+
+The order is essential. For example, the $\sigma_xL_x$ part is entirely
+off-diagonal in the original $z$ basis, but contributes a diagonal
+$\sigma_zL_x$ part after the rotation selecting $x$.
+Discarding flip blocks before rotation would lose the $x$ response.
+The implementation must decode all four blocks, rotate, and only then
+select the diagonal blocks. T3 checks the stored spin ordering and rotation
+signs against genuine $x$, $y$ and $z$ operator dumps; the formula for $U$
+alone cannot certify the dump convention.
+
+\subsection{Why diagonal blocks suffice at generic \(q\)}
+
+From Eq.~\eqref{eq:gb}, a translated projection of spin $s=\pm1$ acquires
+$e^{\ii(\kh-s\qh/2)\cdot\vct R}$. In $c_s^*C_{ss'}c_{s'}$ the diagonal
+blocks have no remaining translation phase. The flip blocks carry
+$e^{\pm\ii\qh\cdot\vct R}$. Their lattice average is
+\begin{equation}\label{eq:average}
+ \frac{1}{N_R}\sum_{\vct R}e^{\pm\ii\qh\cdot\vct R}=0,
+ \qquad \qh\notin\{\hbox{reciprocal lattice vectors}\}.
+\end{equation}
+Here $N_R$ counts calculation cells. The sum covers a complete
+commensurate magnetic repeat or the infinite lattice.
+It yields Eq.~\eqref{eq:trace}, including the conical
+families when they obey the same generalized Bloch condition. The flip
+\emph{contribution to the average} vanishes, not the stored matrix blocks.
+
+At $q=0$ this argument does not apply. N0 instead evaluates the projected
+$z$ operator on an in-plane collinear SOC-free reference. A spin-only
+$180^\circ$ rotation about that collinear direction leaves the reference
+density unchanged and changes the sign of $\sigma_z\xi L_z$.
+Its expectation must therefore be zero. This is a separate null argument
+for that reference, not a generic statement about decorated $q=0$ states.
+
+\subsection{The equivalent density-matrix contraction}
+
+For each atom and retained spin block, define
+\begin{equation}\label{eq:rho}
+ \rho^{\mu s}_{ij}=
+ \sum_{n\kh}w_{\kh}f^{(0)}_{n\kh}
+ c^\mu_{i,n\kh s}c^{\mu *}_{j,n\kh s},\qquad
+ T=\sum_{\mu s}\Tr[C^\mu_{ss}(\nh)\rho^{\mu s}].
+\end{equation}
+This is just Eq.~\eqref{eq:trace} with the occupied states summed first.
+It provides a useful independent check of the per-state implementation.
+
+The stored convention matters: the specified \code{COCC} has
+$\code{COCC}[i,j]=\rho[j,i]$. Thus the implementation contracts
+\code{sum(CSO * COCC)} over matching orbital entries, rather than taking
+\code{trace(CSO @ COCC)}. The latter inserts the wrong transpose.
+A wrong transpose can still produce a real result, so the imaginary-part
+gate cannot replace this check.
+
+\section{Which VASP run supplies each quantity}\label{sec:inputs}
+
+The separation of the material operator from the state-dependent projections
+is the central Patch B input rule~\cite{projectcore}. The following objects
+have different origins.
+
+\Needspace{50mm}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule Run & Object and relevant condition\\\midrule
+Material reference & Converged SOC-free in-plane reference density/potential.\\
+\code{dump_C} & Full \code{CSO}, with SOC enabled and
+ \code{LSPIRAL = F}; dumped in-loop after \code{SET_DD_PAW} populates it.\\
+Configuration SCF & SOC-free state at the requested $q$, decorations and
+ cones; includes constraints when required.\\
+\code{dump_P} & \code{CPROJ}, \code{COCC} and \code{FERWE} from one
+ SOC-free \code{PRE_LOOP} capture, after \code{PROALL} and before orbital updates.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\code{COCC} is rebuilt from the same input projections and weights.
+\code{FERWE.dat} is the primary occupation/weight source; the stage-2
+\code{EIGENVAL} is a cross-check. Projections from the input state combined
+with occupations after an orbital update would not evaluate the stated
+frozen-state expectation.
+
+Rank files carry explicit global indices. Assembly must require complete,
+unique coverage of the expected $k$, band, spin and channel data.
+Do not infer block or cyclic ordering from the number of MPI ranks.
+Apply each occupation and $k$ weight once, with the normalization recorded
+by the dump. Eigenvalues, weights and provenance establish which state was
+contracted; equal array shapes alone do not.
+
+The current dump controls use \code{ALGO = Normal}, \code{NELM = 1},
+\code{LWAVE = F} and \code{LCHARG = F}, with \code{LDUMPONLY} disabled.
+For \code{dump_P}, the early capture is what protects the SOC-free inputs.
+For \code{dump_C}, the required operator is populated later in the normal
+path. These dump stages are not substitutes for a converged parent SCF.
+Keep the executable/source identity, parent \code{WAVECAR}/density,
+structure, PAW datasets, $k$ mesh, smearing and capture metadata with the
+measurement.
+
+A common reference \code{CSO} is convenient but is an approximation across
+different self-consistent states. Although it contains no occupation
+weights, its radial factors depend on the material potential. Exact spin
+rotation of a fixed operator does not prove that its radial factors are
+unchanged by a phase decoration, cone or constraint. The transferability
+checks must therefore test the resulting DMI, not just rotation algebra.
+New-build T3 requires genuine sibling axis dumps from the same reference,
+not synthetic rotations labeled as independent VASP data.
+
+\section{Paired measurements and their checks}\label{sec:pairs}
+
+Generate the negative target directly from the positive target vectors:
+\begin{equation}\label{eq:partners}
+ \qh^-=-\qh^+,\qquad
+ \hat{\vct S}_a^{0,-}
+ =\bigl(\hat S_{a,x}^{0,+},-\hat S_{a,y}^{0,+},\hat S_{a,z}^{0,+}\bigr).
+\end{equation}
+This keeps the longitudinal signs and rotating/axial sublattice assignments
+fixed. With the recipes in Section~\ref{sec:frames}, it is exactly F1's
+$(q,\psi)\mapsto(-q,-\psi)$ or F2's $q\mapsto-q$ at unchanged tilt.
+Reversing only $q$ in the F1 recipe would retain the wrong decoration;
+reversing an axial spin's polarity in F2 would change the family.
+Both traces use the same measurement axis and common material operator.
+
+
+Ideally the SOC-free states are related by reflection of the transverse
+spin phase, with the corresponding $k\mapsto-k$ mapping. In real orbital
+harmonics, the projected SOC operator is imaginary, while the paired
+density matrices are complex conjugates. Their real expectations then have
+opposite signs: $T_-=-T_+$. This requires matched occupations and
+symmetry-related electronic branches. Matching the input targets alone
+does not force two SCFs onto those branches.
+
+Production consequently measures both $T_+$ and $T_-$, forms
+Eq.~\eqref{eq:y}, and checks the raw sum $T_++T_-$ with P0. A large common
+background is not acceptable merely because subtraction cancels it.
+Measured-direction corrections to the model do not waive this raw-trace check.
+
+The measured pair also sets the relevant uncertainty. If the raw trace
+variances are $\sigma_+^2,\sigma_-^2$ and their covariance is $V$, then
+\begin{equation}\label{eq:noise}
+ \Var(y)=\frac{\sigma_+^2+\sigma_-^2-2V}{\Nm^2},\qquad
+ \Var(T_++T_-)=\sigma_+^2+\sigma_-^2+2V.
+\end{equation}
+Use paired replicas to estimate these quantities. The difference and sum
+do not share an interchangeable noise threshold. Measurements along
+different axes can also share noise because they reuse projections; retain
+that dependence in fit and comparison uncertainties.
+
+A wavevector at a time-reversal-invariant point is not automatically a
+null for arbitrary intracell directions. Adding a reciprocal lattice vector to $q$ leaves the
+cell-translation rotations unchanged when the cell moment vectors are
+held fixed. Regenerating targets with Eq.~\eqref{eq:target} need not
+preserve those vectors.
+Keep the specified production exclusions; do not manufacture a noise floor
+from presumed TRIM nulls.
+
+\section{From the paired energies to bond DMI vectors}\label{sec:model}
+
+The DFT calculation supplies paired SOC energies. This section constructs
+the corresponding spin-model energies and fits the unknown bond vectors
+$\vct d_b$. The model must represent the same extended spiral as the
+DFT trace, even though VASP stores its electronic state in one cell.
+
+\subsection{Fix the sign and count each bond once}
+
+The native Hamiltonian uses $-J\,\hat{\vct S}_i\cdot\hat{\vct S}_j$
+for exchange and $+\vct d_{ij}\cdot(\hat{\vct S}_i\times\hat{\vct S}_j)$
+for DMI, with every undirected bond counted once. A canonical bond $b$
+chooses its orientation from $(0,a_b)$ to $(\vct R_b,a'_b)$.
+Its displacement is
+$\vct r_b=\vct R_b+\vct\tau_{a'_b}-\vct\tau_{a_b}$.
+The displacement determines geometry and symmetry; the integer cell
+translation $\vct R_b$ determines the additional spiral advance.
+Reversing the bond reverses its displacement and $\vct d_b$.
+
+\subsection{Why average over translated copies of a bond?}
+
+The first-order DFT trace is an energy per calculation cell of the
+\emph{extended spiral}, not the DMI energy of one selected cell.
+Translating a bond rotates both endpoint spins together, and therefore
+rotates their cross product. Its $z$ component stays fixed; its $x,y$
+components cancel when averaged over a complete magnetic repeat
+(or over the infinite lattice for an incommensurate spiral).
+The average is of the cross products, not of each spin separately.
+This is the same cancellation used in
+Eq.~\eqref{eq:average}: $q$ must not be a reciprocal lattice vector.
+It does not justify this reduction for arbitrary conical states at $q=0$.
+
+Selecting the operator axis $\nh$ rotates the physical interpretation
+of the texture's axis from $z$ to $\nh$, so the surviving component
+couples to $\nh\cdot\vct d_b$. The model energy per calculation cell is
+\begin{equation}\label{eq:ham}
+ \boxed{\overline E_{\rm DM}(\nh)=
+ \sum_{b\ {\rm canonical}}
+ (\nh\cdot\vct d_b)
+ \left[\hat{\vct S}_{a_b}\times
+ R_z(2\pi\qh_{\rm frac}\cdot\vct R_{b,\rm frac})
+ \hat{\vct S}_{a'_b}\right]_z.}
+\end{equation}
+Here $[\ldots]_z$ means take the $z$ component. This formula already
+performs the average: no supercell or numerical lattice sum is needed.
+The stored moments stay in the same $z$-axis convention for all three
+operator axes. Division by $\Nm$ later converts per-cell energy to
+per-magnetic-site energy.
+
+For flat spins, the cross product is already along $z$ and the average
+changes nothing. A rotating--axial bond instead has a cross product
+entirely in the $xy$ plane, so its contribution averages to zero.
+Bonds within the rotating sublattice can remain. That is the useful
+separation supplied by F2.
+
+\textbf{Use the cell translation $\vct R_b$, not the full displacement
+$\vct r_b$, in this rotation.}
+The measured vectors already specify the two intracell directions.
+For an intracell bond $\vct R_b=0$, so the bracket is just
+$[\hat{\vct S}_{a_b}\times\hat{\vct S}_{a'_b}]_z$.
+Using $\vct r_b$ would count the intracell spiral rotation twice.
+The vectors also carry the reference spin signs.
+
+
+For exact partners, the exchange dot products are unchanged and the
+averaged DMI contribution reverses sign. The paired prediction is
+$2/\Nm$ times the positive-state canonical-bond sum. A full
+directed-neighbor list counts each bond twice and instead requires
+$1/\Nm$; using $2/\Nm$ with that full list would double the prediction.
+
+\subsection{Material symmetry and independent parameters}
+
+Symmetry relates the bond vectors. The implementation stores a small set
+of independent coefficients $x_j$ and fixed propagated vectors
+$\vct p_{bj}$:
+\begin{equation}\label{eq:basis}
+ \vct d_b=\sum_j\vct p_{bj}x_j.
+\end{equation}
+These vectors encode the allowed directions and relationships among bonds.
+They must treat $\vct d$ as an axial vector: a spatial operation $R$
+contributes $\det(R)R$, with an additional minus sign if the canonical
+bond orientation is reversed. Once this basis is verified for the
+production structure and cutoff, no general symmetry machinery is needed
+in the energy evaluation.
+
+The supplied $R3c$ BiFeO$_3$ (BFO) design with $R_{\max}=6$ \AA\ reports nine independent
+parameters. F0 alone has rank four, even when several measurement axes
+are used. F1 and the two F2 families supply independent combinations.
+These counts belong to that stated structure and bond basis; a changed
+POSCAR or cutoff requires checking them again~\cite{projectcore}.
+
+\subsection{Build each row from the two realized states}
+
+For one accepted state, normalize its OSZICAR \code{M_int} moments
+with Eq.~\eqref{eq:real}. Its per-cell coefficient for parameter $j$ is
+\begin{equation}\label{eq:A}
+ \boxed{A_j=\sum_{b\ {\rm canonical}}
+ \left[\hat{\vct S}_{a_b}\times
+ R_z(2\pi\qh_{\rm frac}\cdot\vct R_{b,\rm frac})
+ \hat{\vct S}_{a'_b}\right]_z
+ \bigl(\nh\cdot\vct p_{bj}\bigr).}
+\end{equation}
+This is the complete geometric kernel for F0, F1 and F2. It uses the
+measured vectors and the translation connecting the bond endpoints.
+The rotation constructs a physical neighbor in another cell; it does
+not change the frame of a stored moment. An exactly axial endpoint
+automatically gives zero, without a special azimuth convention.
+
+
+For measurement $m$, evaluate this expression separately for its positive
+and negative states:
+\begin{equation}\label{eq:M}
+ \boxed{M_{mj}=\frac{A_j^+-A_j^-}{\Nm},
+ \qquad y_m=\sum_j M_{mj}x_j.}
+\end{equation}
+This matches the measured difference in Eq.~\eqref{eq:y}.
+Only for exact geometric partners may the row be reduced to
+$2A_j^+/\Nm$. Each coefficient uses its own state's measured vectors;
+the negative state does not inherit the positive state's geometry.
+
+Using measured directions corrects small geometric departures within an
+accepted family. It cannot rescue collapsed moments, wrong signs,
+site-scattered phases or a different electronic state. Nor does the
+unit-spin model automatically account for moment-magnitude changes.
+Those are reasons to reject or separately investigate a row, not to
+hide the discrepancy in the fitted $\vct d$.
+
+\textbf{A normalization check.}
+Take one intracell canonical bond with
+$\hat{\vct S}_1=(1,0,0)$,
+$\hat{\vct S}_2=(-\sqrt3/2,-1/2,0)$ and
+$\nh\cdot\vct d=1$ meV.
+The cross product has $z$ component $-1/2$, giving $-0.5$ meV per cell.
+The exact partner flips the $y$ components and gives $+0.5$ meV.
+With two magnetic sites, $y=(-0.5-0.5)/2=-0.5$ meV per magnetic site.
+An additional one-half would be wrong. If the measured partners depart
+from this ideal relation, evaluate both cross products rather than
+doubling the first one.
+
+\subsection{Fit all axes and families together}
+
+Stack all accepted rows and solve one weighted least-squares problem,
+\begin{equation}\label{eq:fit}
+ \min_{\vct x}\sum_m
+ \frac{(y_m-\sum_jM_{mj}x_j)^2}{\sigma_{y_m}^2}.
+\end{equation}
+This displayed form assumes independent rows. Where the replica data show
+shared errors, use their covariance in the weighting and uncertainty
+calculation. There is no need to perform three independent component fits:
+the same $x_j$ generate the bond vectors seen by every axis.
+
+Use a singular-value decomposition or QR solve, and inspect rank and
+conditioning before interpreting the coefficients. More $q$ points do not
+fix an exact rank deficiency of the selected family. Report the residuals,
+uncertainties and held-out predictions along with the vectors.
+
+Stability across constraint strengths, phase decorations and families is
+the practical test of whether one bilinear DMI model describes these DFT
+states. Compare estimates with their shared-data covariance, or refit
+paired replicas consistently. A small residual on the training rows alone
+does not establish the bond range or rule out a state-dependent interaction.
+
+\subsection{One measurement pair, from inputs to a fitted row}
+
+For an F1 pair, generate lab targets at $(q,+\psi)$ and $(-q,-\psi)$,
+write their physical vectors directly to VASP, and converge both SOC-free
+states using the prescribed parents. Accept their geometry from OSZICAR
+\code{M_int} and their constraint alignment from \code{MW_int}.
+
+Capture each accepted state's own projections and occupations before any
+orbital update. Check coverage, weights and the equivalent density-matrix
+contraction. For each measurement axis, rotate the common full SOC operator
+before selecting its spin-diagonal blocks; do not rotate the recorded
+moments or projection arrays as an extra frame conversion.
+
+Record both traces, imaginary residuals and the raw pair sum. Form
+$y=(T_+-T_-)/\Nm$ and build the matching row
+$(A_j^+-A_j^-)/\Nm$ from the two measured geometries.
+Fit all accepted rows, retaining their shared-data uncertainty.
+
+Report the resulting bond vectors with site labels, cell translations,
+directed displacements, Cartesian components, energy units and the stated
+Hamiltonian sign/counting convention. Include the accepted row list,
+uncertainties and symmetry basis needed to reproduce the result.
+
+\section{Checks that make the result usable}\label{sec:checks}
+
+Each check below addresses a specific way that the DFT state or its
+interpretation can fail. Their detailed run order belongs in the probe and
+runner protocols, rather than in the mathematical derivation.
+
+\begin{description}[style=nextline,leftmargin=0pt,labelsep=0pt]
+\item[C0, W0 and M1: is the frozen trace assembled correctly?]
+Check the full SOC matrix structure and Hermiticity, global-index coverage,
+occupation/$k$ weights and common capture provenance. Compare the per-state
+and density-matrix contractions; the specified M1 tolerance is
+$10^{-10}$ eV. In the real-harmonic $z$ representation, the diagonal orbital
+block is imaginary and antisymmetric with zero diagonal, and the two spin
+diagonal blocks have opposite signs.
+
+\item[N0, P0 and I0: does the trace have the expected null, parity and reality?]
+N0 uses the in-plane collinear $q=0$ reference and projected $z$ operator.
+Its stated tolerance is $\max(5\times10^{-5}\ {\rm eV},3\sigma)$ with the
+appropriate measured noise. P0 checks the raw pair sum against its own
+noise. I0 bounds the absolute imaginary residual below $10^{-6}$ eV.
+Reality is necessary but does not certify transpose, indexing or signs.
+
+\item[T3 and signed R0: are the axes and states the intended ones?]
+Compare rotated operators with genuine axis dumps from the same reference.
+Retain the source and finite-$q$ evidence for the lab input/OSZICAR
+contract, then apply the signed direction, magnitude and penalty checks of
+Sections~\ref{sec:frames}
+and~\ref{sec:constraint}. Validate the first F2 case before bulk production.
+
+\item[T5--T8: is one model stable across the sampled states?]
+Use the constraint-strength scan, decoration scan, cross-family comparisons
+and paired replicas. The relevant convergence observable is the small
+paired SOC trace, not merely a converged total energy. Tightening
+\code{EDIFF} is useful only insofar as it stabilizes that observable.
+
+\item[T9: does the extracted DMI agree with an independent physical calculation?]
+Use the designated external anchors, such as matched direct $q$-SOC F0
+calculations, suitable supercells or an independently converged exchange
+calculation. Match the structure, electronic settings, bond range, spin
+normalization, sign and bond counting before comparing.
+\end{description}
+
+For example, if an external code defines a directed-pair Hamiltonian with
+$-\vct D_{ij}\cdot(\hat{\vct S}_i\times\hat{\vct S}_j)$, the present canonical
+plus-sign convention gives $\vct D_{ij}=-\vct d_{ij}/2$.
+This conversion follows from the two stated Hamiltonians; the term
+\emph{DMI vector} by itself does not determine it.
+
+The remaining physical assumptions are compact: SOC is treated to first
+order on fixed SOC-free states and occupations; its PAW contribution is
+approximated by all-electron on-site terms; one material radial operator
+is reused; and a finite-range bilinear unit-spin model is transferable
+across the accepted constrained families. The tests above address these
+assumptions where possible. They are not consequences of successful file
+parsing or a small algebraic residual.
+
+The Fe tests and supplied source establish the convention evidence
+summarized in Section~\ref{sec:frames}. They do not establish BFO
+realization, the production executable's complete provenance, new T3 data
+or external DMI anchors. M0 remains a same-state build/debug comparison.
+Implement the revised lab-target writer, OSZICAR reader and
+cell-translation bond kernel together; mixing one with the older
+unwound conventions would change the fitted model.
+
+\renewcommand{\refname}{References and implementation records}
+\begin{thebibliography}{10}
+\raggedright
+\addcontentsline{toc}{section}{References and implementation records}
+\bibitem{heide}
+M. Heide, G. Bihlmayer and S. Bl\"ugel,
+\emph{Describing Dzyaloshinskii--Moriya spirals from first principles},
+Physica B \textbf{404}, 2678--2683 (2009).
+\href{https://juser.fz-juelich.de/record/5598/files/HBB_FCM08.pdf}{Author preprint}.
+
+\bibitem{spiralwiki}
+VASP Wiki, \href{https://vasp.at/wiki/Spin_spirals}{Spin spirals}.
+Generalized Bloch functions and magnetization.
+
+\bibitem{lsorbit}
+VASP Wiki, \href{https://vasp.at/wiki/LSORBIT}{LSORBIT}.
+All-electron one-center SOC approximation.
+
+\bibitem{saxis}
+VASP Wiki, \href{https://vasp.at/wiki/SAXIS}{SAXIS}.
+Spinor basis and common-axis rotations.
+
+\bibitem{constraintwiki}
+VASP Wiki, \href{https://vasp.at/wiki/I_CONSTRAINED_M}{I\_CONSTRAINED\_M}.
+Mode-1 penalty, smoothing weight and moment readbacks.
+
+\bibitem{spiralhowto}
+VASP Wiki, \href{https://vasp.at/wiki/Spin-spiral_calculations}{Spin-spiral calculations}.
+Intracell moments, intercell rotation and sphere-moment readback.
+
+\bibitem{rwigs}
+VASP Wiki, \href{https://vasp.at/wiki/RWIGS}{RWIGS}.
+Separate roles in sphere integration and projected analysis.
+
+\bibitem{fetest}
+Project bcc Fe convention tests and user-supplied VASP source excerpts,
+reviewed 20--25 September 2026. Two-site conventional cell, sites
+$(0,0,0)$ and $(1/2,1/2,1/2)$, \code{SAXIS = 0 0 1},
+$q=(1/4,0,0)$, $\lambda=0,1$, with $q=0$ controls.
+Source excerpts: \code{main.F}, call to \code{COUNTER_SPIRAL} at line 1056;
+\code{symmetry.F}, routine at lines 4324--4345; and \code{MRHOATO}.
+Line numbers identify the supplied excerpts, not a universal VASP version.
+Executable hashes and full run archives were not supplied with these excerpts.
+
+\bibitem{projectcore}
+Supplied project sources: the July 2026 \code{heide_math.pdf};
+\code{math_document_revision_notes.md};
+\code{decorated_spiral_implementation_rev2.md};
+and \code{full_test_data_requirements.md}.
+These specify the paired observable, decorated-family model, Patch B and
+reported material-design ranks. This revision replaces the earlier
+single-trace production rule and Patch A provenance.
+
+\bibitem{projectcp}
+Supplied current implementation records:
+\code{preflight_review.md}, \code{next_steps.md},
+\code{constraint_probe_v2_protocol.md}, and
+\code{perlmutter_test_runner_spec.md}.
+These specify signed realization, parent selection and pending validation.
+The lab-frame revision explicitly replaces their older expected unwound
+\code{M_CONSTR} convention and generic frame-adapter/readback instructions
+with Sections~\ref{sec:frames} and~\ref{sec:model}. Other campaign
+requirements remain in force. The glossary and older inventories provide
+historical context, not evidence that the revised code has been implemented.
+\end{thebibliography}
+\end{document}
