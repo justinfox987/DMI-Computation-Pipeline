@@ -5,6 +5,17 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 offline vector software path (2026-09-29)
+
+- Added versioned lab-frame target recipes and INCAR fragments, strict OSZICAR
+  sphere-moment readback with separate electronic convergence, signed realization
+  checks, one canonical cell-translation bond kernel and two-sided diagnostic rows.
+- Added offline CLI input/readback/row/weighted-solve entry points and synthetic
+  regression coverage while preserving the historical N0 manifest and trace.
+  Missing BFO symmetry basis, production trace/parity and noise evidence are
+  explicit blockers, not new validation passes. See [local usage](docs/STEP1_LOCAL_USAGE.md)
+  and the [implementation handoff](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md).
+
 ### Local baseline handoff (2026-09-29)
 
 - Audited the tracked N0-only baseline, recorded its local test result and
