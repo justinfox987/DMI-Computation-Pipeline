@@ -29,6 +29,11 @@ OLD-STUFF/
 /vendor/vasp/
 /vasp-source/
 
+# Local VASP distribution copies; retain the small Patch B spec for deliberate review.
+/vasp files/vasp.6.4.2-heide-cpu/
+/vasp files/vasp-heide-patch-NEW/*
+!/vasp files/vasp-heide-patch-NEW/heide_patch_b_spec.md
+
 # Large restart/dataset/executable files, wherever encountered
 noq/
 WAVECAR*
