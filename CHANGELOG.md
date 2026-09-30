@@ -5,6 +5,14 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 field and penalty diagnostics (2026-09-30)
+
+- Split signed factor-two evidence from the field/penalty identity in the existing Step 1 validator. The identity now records printed intervals and any gap at the requested coefficient matched to run inputs, with same-update interpretation unavailable until separately established. The lambda=1 Fe discrepancy remains visible; alignment and penalty acceptance limits are unchanged. Added a focused CGA-format regression and updated the spec/usage; 18 focused and 53 total local tests pass. See the [validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md). No VASP rerun or production acceptance.
+
+### Step 1 field and penalty source audit (2026-09-30)
+
+- Traced the original lambda=1 Fe sample against supplied VASP mode-1 source: the final printed penalty is cached before a later moment refresh, while signed fields use current moments; the source coefficient remains the requested 1.0. The field/penalty printed intervals are disjoint at exact lambda 1, while factor-two and sign remain supported at printed-moment precision. No code or tolerance change, VASP rerun, or production gate; see the [source audit](docs/sessions/2026-09-30_1933Z-agent-step1-field-penalty-source-audit.md).
+
 ### Step 1 original-file reader repair handoff (2026-09-30)
 
 - Committed the reviewed reader repair for repeated OSZICAR sphere tables, SDA/CGA iterations, actual OUTCAR run banners and `Iteration I(E)` association, with distinct missing-summary and missing-OUTCAR-footer checks. The original Fe sample parses at ionic/electronic step 1/50 (95 sphere tables, one ionic summary); 17 focused and 52 total local software tests pass. No push.

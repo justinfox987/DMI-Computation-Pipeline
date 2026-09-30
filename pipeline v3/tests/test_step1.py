@@ -196,7 +196,39 @@ def test_signed_gates_and_weighted_distinction(tmp_path):
     assert "printed constraint penalty exceeds threshold" in fe_gate["reasons"]
     assert "ion 1 absolute weighted alignment" in fe_gate["reasons"]
     assert fe_gate["penalty_check"].startswith("pass")
-    assert fe_gate["field_check"]["status"] == "pass: factor-two field and penalty consistent"
+    assert fe_gate["field_check"]["status"] == "pass: factor-two signed field"
+    assert fe_gate["field_check"]["identity"]["observed"] == "overlap"
+    assert fe_gate["field_check"]["identity"]["status"].startswith("unavailable: same-update")
+
+
+def test_field_factor_and_penalty_identity_remain_distinct(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    config["targets"] = [[1, 0, 0], [1, 0, 0], [0, 0, 0]]
+    run = tmp_path / "discrepant"
+    synthetic_readback(run, config,
+        [[2.259, -.033, 0], [2.259, .033, 0], [0, 0, 0]],
+        [[1.812, -.044, 0], [1.812, .044, 0], [0, 0, 0]],
+        .0039272, 1, [[0, -.088629, 0], [0, .088629, 0], [0, 0, 0]], mw_digits=3)
+    oszicar = run / "OSZICAR"
+    text = oszicar.read_text().replace(
+        "E_p = 3.92720000E-03 lambda = 1.00000000E+00",
+        "E_p = 0.39272E-02 lambda = 0.100E+01")
+    text = text.replace("DAV: 1", "CGA: 1")
+    text = text.replace("-8.862900000E-02", "-0.88629E-01").replace("8.862900000E-02", "0.88629E-01")
+    oszicar.write_text(text)
+    read = step1.read_state(run, config, run / "config.json")
+    gate = step1.validate(config, read, read["M_norm"][:2], read["MW_norm"][:2])
+    field = gate["field_check"]
+    assert field["status"] == "pass: factor-two signed field"
+    assert field["printed_factor"] == pytest.approx(2, abs=.02)
+    assert field["coefficient"] == 1.0
+    assert field["field_E_p_eV"] == pytest.approx(.0039275498205)
+    assert field["identity"]["observed"] == "disjoint"
+    assert field["identity"]["gap_eV"] == pytest.approx(2.55506125e-7)
+    assert field["identity"]["status"].startswith("unavailable: same-update")
+    assert "printed penalty disagrees with printed field" not in gate["reasons"]
+    assert "printed constraint penalty exceeds threshold" in gate["reasons"]
+    assert "ion 1 absolute weighted alignment" in gate["reasons"]
 
 
 def test_penalty_field_precision_and_absent_field(tmp_path):
@@ -209,6 +241,7 @@ def test_penalty_field_precision_and_absent_field(tmp_path):
     assert gate["passed"] and gate["penalty_check"].startswith("pass")
     assert gate["field_check"]["status"].startswith("unavailable: factor-two")
     assert gate["field_check"]["consistency"].startswith("pass: zero/small field")
+    assert gate["field_check"]["identity"]["status"].startswith("unavailable: same-update")
     assert "printed_factor" not in gate["field_check"]
     no_field = synthetic_readback(tmp_path / "absent", config, m, mw, lam=1)
     assert step1.validate(config, no_field, [2, 2], [1.8, 1.8])["field_check"]["status"].startswith("unavailable")

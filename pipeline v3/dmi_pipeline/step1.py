@@ -435,9 +435,12 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
             raise ValueError(f"Invalid {label} magnitude reference")
         if any(abs(actual[ion] - ref[site]) / ref[site] >= MOMENT_DRIFT for site, ion in enumerate(indices)):
             reasons.append(f"{label} magnitude drift")
-    ep, lam = readback["E_p_eV"], readback["lambda"]
-    if not np.all(np.isfinite([ep, lam])) or ep < 0 or lam < 0:
+    ep, printed_lam = readback["E_p_eV"], readback["lambda"]
+    if not np.all(np.isfinite([ep, printed_lam])) or ep < 0 or printed_lam < 0:
         raise ValueError("Invalid printed final penalty or lambda")
+    # read_state has matched this requested coefficient to the run INCAR and
+    # OUTCAR echo. Its use as the effective coefficient still needs build evidence.
+    lam = float(numbers(record["tags"]["LAMBDA"])[0])
     if lam > 0 and ep >= PENALTY_EV:
         reasons.append("printed constraint penalty exceeds threshold")
     precision = readback["precision"]
@@ -453,52 +456,58 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
         perps[ion] = perp
         predicted[ion] = 2 * lam * perp
         penalty += lam * np.dot(perp, perp)
-    # Bound the penalty from the last printed MW_int and lambda digits, not a
-    # fixed percent tolerance that could accept contradictory small penalties.
+    # Bound the penalty from the printed MW_int digits and requested coefficient.
     perp_error = np.zeros_like(mw_error)
     perp_error[indices] = mw_error[indices] + np.abs(u[indices]) * np.sum(np.abs(u[indices]) * mw_error[indices], axis=1)[:, None]
     low = np.maximum(np.abs(perps) - perp_error, 0)
     high = np.abs(perps) + perp_error
-    lam_error = precision["lambda"] / 2
     ep_error = precision["E_p_eV"] / 2
-    penalty_low = max(0, lam - lam_error) * np.sum(low[indices] ** 2)
-    penalty_high = (lam + lam_error) * np.sum(high[indices] ** 2)
+    penalty_low = lam * np.sum(low[indices] ** 2)
+    penalty_high = lam * np.sum(high[indices] ** 2)
     if ep + ep_error < penalty_low or ep - ep_error > penalty_high:
         reasons.append("printed penalty disagrees with MW_int recomputation")
     penalty_check = ("fail: MW_int/penalty contradiction" if "printed penalty disagrees with MW_int recomputation" in reasons
                      else "pass: MW_int/penalty consistent within printed precision")
-    field_check = {"status": "unavailable: no printed field"}
+    field_check = {"status": "unavailable: no printed field",
+                   "identity": {"status": "unavailable: no printed field"}}
     if field is not None:
         printed = np.asarray(field, dtype=float)
         field_error = np.asarray(precision["printed_field"], dtype=float) / 2
         if printed.shape != mw.shape or field_error.shape != mw.shape or not np.all(np.isfinite(printed)):
             raise ValueError("Invalid printed field ion count or values")
-        field_check = {"status": "unavailable: factor-two unresolved at printed precision"}
+        field_check = {"status": "unavailable: factor-two unresolved at printed precision",
+                       "coefficient": lam,
+                       "coefficient_source": "requested LAMBDA matched to run INCAR and OUTCAR echo"}
         # Compare signed Cartesian components; magnitudes alone miss a reversed field.
-        field_tolerance = 2 * (lam + lam_error) * perp_error + 2 * lam_error * np.abs(perps)
+        field_tolerance = 2 * lam * perp_error
         if np.any(np.abs(printed - predicted) > field_tolerance + field_error):
             field_check["status"] = "fail: printed field disagrees with MW_int"
             reasons.append("printed field disagrees with factor-two convention")
         field_penalty = float(np.sum(np.square(printed[indices])) / (4 * lam)) if lam > 0 else None
         field_check["field_E_p_eV"] = field_penalty
-        if lam > lam_error:
-            fp_low = np.sum(np.maximum(np.abs(printed[indices]) - field_error[indices], 0) ** 2) / (4 * (lam + lam_error))
-            fp_high = np.sum((np.abs(printed[indices]) + field_error[indices]) ** 2) / (4 * (lam - lam_error))
-            if ep + ep_error < fp_low or ep - ep_error > fp_high:
-                field_check["status"] = "fail: printed penalty disagrees with field"
-                reasons.append("printed penalty disagrees with printed field")
-            # Resolve both the measured signal and the difference from a factor-one field.
+        if lam > 0:
+            fp_low = np.sum(np.maximum(np.abs(printed[indices]) - field_error[indices], 0) ** 2) / (4 * lam)
+            fp_high = np.sum((np.abs(printed[indices]) + field_error[indices]) ** 2) / (4 * lam)
+            gap = max(float(fp_low - (ep + ep_error)), float((ep - ep_error) - fp_high), 0.0)
+            field_check["identity"] = {
+                "status": "unavailable: same-update association not established",
+                "observed": "disjoint" if gap > 0 else "overlap",
+                "gap_eV": gap, "field_E_p_interval_eV": [float(fp_low), float(fp_high)],
+                "printed_E_p_interval_eV": [float(ep - ep_error), float(ep + ep_error)]}
+        else:
+            field_check["identity"] = {"status": "unavailable: zero coefficient"}
+            if field_check["status"].startswith("fail"):
+                field_check["status"] = "fail: nonzero zero-lambda field"
+        # Resolve both the measured signal and the difference from a factor-one field.
+        if lam > 0 and not field_check["status"].startswith("fail"):
             resolved = (np.linalg.norm(printed[indices]) > np.linalg.norm(field_error[indices]) and
                         np.any(lam * np.abs(perps[indices]) > (field_tolerance + field_error)[indices]))
-            if resolved and penalty_check.startswith("pass") and not field_check["status"].startswith("fail"):
-                field_check["status"] = "pass: factor-two field and penalty consistent"
+            if resolved:
+                field_check["status"] = "pass: factor-two signed field"
                 field_check["printed_factor"] = float(np.sum(printed[indices] * perps[indices]) /
                                                        (lam * np.sum(perps[indices] ** 2)))
-            elif not field_check["status"].startswith("fail") and penalty_check.startswith("pass"):
-                field_check["consistency"] = "pass: zero/small field and penalty consistent within printed precision"
-        else:
-            field_check["status"] = ("fail: nonzero zero-lambda field" if "printed field disagrees with factor-two convention" in reasons
-                                     else "unavailable: lambda unresolved at printed precision")
+            else:
+                field_check["consistency"] = "pass: zero/small field agrees with MW_int within printed precision"
     return {"passed": not reasons, "reasons": reasons, "spins": spins.tolist(),
             "phase_rms_deg": float(np.sqrt(np.mean(np.square(phase_errors)))) if phase_errors else None,
             "common_z_deg": float(np.rad2deg(offset)), "recomputed_E_p_eV": float(penalty),
