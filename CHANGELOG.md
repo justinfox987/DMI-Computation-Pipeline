@@ -5,6 +5,11 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 final review follow-up (2026-09-30)
+
+- Rejected malformed or broadcastable QSPIRAL values at stored/requested/run/echo boundaries and mismatched per-species RWIGS between otherwise valid partners.
+- Kept zero-field states valid without claiming factor-two evidence below printed resolution; retained separate zero-field consistency and positive-signal Fe excerpt checks. See [final review log](docs/sessions/2026-09-30_0024Z-agent-step1-final-review.md). No production VASP validation.
+
 ### Step 1 corrective review (2026-09-30)
 
 - Bound readback and row gates to checked config/run file hashes and re-read sphere

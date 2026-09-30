@@ -287,7 +287,9 @@ def read_state(directory, record, config_path):
     config_path = Path(config_path)
     if manifest.load(config_path) != record:
         raise ValueError("Config file differs from requested record")
-    if not np.allclose(numbers(record["tags"]["QSPIRAL"]), vector(record["q_frac"], "stored q_frac"), atol=1e-9, rtol=0):
+    stored_q = vector(record["q_frac"], "stored q_frac")
+    requested_q = vector(numbers(record["tags"]["QSPIRAL"]), "Requested QSPIRAL")
+    if not np.allclose(requested_q, stored_q, atol=1e-9, rtol=0):
         raise ValueError("Requested QSPIRAL differs from stored model q_frac")
     if not np.allclose(numbers(record["tags"]["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
         raise ValueError("Requested M_CONSTR differs from stored targets")
@@ -297,12 +299,16 @@ def read_state(directory, record, config_path):
     for key, value in record["tags"].items():
         if key not in tags:
             raise ValueError(f"Run INCAR missing requested {key}")
-        if key in {"MAGMOM", "M_CONSTR", "RWIGS", "QSPIRAL", "LAMBDA", "SAXIS"}:
+        if key == "QSPIRAL":
+            actual_q = vector(numbers(tags[key]), "Run QSPIRAL")
+            if not np.allclose(actual_q, requested_q, atol=1e-9, rtol=0):
+                raise ValueError("Run INCAR QSPIRAL differs from requested input")
+        elif key in {"MAGMOM", "M_CONSTR", "RWIGS", "LAMBDA", "SAXIS"}:
             if not np.allclose(numbers(tags[key]), numbers(value), atol=1e-9, rtol=0):
                 raise ValueError(f"Run INCAR {key} differs from requested input")
         elif tags[key].strip().upper() != value.upper():
             raise ValueError(f"Run INCAR {key} differs from requested input")
-    if not np.allclose(numbers(tags["QSPIRAL"]), vector(record["q_frac"], "stored q_frac"), atol=1e-9, rtol=0):
+    if not np.allclose(actual_q, stored_q, atol=1e-9, rtol=0):
         raise ValueError("Run QSPIRAL differs from stored model q_frac")
     if poscar_species(directory / "POSCAR") != record["species"]:
         raise ValueError("Run species/order mismatch")
@@ -326,6 +332,10 @@ def read_state(directory, record, config_path):
         count = [int(match.group(1)) for match in iterations if int(match.group(2)) == step]
         if count != list(range(1, count[-1] + 1)):
             raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
+    for echoed in re.findall(r"^\s*QSPIRAL\s*=\s*(.*)$", outcar, re.M):
+        echoed_q = vector(numbers(echoed), "OUTCAR QSPIRAL")
+        if not np.allclose(echoed_q, stored_q, atol=1e-9, rtol=0):
+            raise ValueError("OUTCAR QSPIRAL differs from stored model q_frac")
     _echo_check(directory)
     oszicar = directory / "OSZICAR"
     result = sphere(oszicar, len(record["species"]))
@@ -443,7 +453,7 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
         field_error = np.asarray(precision["printed_field"], dtype=float) / 2
         if printed.shape != mw.shape or field_error.shape != mw.shape or not np.all(np.isfinite(printed)):
             raise ValueError("Invalid printed field ion count or values")
-        field_check = {"status": "pass: factor-two field and penalty consistent"}
+        field_check = {"status": "unavailable: factor-two unresolved at printed precision"}
         # Compare signed Cartesian components; magnitudes alone miss a reversed field.
         field_tolerance = 2 * (lam + lam_error) * perp_error + 2 * lam_error * np.abs(perps)
         if np.any(np.abs(printed - predicted) > field_tolerance + field_error):
@@ -457,9 +467,15 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
             if ep + ep_error < fp_low or ep - ep_error > fp_high:
                 field_check["status"] = "fail: printed penalty disagrees with field"
                 reasons.append("printed penalty disagrees with printed field")
-            if np.linalg.norm(perps[indices]) > np.linalg.norm(perp_error[indices]):
+            # Resolve both the measured signal and the difference from a factor-one field.
+            resolved = (np.linalg.norm(printed[indices]) > np.linalg.norm(field_error[indices]) and
+                        np.any(lam * np.abs(perps[indices]) > (field_tolerance + field_error)[indices]))
+            if resolved and penalty_check.startswith("pass") and not field_check["status"].startswith("fail"):
+                field_check["status"] = "pass: factor-two field and penalty consistent"
                 field_check["printed_factor"] = float(np.sum(printed[indices] * perps[indices]) /
                                                        (lam * np.sum(perps[indices] ** 2)))
+            elif not field_check["status"].startswith("fail") and penalty_check.startswith("pass"):
+                field_check["consistency"] = "pass: zero/small field and penalty consistent within printed precision"
         else:
             field_check["status"] = ("fail: nonzero zero-lambda field" if "printed field disagrees with factor-two convention" in reasons
                                      else "unavailable: lambda unresolved at printed precision")
@@ -532,6 +548,10 @@ def paired(plus, minus, basis, trace_plus, trace_minus, sigma_y=None):
                             references.get("MW_int"), gate.get("allow_common_z", False))
         if gate != verified or not verified["passed"]:
             raise ValueError("Stored sphere gate differs from verified moments, inputs or references")
+    radii = [numbers(config["tags"]["RWIGS"]) for config in (a, b)]
+    if (any(r.shape != (len(dict.fromkeys(a["species"])),) or np.any(r <= 0) for r in radii)
+            or not np.allclose(radii[0], radii[1], atol=1e-9, rtol=0)):
+        raise ValueError("Partner RWIGS radii mismatch by species")
     if any(not np.isfinite(x) for x in (trace_plus, trace_minus)):
         raise ValueError("Nonfinite traces")
     n = len(a["magnetic_indices"])

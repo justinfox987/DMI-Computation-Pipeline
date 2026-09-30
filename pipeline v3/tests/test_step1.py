@@ -193,7 +193,7 @@ def test_signed_gates_and_weighted_distinction(tmp_path):
     assert "printed constraint penalty exceeds threshold" in fe_gate["reasons"]
     assert "ion 1 absolute weighted alignment" in fe_gate["reasons"]
     assert fe_gate["penalty_check"].startswith("pass")
-    assert fe_gate["field_check"]["status"].startswith("pass")
+    assert fe_gate["field_check"]["status"] == "pass: factor-two field and penalty consistent"
 
 
 def test_penalty_field_precision_and_absent_field(tmp_path):
@@ -204,7 +204,9 @@ def test_penalty_field_precision_and_absent_field(tmp_path):
     good = synthetic_readback(tmp_path / "good", config, m, mw, lam=1, field=np.zeros_like(mw))
     gate = step1.validate(config, good, [2, 2], [1.8, 1.8])
     assert gate["passed"] and gate["penalty_check"].startswith("pass")
-    assert gate["field_check"]["status"].startswith("pass")
+    assert gate["field_check"]["status"].startswith("unavailable: factor-two")
+    assert gate["field_check"]["consistency"].startswith("pass: zero/small field")
+    assert "printed_factor" not in gate["field_check"]
     no_field = synthetic_readback(tmp_path / "absent", config, m, mw, lam=1)
     assert step1.validate(config, no_field, [2, 2], [1.8, 1.8])["field_check"]["status"].startswith("unavailable")
     bad_penalty = synthetic_readback(tmp_path / "penalty", config, m, mw, ep=.0005, lam=1)
@@ -222,6 +224,66 @@ def test_penalty_field_precision_and_absent_field(tmp_path):
     small = synthetic_readback(tmp_path / "small", config, m, small_mw, ep=.000016, lam=1,
                                field=[[0, .008, 0], [0, 0, 0], [0, 0, 0]])
     assert step1.validate(config, small, [2, 2], [1.8, 1.8])["passed"]
+
+
+def test_qspiral_requires_three_components_at_each_boundary(tmp_path):
+    path = poscar(tmp_path / "POSCAR")
+    settings = recipe("F0")
+    settings["q_frac"] = [.25, .25, .25]
+    config = step1.prepare(settings, path)
+    m = 2 * np.asarray(config["targets"])
+    mw = .9 * m
+    run = tmp_path / "run"
+    read = synthetic_readback(run, config, m, mw)
+    assert step1.validate(config, read, [2, 2], [1.8, 1.8])["passed"]
+    for invalid in (.25, [.25, .25], [.25, .25, .25, .25], [.25, np.nan, .25]):
+        settings["q_frac"] = invalid
+        with pytest.raises(ValueError, match="three-vector"):
+            step1.prepare(settings, path)
+    config_file = run / "config.json"
+    original_incar = (run / "INCAR").read_text()
+    original_outcar = (run / "OUTCAR").read_text()
+    for malformed in ("0.25", "0.25 0.25", "0.25 0.25 0.25 0.25"):
+        config["tags"]["QSPIRAL"] = malformed
+        manifest.save(config, config_file)
+        with pytest.raises(ValueError, match="Requested QSPIRAL"):
+            step1.read_state(run, config, config_file)
+        config["tags"]["QSPIRAL"] = "0.25 0.25 0.25"
+        manifest.save(config, config_file)
+        (run / "INCAR").write_text(original_incar.replace("QSPIRAL = 0.25 0.25 0.25", "QSPIRAL = " + malformed))
+        with pytest.raises(ValueError, match="Run QSPIRAL"):
+            step1.read_state(run, config, config_file)
+        (run / "INCAR").write_text(original_incar)
+        (run / "OUTCAR").write_text(original_outcar.replace("QSPIRAL = 0.25 0.25 0.25", "QSPIRAL = " + malformed))
+        with pytest.raises(ValueError, match="OUTCAR QSPIRAL"):
+            step1.read_state(run, config, config_file)
+        (run / "OUTCAR").write_text(original_outcar)
+    config["tags"]["QSPIRAL"] = "nan 0.25 0.25"
+    manifest.save(config, config_file)
+    with pytest.raises(ValueError, match="Non-finite"):
+        step1.read_state(run, config, config_file)
+    config["tags"]["QSPIRAL"] = "0.25 0.25 0.25"
+    manifest.save(config, config_file)
+    config["q_frac"] = .25
+    manifest.save(config, config_file)
+    with pytest.raises(ValueError, match="stored q_frac"):
+        step1.read_state(run, config, config_file)
+
+
+def test_pair_rejects_mismatched_species_radii(tmp_path):
+    basis = [{"a": 0, "b": 1, "R": [0, 0, 0], "p": [[0, 0, 1]]}]
+    states = []
+    for side, radii in (("+", [1.3, .8]), ("-", [1.4, .8])):
+        settings = recipe("F0", side=side)
+        settings["rwigs"] = radii
+        config = step1.prepare(settings, poscar(tmp_path / "POSCAR"))
+        m = 2 * np.asarray(config["targets"])
+        read = synthetic_readback(tmp_path / side, config, m, .9 * m)
+        gate = step1.validate(config, read, [2, 2], [1.8, 1.8])
+        assert gate["passed"], gate["reasons"]
+        states.append({"config": config, "readback": read, "gate": gate})
+    with pytest.raises(ValueError, match="RWIGS"):
+        step1.paired(*states, basis, -.0005, .0005)
 
 
 def test_final_loop_association_and_stale_evidence(tmp_path):
@@ -407,6 +469,13 @@ def test_cli_synthetic_chain_and_rejections(tmp_path):
                                  "--references", tmp_path / "missing.json", "--output", tmp_path / "invalid.json")
             assert q_mismatch.returncode != 0 and "QSPIRAL" in q_mismatch.stderr
             manifest.save(cfg, dest / "config.json")
+            original_incar = (run / "INCAR").read_text()
+            for malformed in ("0.25", "0.25 0", "0.25 0 0 0"):
+                (run / "INCAR").write_text(original_incar.replace("QSPIRAL = 0.25 0.0 0.0", "QSPIRAL = " + malformed))
+                q_shape = run_cli("step1-read", "--config", dest / "config.json", "--run", run,
+                                  "--references", tmp_path / "missing.json", "--output", tmp_path / "invalid.json")
+                assert q_shape.returncode != 0 and "Run QSPIRAL" in q_shape.stderr
+            (run / "INCAR").write_text(original_incar)
         reference = tmp_path / "reference.json"
         manifest.save({"M_int": [2, 2], "MW_int": [1.8, 1.8]}, reference)
         state = tmp_path / (side + "-state.json")
@@ -426,6 +495,25 @@ def test_cli_synthetic_chain_and_rejections(tmp_path):
     row = manifest.load(output)
     assert row["status"].startswith("diagnostic")
     assert row["y_eV_per_site"] == pytest.approx(-.0005)
+    minus_original = manifest.load(states[1])
+    minus_config = manifest.load(states[1])["config"]
+    minus_config["tags"]["RWIGS"] = "1.4 0.8"
+    minus_run = tmp_path / "--run"
+    minus_incar = (minus_run / "INCAR").read_text()
+    minus_outcar = (minus_run / "OUTCAR").read_text()
+    (minus_run / "INCAR").write_text(minus_incar.replace("RWIGS = 1.3 0.8", "RWIGS = 1.4 0.8"))
+    (minus_run / "OUTCAR").write_text(minus_outcar.replace("RWIGS = 1.3 0.8", "RWIGS = 1.4 0.8"))
+    manifest.save(minus_config, tmp_path / "wrapped-targets" / "config.json")
+    reread = run_cli("step1-read", "--config", tmp_path / "wrapped-targets" / "config.json",
+                     "--run", minus_run, "--references", reference, "--output", states[1])
+    assert reread.returncode == 0, reread.stderr
+    mismatch = run_cli("step1-row", "--plus", states[0], "--minus", states[1], "--basis", bonds,
+                       "--traces", trace, "--output", output)
+    assert mismatch.returncode != 0 and "RWIGS" in mismatch.stderr
+    (minus_run / "INCAR").write_text(minus_incar)
+    (minus_run / "OUTCAR").write_text(minus_outcar)
+    manifest.save(configs[1], tmp_path / "wrapped-targets" / "config.json")
+    manifest.save(minus_original, states[1])
     plus_original = manifest.load(states[0])
     forged = dict(plus_original, gate=dict(plus_original["gate"], passed=True))
     forged["gate"]["spins"] = [[-1, 0, 0], [-1, 0, 0], [0, 0, 0]]
