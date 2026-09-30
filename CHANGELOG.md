@@ -5,6 +5,14 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Local baseline handoff (2026-09-29)
+
+- Audited the tracked N0-only baseline, recorded its local test result and
+  outstanding Step 1 work in [the handoff](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md).
+- Excluded the two local full VASP distribution copies while leaving the small
+  Patch B spec and other untracked patch/source candidates visible for review.
+  No VASP assets, production results or Step 1 changes were committed.
+
 ### Documentation and coordination
 
 - Prepared repository instructions, status/ownership tracking, a decision log,
@@ -14,8 +22,8 @@ commit reference when available. Do not use this as a command transcript.
   notice about superseded frame assumptions.
 - Added starter ignore and line-ending rules for local Python/HPC work.
 
-These entries describe the starter kit. They do not assert that it has been
-merged into the user's codebase or that Step 1 code changes have been implemented.
+The documentation-and-coordination entries above describe the starter kit, not
+Step 1 implementation or a new production validation result.
 
 ## Earlier document milestones
 
