@@ -1,4 +1,4 @@
-"""Command line for the N0 acceptance milestone."""
+"""Command line for historical N0 and offline Step 1 diagnostics."""
 
 import argparse
 import json
@@ -7,6 +7,7 @@ import sys
 
 from . import manifest
 from .dumpio import load_cocc, load_cproj, load_cso, load_ferwe
+from . import step1
 from .gates import gate_c0, gate_m1
 from .workflow import finish, initialize, t3, trace_null
 
@@ -31,8 +32,64 @@ def main(argv=None) -> int:
     rotation.add_argument("--manifest", type=Path, required=True)
     rotation.add_argument("--x", type=Path, required=True)
     rotation.add_argument("--y", type=Path, required=True)
+    prepare = commands.add_parser("step1-prepare", help="Emit lab targets and Step 1 INCAR tags (no VASP jobs)")
+    prepare.add_argument("--recipe", type=Path, required=True)
+    prepare.add_argument("--poscar", type=Path, required=True)
+    prepare.add_argument("--output", type=Path, required=True)
+    wrap = commands.add_parser("step1-wrap-partner", help="Shift prepared negative q without regenerating targets")
+    wrap.add_argument("--config", type=Path, required=True)
+    wrap.add_argument("--q-frac", type=float, nargs=3, required=True)
+    wrap.add_argument("--output", type=Path, required=True)
+    state = commands.add_parser("step1-read", help="Read converged sphere moments and gate realization")
+    state.add_argument("--config", type=Path, required=True)
+    state.add_argument("--run", type=Path, required=True)
+    state.add_argument("--references", type=Path, required=True,
+                       help="JSON: M_int and MW_int reference norms in magnetic-site order")
+    state.add_argument("--common-z", action="store_true")
+    state.add_argument("--output", type=Path, required=True)
+    row = commands.add_parser("step1-row", help="Two measured sides and supplied canonical bond basis")
+    for name in ("plus", "minus", "basis", "traces", "output"):
+        row.add_argument("--" + name, type=Path, required=True)
+    solver = commands.add_parser("step1-fit", help="Diagnostic weighted solve; not production acceptance")
+    solver.add_argument("--rows", type=Path, required=True)
+    solver.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "step1-prepare":
+            record = step1.prepare(manifest.load(args.recipe), args.poscar)
+            step1.write_inputs(record, args.output)
+            print(args.output / "config.json")
+            return 0
+        if args.command == "step1-wrap-partner":
+            record = step1.wrap_partner(manifest.load(args.config), args.q_frac)
+            step1.write_inputs(record, args.output)
+            print(args.output / "config.json")
+            return 0
+        if args.command == "step1-read":
+            config = manifest.load(args.config)
+            readback = step1.read_state(args.run, config, args.config)
+            references = manifest.load(args.references)
+            gate = step1.validate(config, readback, references.get("M_int"), references.get("MW_int"), args.common_z)
+            value = {"config": config, "readback": readback, "gate": gate}
+            manifest.save(value, args.output)
+            print(json.dumps({"passed": gate["passed"], "reasons": gate["reasons"]}, indent=2))
+            return 0 if gate["passed"] else 1
+        if args.command == "step1-row":
+            traces = manifest.load(args.traces)
+            if traces.get("axis") != manifest.load(args.plus)["config"]["axis"]:
+                raise ValueError("Trace operator axis must match design-row axis")
+            result = step1.paired(manifest.load(args.plus), manifest.load(args.minus),
+                                  manifest.load(args.basis)["bonds"], traces["plus_eV"],
+                                  traces["minus_eV"], traces.get("sigma_y_eV_per_site"))
+            result["trace_source"] = traces.get("source", "unverified")
+            manifest.save(result, args.output)
+            print(json.dumps(result, indent=2))
+            return 0
+        if args.command == "step1-fit":
+            result = step1.fit(manifest.load(args.rows)["rows"])
+            manifest.save(result, args.output)
+            print(json.dumps(result, indent=2))
+            return 0
         if args.command == "init-null":
             print(initialize(args.root, args.ref, args.dump_c, args.dump_p))
             return 0

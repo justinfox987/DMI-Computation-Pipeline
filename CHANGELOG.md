@@ -5,6 +5,32 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 final review follow-up (2026-09-30)
+
+- Rejected malformed or broadcastable QSPIRAL values at stored/requested/run/echo boundaries and mismatched per-species RWIGS between otherwise valid partners.
+- Kept zero-field states valid without claiming factor-two evidence below printed resolution; retained separate zero-field consistency and positive-signal Fe excerpt checks. See [final review log](docs/sessions/2026-09-30_0024Z-agent-step1-final-review.md). No production VASP validation.
+
+### Step 1 corrective review (2026-09-30)
+
+- Bound readback and row gates to checked config/run file hashes and re-read sphere
+  moments, checked stored q/target identity, and added safe CLI wrapped-partner
+  representation without changing physical targets.
+- Allowed one common-z pair-validation rotation while retaining raw model spins;
+  checked printed penalty and signed field against MW_int within decimal rounding;
+  required indexed terminal OSZICAR and final OUTCAR loop agreement or failed closed.
+  Synthetic tests are not VASP validation. See [corrective session log](docs/sessions/2026-09-30_0005Z-agent-step1-review-fixes.md).
+
+### Step 1 offline vector software path (2026-09-29)
+
+- Added versioned lab-frame target recipes and INCAR fragments, strict OSZICAR
+  sphere-moment readback with separate electronic convergence, signed realization
+  checks, one canonical cell-translation bond kernel and two-sided diagnostic rows.
+- Added offline CLI input/readback/row/weighted-solve entry points and synthetic
+  regression coverage while preserving the historical N0 manifest and trace.
+  Missing BFO symmetry basis, production trace/parity and noise evidence are
+  explicit blockers, not new validation passes. See [local usage](docs/STEP1_LOCAL_USAGE.md)
+  and the [implementation handoff](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md).
+
 ### Local baseline handoff (2026-09-29)
 
 - Audited the tracked N0-only baseline, recorded its local test result and
