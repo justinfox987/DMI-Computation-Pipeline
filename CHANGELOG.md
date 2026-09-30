@@ -5,6 +5,11 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 original-file reader repair handoff (2026-09-30)
+
+- Committed the reviewed reader repair for repeated OSZICAR sphere tables, SDA/CGA iterations, actual OUTCAR run banners and `Iteration I(E)` association, with distinct missing-summary and missing-OUTCAR-footer checks. The original Fe sample parses at ionic/electronic step 1/50 (95 sphere tables, one ionic summary); 17 focused and 52 total local software tests pass. No push.
+- The sample's requested both-Fe +x directions do not establish physical F0 realization, and zero lambda/field cannot verify a nonzero-lambda convention. No versioned config/reference-bound read, production gate or VASP job; see [real-sample handoff](docs/sessions/2026-09-30_1610Z-agent-step1-reader-real-sample.md).
+
 ### Step 1 final review follow-up (2026-09-30)
 
 - Rejected malformed or broadcastable QSPIRAL values at stored/requested/run/echo boundaries and mismatched per-species RWIGS between otherwise valid partners.

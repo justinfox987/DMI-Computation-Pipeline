@@ -20,9 +20,10 @@ RESOLUTION = 1e-8
 PENALTY_EV = 1e-3
 FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
 PENALTY = re.compile(r"\bE_p\s*=\s*(" + FLOAT + r")\s+lambda\s*=\s*(" + FLOAT + r")", re.I)
-ELECTRONIC = re.compile(r"^\s*(?:DAV|RMM|CG|DMP):\s*(\d+)\b", re.I)
+ELECTRONIC = re.compile(r"^\s*(?:DAV|RMM|CG|DMP|SDA|CGA):\s*(\d+)\b", re.I)
 SUMMARY = re.compile(r"^\s*(\d+)\s+F=")
 ITERATION = re.compile(r"Iteration\s+(\d+)\(\s*(\d+)\)")
+BANNER = re.compile(r"^[ \t]*vasp\.\S+", re.I | re.M)
 
 
 def printed_step(token):
@@ -262,12 +263,31 @@ def sphere(path, nions):
     if not field_headers and any(line.strip() for line in lines[p + 1:]):
         raise ValueError("Trailing data after terminal OSZICAR penalty")
     previous = [i for i, line in enumerate(lines[:start]) if SUMMARY.match(line)]
-    if len(headers) != len(previous) + 1:
-        raise ValueError("OSZICAR ionic steps missing sphere blocks or contain restarts")
-    electronic = [int(match.group(1)) for line in lines[(previous[-1] + 1 if previous else 0):start]
-                  if (match := ELECTRONIC.match(line))]
-    if not electronic or electronic[0] != 1 or electronic != list(range(1, electronic[-1] + 1)):
-        raise ValueError("Terminal OSZICAR electronic loop missing or ambiguous")
+    # VASP may print several sphere tables per electronic iteration; require
+    # complete tables and an indexed loop within each ionic step.
+    boundary = -1
+    for summary_line in previous + [f]:
+        step_headers = [i for i in headers if boundary < i < summary_line]
+        if not step_headers:
+            raise ValueError("OSZICAR ionic steps missing sphere blocks or contain restarts")
+        for header in step_headers:
+            for ion in range(nions):
+                row = lines[header + 1 + ion].split() if header + 1 + ion < summary_line else []
+                if len(row) != 7 or row[0] != str(ion + 1):
+                    raise ValueError("Incomplete OSZICAR ionic sphere block")
+                try:
+                    values = [float(x.replace("D", "E").replace("d", "e")) for x in row[1:]]
+                except ValueError as error:
+                    raise ValueError("Invalid OSZICAR sphere number") from error
+                if not np.all(np.isfinite(values)):
+                    raise ValueError("Nonfinite OSZICAR sphere moment")
+            if header + 1 + nions < summary_line and re.match(r"^\s*\d+\s+", lines[header + 1 + nions]):
+                raise ValueError("Duplicate or extra OSZICAR ionic sphere ion")
+        electronic = [int(match.group(1)) for line in lines[boundary + 1:summary_line]
+                      if (match := ELECTRONIC.match(line))]
+        if not electronic or electronic != list(range(1, electronic[-1] + 1)):
+            raise ValueError("OSZICAR electronic loop missing or ambiguous")
+        boundary = summary_line
     steps = [int(SUMMARY.match(lines[i]).group(1)) for i in previous + [f]]
     if steps != list(range(1, steps[-1] + 1)):
         raise ValueError("OSZICAR ionic summaries contain a restart or missing step")
@@ -315,21 +335,21 @@ def read_state(directory, record, config_path):
     if not np.allclose(numbers(tags["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
         raise ValueError("Requested M_CONSTR differs from versioned target vectors")
     outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
-    # Concatenated restarts cannot establish unique OSZICAR/OUTCAR provenance.
-    if outcar.count("General timing and accounting") != 1 or outcar.lower().count("vasp.") > 1:
+    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
+    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
         raise ValueError("Missing or ambiguous completed OUTCAR run segment")
     converged = outcar.rfind("aborting loop because EDIFF is reached")
     iterations = list(ITERATION.finditer(outcar))
     footer = outcar.rfind("General timing and accounting")
     if (not iterations or converged < iterations[-1].end() or converged > footer or
-            ITERATION.search(outcar[footer:]) or re.search(r"\bvasp\.", outcar[footer:], re.I)):
+            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
         raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
-    # OUTCAR Iteration E(I) prints electronic E first, ionic I second.
-    outcar_steps = [int(match.group(2)) for match in iterations if int(match.group(1)) == 1]
+    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
+    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
     if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
         raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
     for step in outcar_steps:
-        count = [int(match.group(1)) for match in iterations if int(match.group(2)) == step]
+        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
         if count != list(range(1, count[-1] + 1)):
             raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
     for echoed in re.findall(r"^\s*QSPIRAL\s*=\s*(.*)$", outcar, re.M):
@@ -339,7 +359,7 @@ def read_state(directory, record, config_path):
     _echo_check(directory)
     oszicar = directory / "OSZICAR"
     result = sphere(oszicar, len(record["species"]))
-    electronic, ionic = (int(x) for x in iterations[-1].groups())
+    ionic, electronic = (int(x) for x in iterations[-1].groups())
     if (result["ionic_steps"] != outcar_steps or
             (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
         raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
