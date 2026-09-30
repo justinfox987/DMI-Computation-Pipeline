@@ -1,12 +1,12 @@
 # Current project status
 
-**Last reconciled:** 2026-09-29 UTC, from the local Step 1 branch and [implementation log](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md); baseline [handoff finalization](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md) remains local.
+**Last reconciled:** 2026-09-30 UTC on the local Step 1 branch; corrective review [session log](docs/sessions/2026-09-30_0005Z-agent-step1-review-fixes.md) follows the [implementation log](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md). Baseline [handoff finalization](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md) remains local.
 
 **Code checkout inspected:** tracked `pipeline v3/` package, tests, N0 evidence and manifest; no production VASP revalidation.
 
 **Integration branch / base commit:** local `main` and `origin/main` at `e2b85cb422e327e0c17268b56ede5a79a649fd79` (initial project commit). Configured `origin`: `https://github.com/justinfox987/DMI-Computation-Pipeline.git`; no fetch or privacy check.
 
-**Handoff owner / branch / scope:** Zoo / `feat/dmi-step1-vectors` / DMI-01 offline lab-vector targets, sphere readback, canonical vector rows, CLI and tests; branched from local committed baseline `56288bf`, not from merged `main`. No branch pushed; one writer.
+**Handoff owner / branch / scope:** Zoo / `feat/dmi-step1-vectors` / focused review corrections (readback/row identity, pair rotation, penalty/field consistency, loop association, wrapped partner CLI) to local DMI-01 commit `7a5931b`; branched from local committed baseline `56288bf`, not from merged `main`. No branch pushed; one writer.
 
 **Preservation:** before audit, no tracked/staged edits; 6,504 Git-visible untracked file paths under `vasp files/` (ignored paths excluded), plus ignored local `pipeline v3/noq/` runs. The two full VASP distribution copies (6,466 paths, including testsuite data) are now ignored without moving or deleting them; 38 asset paths remain Git-visible and untracked, including the Patch B spec and smaller patch/source collections. Nothing under `vasp files/` was edited or staged. No remote privacy or synchronization check was made.
 
@@ -29,7 +29,7 @@ those locations in this checkout; N0 was not replayed.
 | ID | Work | Status | Owner / branch | Completion evidence |
 |---|---|---|---|---|
 | REPO-01 | Reconcile actual repo, baseline and safe tracking boundary | Local handoff and selective VASP-distribution ignore boundary finalized; remote privacy/sync and stale starter wording not verified | Zoo / `docs/repo-baseline-audit` (handoff only) | [Baseline audit](docs/sessions/2026-09-29_2003Z-agent-baseline-audit.md), [finalization](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md); untracked source/assets deliberately not staged |
-| DMI-01 | Step 1 offline vector migration | Local synthetic software path implemented; **not production-complete**: no vetted BFO symmetry fixture, trace/parity acceptance or measured noise/covariance | Zoo / `feat/dmi-step1-vectors` (local) | [Implementation log](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md), [offline usage](docs/STEP1_LOCAL_USAGE.md); production fit not accepted |
+| DMI-01 | Step 1 offline vector migration + corrective review | Local synthetic path and five review corrections implemented; **not production-complete**: no vetted BFO symmetry fixture, trace/parity acceptance or measured noise/covariance | Zoo / `feat/dmi-step1-vectors` (local) | [Implementation log](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md), [corrective log](docs/sessions/2026-09-30_0005Z-agent-step1-review-fixes.md), [offline usage](docs/STEP1_LOCAL_USAGE.md); production fit not accepted |
 | DMI-02 | Corrected constraint probe and pilot-only runner | Planned after DMI-01 integration | Unassigned | Local runner checks and production smoke-test evidence |
 | DMI-03 | Production operator, constraint and F0 pilots | Pending prerequisites | Unassigned | Matched executable/reference and recorded gate results |
 | DMI-04 | BFO campaign, paired fit and internal stability checks | Pending pilot results | Unassigned | Accepted dataset, fit and validation report |
@@ -41,13 +41,20 @@ lab targets, OSZICAR sphere readback, signed checks, canonical bond coefficients
 paired diagnostic rows and weighted numerical diagnostics. It cannot certify a
 production BFO fit; historical N0 remains schema 2 and unchanged. The legacy
 `FRAME_MCONSTR = FRAME_MINT = "unwound"` declaration is N0 forensic metadata,
-not a live Step 1 switch. Baseline: 35 tests; current suite: 40 local tests passed
-before final handoff checks. No new VASP run or N0 replay.
+not a live Step 1 switch. Baseline: 35 tests; current suite: 44 local tests passed
+before final handoff checks. Readback and row now recheck input/config/run hashes,
+indexed final-loop association and independent gate recomputation; this is not
+protection against deliberate file/record reconstruction or authentication of a
+production binary, parent restart, trace/basis or reference provenance. No new
+VASP run or N0 replay.
 
 ## Immediate next action
 
-Review and integrate the baseline `56288bf` and this focused Step 1 branch
-sequentially after remote privacy/synchronization review; do not push automatically.
+Review the corrective Step 1 diff and independently inspect actual indexed
+production OSZICAR/OUTCAR formatting and final-record association before using
+this diagnostic gate for any production campaign. Integrate baseline `56288bf`
+and this branch sequentially after remote privacy/synchronization review; do not
+push automatically.
 Keep the 38 remaining visible untracked VASP asset paths outside staging. Supply
 an independently verified canonical BFO bond/orbit basis, production executable
 identity, matching converged positive/negative parent and Patch B trace evidence,
@@ -78,6 +85,7 @@ implementation/tests. Second-order SOC remains deferred.
 - [Local handoff finalization and asset boundary](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md)
   on `docs/repo-baseline-audit`; not pushed.
 - [DMI-01 local software migration](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md); no production acceptance.
+- [DMI-01 five-issue corrective review](docs/sessions/2026-09-30_0005Z-agent-step1-review-fixes.md); no production validation.
 
 Keep this file a current snapshot. Detailed commands and attempts belong in
 session logs; durable reasons belong in DECISIONS.

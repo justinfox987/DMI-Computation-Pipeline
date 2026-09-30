@@ -20,6 +20,16 @@ RESOLUTION = 1e-8
 PENALTY_EV = 1e-3
 FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
 PENALTY = re.compile(r"\bE_p\s*=\s*(" + FLOAT + r")\s+lambda\s*=\s*(" + FLOAT + r")", re.I)
+ELECTRONIC = re.compile(r"^\s*(?:DAV|RMM|CG|DMP):\s*(\d+)\b", re.I)
+SUMMARY = re.compile(r"^\s*(\d+)\s+F=")
+ITERATION = re.compile(r"Iteration\s+(\d+)\(\s*(\d+)\)")
+
+
+def printed_step(token):
+    """Unit of the last printed decimal place, including Fortran exponents."""
+    mantissa, *exponent = re.split(r"[EeDd]", token)
+    decimals = len(mantissa.split(".")[1]) if "." in mantissa else 0
+    return 10.0 ** (int(exponent[0]) - decimals if exponent else -decimals)
 
 
 def vector(value, name):
@@ -92,6 +102,8 @@ def partner(q, target):
 
 def prepare(recipe, poscar):
     """Make a versioned input record; caller must supply radii and F1 policy."""
+    if "partner_q_frac" in recipe:
+        raise ValueError("Prepare cannot regenerate a wrapped partner; use step1-wrap-partner on a prepared negative record")
     species, _ = positions(poscar)
     indices = recipe["magnetic_indices"]
     q = vector(recipe["q_frac"], "q_frac")
@@ -143,6 +155,22 @@ def prepare(recipe, poscar):
             "tags": tags}
 
 
+def wrap_partner(record, q_frac):
+    """Represent an existing reflected partner at q plus an integer reciprocal shift."""
+    require_vector(record)
+    if record["side"] != "-":
+        raise ValueError("Only a prepared negative partner can be wrapped")
+    q = vector(q_frac, "partner q_frac")
+    delta = q - vector(record["q_frac"], "original q_frac")
+    if not np.allclose(delta, np.rint(delta), atol=1e-10, rtol=0):
+        raise ValueError("Partner q must differ by an integer reciprocal shift")
+    if np.allclose(q, np.rint(q), atol=1e-12):
+        raise ValueError("Generic-q model excludes reciprocal-lattice q")
+    updated = dict(record, q_frac=q.tolist(), tags=dict(record["tags"]))
+    updated["tags"]["QSPIRAL"] = " ".join(map(str, q))
+    return updated
+
+
 def write_inputs(record, directory):
     require_vector(record)
     directory = Path(directory)
@@ -171,7 +199,7 @@ def sphere(path, nions):
     if any(re.match(r"^\s*ion\s+MW_int\b", line, re.I) and i not in headers for i, line in enumerate(lines)):
         raise ValueError("Malformed OSZICAR sphere header")
     start = headers[-1]
-    mw, m, seen = [], [], set()
+    mw, m, mw_step, seen = [], [], [], set()
     end = start + 1
     for i in range(start + 1, len(lines)):
         parts = lines[i].split()
@@ -191,11 +219,12 @@ def sphere(path, nions):
         if not np.all(np.isfinite(values)):
             raise ValueError("Nonfinite OSZICAR sphere moment")
         mw.append(values[:3].tolist())
+        mw_step.append([printed_step(x) for x in parts[1:4]])
         m.append(values[3:].tolist())
         end = i + 1
     if len(seen) != nions:
         raise ValueError("Terminal OSZICAR sphere block ion count mismatch")
-    summary = [i for i in range(end, len(lines)) if re.match(r"^\s*\d+\s+F=", lines[i])]
+    summary = [i for i in range(end, len(lines)) if SUMMARY.match(lines[i])]
     if not summary:
         raise ValueError("Terminal sphere block has no final F= record")
     f = summary[0]
@@ -208,38 +237,60 @@ def sphere(path, nions):
         raise ValueError("Terminal OSZICAR record needs one printed E_p and lambda")
     p, match = penalties[0]
     ep, lam = (float(x.replace("D", "E").replace("d", "e")) for x in match.groups())
+    ep_step, lam_step = (printed_step(x) for x in match.groups())
     if not np.all(np.isfinite([ep, lam])) or lam < 0 or ep < 0:
         raise ValueError("Invalid OSZICAR penalty or lambda")
-    field = None
+    field, field_step = None, None
     field_headers = [i for i in range(p + 1, len(lines)) if re.match(r"^\s*ion\s+lambda\*MW_perp\s*$", lines[i], re.I)]
     if len(field_headers) > 1:
         raise ValueError("Ambiguous terminal OSZICAR field blocks")
     if field_headers:
-        field = []
+        field, field_step = [], []
         for ion in range(nions):
             row = lines[field_headers[0] + 1 + ion].split() if field_headers[0] + 1 + ion < len(lines) else []
             if len(row) != 4 or row[0] != str(ion + 1):
                 raise ValueError("Incomplete/duplicate terminal OSZICAR field")
             field.append([float(x.replace("D", "E").replace("d", "e")) for x in row[1:]])
+            field_step.append([printed_step(x) for x in row[1:]])
         if not np.all(np.isfinite(field)):
             raise ValueError("Nonfinite OSZICAR field")
-    # Do not use an earlier complete record if the terminal run is ambiguous.
-    if len(summary) != 1 or any(re.match(r"^\s*\d+\s+F=", line) for line in lines[p + 1:]):
+    # A preceding complete ionic step is allowed; no later electronic work is.
+    if len(summary) != 1 or any(SUMMARY.match(line) for line in lines[p + 1:]):
         raise ValueError("Ambiguous terminal OSZICAR record")
     if field_headers and any(line.strip() for line in lines[field_headers[0] + 1 + nions:]):
         raise ValueError("Trailing data after terminal OSZICAR field")
     if not field_headers and any(line.strip() for line in lines[p + 1:]):
         raise ValueError("Trailing data after terminal OSZICAR penalty")
+    previous = [i for i, line in enumerate(lines[:start]) if SUMMARY.match(line)]
+    if len(headers) != len(previous) + 1:
+        raise ValueError("OSZICAR ionic steps missing sphere blocks or contain restarts")
+    electronic = [int(match.group(1)) for line in lines[(previous[-1] + 1 if previous else 0):start]
+                  if (match := ELECTRONIC.match(line))]
+    if not electronic or electronic[0] != 1 or electronic != list(range(1, electronic[-1] + 1)):
+        raise ValueError("Terminal OSZICAR electronic loop missing or ambiguous")
+    steps = [int(SUMMARY.match(lines[i]).group(1)) for i in previous + [f]]
+    if steps != list(range(1, steps[-1] + 1)):
+        raise ValueError("OSZICAR ionic summaries contain a restart or missing step")
     return {"MW_int": mw, "M_int": m, "MW_norm": np.linalg.norm(mw, axis=1).tolist(),
             "M_norm": np.linalg.norm(m, axis=1).tolist(), "E_p_eV": ep, "lambda": lam,
-            "printed_field": field, "field_check": "unavailable" if field is None else "available",
-            "source": "OSZICAR", "lines": [start + 1, max(p + 1, (field_headers[0] + 1 + nions) if field_headers else p + 1)]}
+            "printed_field": field, "precision": {"MW_int": mw_step, "E_p_eV": ep_step,
+            "lambda": lam_step, "printed_field": field_step},
+            "source": "OSZICAR", "ionic_step": steps[-1], "ionic_steps": steps,
+            "electronic_step": electronic[-1],
+            "lines": [start + 1, max(p + 1, (field_headers[0] + 1 + nions) if field_headers else p + 1)]}
 
 
-def read_state(directory, record):
+def read_state(directory, record, config_path):
     """Check matching run inputs and independent final electronic convergence."""
     require_vector(record)
     directory = Path(directory)
+    config_path = Path(config_path)
+    if manifest.load(config_path) != record:
+        raise ValueError("Config file differs from requested record")
+    if not np.allclose(numbers(record["tags"]["QSPIRAL"]), vector(record["q_frac"], "stored q_frac"), atol=1e-9, rtol=0):
+        raise ValueError("Requested QSPIRAL differs from stored model q_frac")
+    if not np.allclose(numbers(record["tags"]["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
+        raise ValueError("Requested M_CONSTR differs from stored targets")
     if manifest.file_hash(directory / "POSCAR") != record["poscar_sha256"]:
         raise ValueError("POSCAR differs from the requested target")
     tags = incar(directory / "INCAR")
@@ -251,6 +302,8 @@ def read_state(directory, record):
                 raise ValueError(f"Run INCAR {key} differs from requested input")
         elif tags[key].strip().upper() != value.upper():
             raise ValueError(f"Run INCAR {key} differs from requested input")
+    if not np.allclose(numbers(tags["QSPIRAL"]), vector(record["q_frac"], "stored q_frac"), atol=1e-9, rtol=0):
+        raise ValueError("Run QSPIRAL differs from stored model q_frac")
     if poscar_species(directory / "POSCAR") != record["species"]:
         raise ValueError("Run species/order mismatch")
     if not np.allclose(numbers(tags["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
@@ -260,20 +313,33 @@ def read_state(directory, record):
     if outcar.count("General timing and accounting") != 1 or outcar.lower().count("vasp.") > 1:
         raise ValueError("Missing or ambiguous completed OUTCAR run segment")
     converged = outcar.rfind("aborting loop because EDIFF is reached")
-    iterations = [m.start() for m in re.finditer(r"Iteration\s+\d+\(\s*\d+\)", outcar)]
-    if converged < 0 or (iterations and converged < iterations[-1]):
-        raise ValueError("Final electronic loop did not reach EDIFF")
+    iterations = list(ITERATION.finditer(outcar))
+    footer = outcar.rfind("General timing and accounting")
+    if (not iterations or converged < iterations[-1].end() or converged > footer or
+            ITERATION.search(outcar[footer:]) or re.search(r"\bvasp\.", outcar[footer:], re.I)):
+        raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
+    # OUTCAR Iteration E(I) prints electronic E first, ionic I second.
+    outcar_steps = [int(match.group(2)) for match in iterations if int(match.group(1)) == 1]
+    if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
+        raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
+    for step in outcar_steps:
+        count = [int(match.group(1)) for match in iterations if int(match.group(2)) == step]
+        if count != list(range(1, count[-1] + 1)):
+            raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
     _echo_check(directory)
     oszicar = directory / "OSZICAR"
-    lines = oszicar.read_text(encoding="utf-8", errors="replace").splitlines()
-    if sum(bool(re.match(r"^\s*\d+\s+F=", line)) for line in lines) != 1:
-        raise ValueError("OSZICAR contains ambiguous concatenated run segments")
     result = sphere(oszicar, len(record["species"]))
+    electronic, ionic = (int(x) for x in iterations[-1].groups())
+    if (result["ionic_steps"] != outcar_steps or
+            (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
+        raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
     if not np.isclose(result["lambda"], numbers(tags["LAMBDA"])[0], atol=1e-10, rtol=1e-6):
         raise ValueError("Printed final lambda differs from requested LAMBDA")
     result["provenance"] = {"files": manifest.fingerprints(
-        [directory / name for name in ("POSCAR", "INCAR", "OUTCAR", "OSZICAR")]),
-        "outcar_final_ediff": True, "segment": "single completed OUTCAR run",
+        [config_path] + [directory / name for name in ("POSCAR", "INCAR", "OUTCAR", "OSZICAR")]),
+        "config_path": str(config_path.resolve()), "run_path": str(directory.resolve()),
+        "outcar_final_ediff": True, "final_step": [ionic, electronic],
+        "segment": "single completed OUTCAR run; matched terminal ionic/electronic step",
         "build_banner": outcar.splitlines()[0].strip(), "input_tags": record["tags"],
         "incar_echo": True}
     return result
@@ -281,8 +347,12 @@ def read_state(directory, record):
 
 def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=False):
     require_vector(record)
-    if not readback.get("provenance", {}).get("outcar_final_ediff"):
-        raise ValueError("Missing independent final OUTCAR EDIFF convergence evidence")
+    provenance = readback.get("provenance", {})
+    if not provenance.get("outcar_final_ediff") or not provenance.get("config_path") or not provenance.get("run_path"):
+        raise ValueError("Missing independently associated OSZICAR/OUTCAR readback provenance")
+    manifest.check_files(provenance["files"])
+    if read_state(provenance["run_path"], record, provenance["config_path"]) != readback:
+        raise ValueError("Stored sphere readback differs from verified run files")
     indices = record["magnetic_indices"]
     u = np.asarray(record["targets"], dtype=float)
     m, mw = (np.asarray(readback[key], dtype=float) for key in ("M_int", "MW_int"))
@@ -296,7 +366,9 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
     norms, weighted = np.linalg.norm(m, axis=1), np.linalg.norm(mw, axis=1)
     if any(norms[i] < RESOLUTION or weighted[i] < RESOLUTION for i in indices):
         reasons.append("collapsed magnetic sphere moment")
-        return {"passed": False, "reasons": reasons, "spins": None}
+        return {"passed": False, "reasons": reasons, "spins": None,
+                "references": {"M_int": moment_ref, "MW_int": weighted_ref},
+                "allow_common_z": common_z}
     spins = np.zeros_like(m)
     spins[indices] = m[indices] / norms[indices, None]
     offset = 0.0
@@ -338,6 +410,10 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
         raise ValueError("Invalid printed final penalty or lambda")
     if lam > 0 and ep >= PENALTY_EV:
         reasons.append("printed constraint penalty exceeds threshold")
+    precision = readback["precision"]
+    mw_error = np.asarray(precision["MW_int"], dtype=float) / 2
+    if mw_error.shape != mw.shape or np.any(mw_error <= 0):
+        raise ValueError("Missing printed MW_int precision")
     field = readback.get("printed_field")
     predicted = np.zeros_like(mw)
     perps = np.zeros_like(mw)
@@ -347,35 +423,52 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
         perps[ion] = perp
         predicted[ion] = 2 * lam * perp
         penalty += lam * np.dot(perp, perp)
-    if lam == 0 and ep > 1e-8:
-        reasons.append("nonzero penalty at zero lambda")
+    # Bound the penalty from the last printed MW_int and lambda digits, not a
+    # fixed percent tolerance that could accept contradictory small penalties.
+    perp_error = np.zeros_like(mw_error)
+    perp_error[indices] = mw_error[indices] + np.abs(u[indices]) * np.sum(np.abs(u[indices]) * mw_error[indices], axis=1)[:, None]
+    low = np.maximum(np.abs(perps) - perp_error, 0)
+    high = np.abs(perps) + perp_error
+    lam_error = precision["lambda"] / 2
+    ep_error = precision["E_p_eV"] / 2
+    penalty_low = max(0, lam - lam_error) * np.sum(low[indices] ** 2)
+    penalty_high = (lam + lam_error) * np.sum(high[indices] ** 2)
+    if ep + ep_error < penalty_low or ep - ep_error > penalty_high:
+        reasons.append("printed penalty disagrees with MW_int recomputation")
+    penalty_check = ("fail: MW_int/penalty contradiction" if "printed penalty disagrees with MW_int recomputation" in reasons
+                     else "pass: MW_int/penalty consistent within printed precision")
     field_check = {"status": "unavailable: no printed field"}
     if field is not None:
         printed = np.asarray(field, dtype=float)
-        if printed.shape != mw.shape or not np.all(np.isfinite(printed)):
+        field_error = np.asarray(precision["printed_field"], dtype=float) / 2
+        if printed.shape != mw.shape or field_error.shape != mw.shape or not np.all(np.isfinite(printed)):
             raise ValueError("Invalid printed field ion count or values")
-        if lam == 0:
-            field_check = {"status": "zero-lambda: factor cannot be measured"}
-            if np.max(np.abs(printed)) > 1e-6:
-                reasons.append("nonzero field at zero lambda")
-        elif np.linalg.norm(perps) > .01:
-            # The supplied Fe build prints 2*lambda*MW_perp despite its label.
-            factor = float(np.sum(printed * perps) / (lam * np.sum(perps * perps)))
-            field_check = {"status": "factor-two check", "printed_factor": factor}
-            if abs(factor - 2) > .1 or np.linalg.norm(printed[indices] - predicted[indices]) > .1 * np.linalg.norm(predicted[indices]):
-                reasons.append("printed field disagrees with factor-two convention")
-            # The field has more printed digits than the rounded sphere moments.
-            field_penalty = float(np.sum(np.square(printed[indices])) / (4 * lam))
-            field_check["field_E_p_eV"] = field_penalty
-            if abs(ep - field_penalty) > max(1e-6, .01 * ep):
+        field_check = {"status": "pass: factor-two field and penalty consistent"}
+        # Compare signed Cartesian components; magnitudes alone miss a reversed field.
+        field_tolerance = 2 * (lam + lam_error) * perp_error + 2 * lam_error * np.abs(perps)
+        if np.any(np.abs(printed - predicted) > field_tolerance + field_error):
+            field_check["status"] = "fail: printed field disagrees with MW_int"
+            reasons.append("printed field disagrees with factor-two convention")
+        field_penalty = float(np.sum(np.square(printed[indices])) / (4 * lam)) if lam > 0 else None
+        field_check["field_E_p_eV"] = field_penalty
+        if lam > lam_error:
+            fp_low = np.sum(np.maximum(np.abs(printed[indices]) - field_error[indices], 0) ** 2) / (4 * (lam + lam_error))
+            fp_high = np.sum((np.abs(printed[indices]) + field_error[indices]) ** 2) / (4 * (lam - lam_error))
+            if ep + ep_error < fp_low or ep - ep_error > fp_high:
+                field_check["status"] = "fail: printed penalty disagrees with field"
                 reasons.append("printed penalty disagrees with printed field")
+            if np.linalg.norm(perps[indices]) > np.linalg.norm(perp_error[indices]):
+                field_check["printed_factor"] = float(np.sum(printed[indices] * perps[indices]) /
+                                                       (lam * np.sum(perps[indices] ** 2)))
         else:
-            field_check = {"status": "unresolved: printed moment rounding limits factor check"}
-    # Printed M_int/MW_int are rounded: keep recomputation separate from final E_p.
+            field_check["status"] = ("fail: nonzero zero-lambda field" if "printed field disagrees with factor-two convention" in reasons
+                                     else "unavailable: lambda unresolved at printed precision")
     return {"passed": not reasons, "reasons": reasons, "spins": spins.tolist(),
             "phase_rms_deg": float(np.sqrt(np.mean(np.square(phase_errors)))) if phase_errors else None,
             "common_z_deg": float(np.rad2deg(offset)), "recomputed_E_p_eV": float(penalty),
-            "recomputed_field": predicted.tolist(), "field_check": field_check}
+            "recomputed_field": predicted.tolist(), "penalty_check": penalty_check,
+            "field_check": field_check, "references": {"M_int": moment_ref, "MW_int": weighted_ref},
+            "allow_common_z": common_z}
 
 
 def coefficients(spins, q_frac, axis, basis, magnetic_indices):
@@ -430,15 +523,28 @@ def paired(plus, minus, basis, trace_plus, trace_minus, sigma_y=None):
         raise ValueError("Partner q mismatch modulo reciprocal lattice")
     if not np.allclose(np.asarray(a["targets"]) * [1, -1, 1], b["targets"], atol=1e-10):
         raise ValueError("Partner target reflection mismatch")
-    if not plus["gate"]["passed"] or not minus["gate"]["passed"]:
-        raise ValueError("Both sphere realization gates must pass")
+    for state in (plus, minus):
+        gate = state["gate"]
+        if not gate.get("passed"):
+            raise ValueError("Both sphere realization gates must pass")
+        references = gate.get("references", {})
+        verified = validate(state["config"], state["readback"], references.get("M_int"),
+                            references.get("MW_int"), gate.get("allow_common_z", False))
+        if gate != verified or not verified["passed"]:
+            raise ValueError("Stored sphere gate differs from verified moments, inputs or references")
     if any(not np.isfinite(x) for x in (trace_plus, trace_minus)):
         raise ValueError("Nonfinite traces")
     n = len(a["magnetic_indices"])
     sp, sm = np.asarray(plus["gate"]["spins"]), np.asarray(minus["gate"]["spins"])
     threshold = np.cos(np.deg2rad(DIRECTION_DEG))
+    mirror_spins = sp * [1, -1, 1]
+    # Reflection reverses a z rotation: fit one common signed offset for the pair.
+    z = sum(complex(mirror_spins[i, 0], mirror_spins[i, 1]).conjugate() *
+            complex(sm[i, 0], sm[i, 1]) for i in a["magnetic_indices"])
+    offset = np.angle(z) if abs(z) > RESOLUTION and all(
+        state["gate"]["allow_common_z"] for state in (plus, minus)) else 0.0
     for ion in a["magnetic_indices"]:
-        mirror = sp[ion] * [1, -1, 1]
+        mirror = rotate_z(mirror_spins[ion], offset)
         if np.dot(mirror, sm[ion]) <= threshold:
             raise ValueError("Partner measured signed geometry mismatch")
         if np.linalg.norm(mirror[:2]) > RESOLUTION:

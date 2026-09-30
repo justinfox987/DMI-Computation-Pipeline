@@ -36,6 +36,10 @@ def main(argv=None) -> int:
     prepare.add_argument("--recipe", type=Path, required=True)
     prepare.add_argument("--poscar", type=Path, required=True)
     prepare.add_argument("--output", type=Path, required=True)
+    wrap = commands.add_parser("step1-wrap-partner", help="Shift prepared negative q without regenerating targets")
+    wrap.add_argument("--config", type=Path, required=True)
+    wrap.add_argument("--q-frac", type=float, nargs=3, required=True)
+    wrap.add_argument("--output", type=Path, required=True)
     state = commands.add_parser("step1-read", help="Read converged sphere moments and gate realization")
     state.add_argument("--config", type=Path, required=True)
     state.add_argument("--run", type=Path, required=True)
@@ -56,9 +60,14 @@ def main(argv=None) -> int:
             step1.write_inputs(record, args.output)
             print(args.output / "config.json")
             return 0
+        if args.command == "step1-wrap-partner":
+            record = step1.wrap_partner(manifest.load(args.config), args.q_frac)
+            step1.write_inputs(record, args.output)
+            print(args.output / "config.json")
+            return 0
         if args.command == "step1-read":
             config = manifest.load(args.config)
-            readback = step1.read_state(args.run, config)
+            readback = step1.read_state(args.run, config, args.config)
             references = manifest.load(args.references)
             gate = step1.validate(config, readback, references.get("M_int"), references.get("MW_int"), args.common_z)
             value = {"config": config, "readback": readback, "gate": gate}

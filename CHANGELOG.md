@@ -5,6 +5,16 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 corrective review (2026-09-30)
+
+- Bound readback and row gates to checked config/run file hashes and re-read sphere
+  moments, checked stored q/target identity, and added safe CLI wrapped-partner
+  representation without changing physical targets.
+- Allowed one common-z pair-validation rotation while retaining raw model spins;
+  checked printed penalty and signed field against MW_int within decimal rounding;
+  required indexed terminal OSZICAR and final OUTCAR loop agreement or failed closed.
+  Synthetic tests are not VASP validation. See [corrective session log](docs/sessions/2026-09-30_0005Z-agent-step1-review-fixes.md).
+
 ### Step 1 offline vector software path (2026-09-29)
 
 - Added versioned lab-frame target recipes and INCAR fragments, strict OSZICAR
