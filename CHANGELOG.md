@@ -5,6 +5,10 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Historical Fe q0 reference and full Step 1 readback (2026-10-05)
+
+- Recorded a converged q0 Fe sphere reference, a diagnostic F1 reconstruction of the historical +x/+x lambda=1 inputs, and the full CLI readback. The physical gate fails absolute weighted alignment, M_int norm drift and penalty limits; signed factor evidence passes, while the field/penalty same-update identity remains unavailable with a recorded interval gap. The generated config's T/F tokens fail literal comparison with historical True/False inputs, so the evidence includes a clearly labelled spelling-only historical config. No validator/tolerance or VASP change. See the [readback session](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md) and [evidence record](evidence/2026-10-05-fe-q0-step1-readback/README.md).
+
 ### Step 1 field and penalty diagnostics (2026-09-30)
 
 - Split signed factor-two evidence from the field/penalty identity in the existing Step 1 validator. The identity now records printed intervals and any gap at the requested coefficient matched to run inputs, with same-update interpretation unavailable until separately established. The lambda=1 Fe discrepancy remains visible; alignment and penalty acceptance limits are unchanged. Added a focused CGA-format regression and updated the spec/usage; 18 focused and 53 total local tests pass. See the [validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md). No VASP rerun or production acceptance.

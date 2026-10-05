@@ -1,0 +1,15 @@
+{
+  "id": "reader_test_2-historical-reconstruction",
+  "family": "F1",
+  "side": "+",
+  "q_frac": [0.25, 0, 0],
+  "axis": "z",
+  "magnetic_indices": [0, 1],
+  "signs": [1, 1],
+  "seed_magnitudes": [2.2, 2.2],
+  "rwigs": [1.5],
+  "lambda": 1.0,
+  "lzeroz": true,
+  "angle_deg": -45,
+  "f1_policy": "diagnostic"
+}

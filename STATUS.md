@@ -1,12 +1,12 @@
 # Current project status
 
-**Last reconciled:** 2026-09-30 UTC on local `feat/dmi-step1-vectors`, starting from `b9a3b09`; the [field/penalty validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md) and supporting audits are committed locally. It applies the preceding [source audit](docs/sessions/2026-09-30_1933Z-agent-step1-field-penalty-source-audit.md) after the [second real-file lambda=1 audit](docs/sessions/2026-09-30_1919Z-agent-step1-lambda1-real-file-audit.md). Earlier reader, implementation and baseline logs remain linked below. No push.
+**Last reconciled:** 2026-10-05 UTC on local `feat/dmi-step1-vectors`; the [q0 reference and full Step 1 readback](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md) now records a completed CLI gate failure for the historical Fe sample. The earlier [field/penalty validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md) and supporting audits are committed locally. No push.
 
-**Code checkout inspected:** tracked `pipeline v3/` reader and tests, existing status/usage/spec and original Fe file observations from both read-only sample checks; no production VASP acceptance, N0 replay or full Step 1 CLI read.
+**Code checkout inspected:** tracked `pipeline v3/` reader and tests, status/usage/spec and original Fe files. A full Step 1 CLI readback now exists for the lambda=1 sample with a converged q0 norm reference; its realization gate fails. No production VASP acceptance or N0 replay.
 
 **Integration branch / base commit:** local `main` and `origin/main` at `e2b85cb422e327e0c17268b56ede5a79a649fd79` (initial project commit). Configured `origin`: `https://github.com/justinfox987/DMI-Computation-Pipeline.git`; no fetch or privacy check.
 
-**Handoff owner / branch / scope:** Codex / `feat/dmi-step1-vectors` / field-versus-penalty validator follow-up, preserving Zoo's parser/test review and local commit starting at `99b26ee`. Branch descended from local committed baseline `56288bf`, not merged `main`. No push; one writer in this checkout.
+**Handoff owner / branch / scope:** Codex / `feat/dmi-step1-vectors` / DMI-01 historical Fe reference/readback, preserving Zoo's parser/test review and local commit starting at `99b26ee`. Branch descended from local committed baseline `56288bf`, not merged `main`. No push; one writer in this checkout.
 
 **Preservation:** before audit, no tracked/staged edits; 6,504 Git-visible untracked file paths under `vasp files/` (ignored paths excluded), plus ignored local `pipeline v3/noq/` runs. The two full VASP distribution copies (6,466 paths, including testsuite data) are now ignored without moving or deleting them; 38 asset paths remain Git-visible and untracked, including the Patch B spec and smaller patch/source collections. Nothing under `vasp files/` was edited or staged. No remote privacy or synchronization check was made.
 
@@ -29,7 +29,7 @@ those locations in this checkout; N0 was not replayed.
 | ID | Work | Status | Owner / branch | Completion evidence |
 |---|---|---|---|---|
 | REPO-01 | Reconcile actual repo, baseline and safe tracking boundary | Local handoff and selective VASP-distribution ignore boundary finalized; remote privacy/sync and stale starter wording not verified | Zoo / `docs/repo-baseline-audit` (handoff only) | [Baseline audit](docs/sessions/2026-09-29_2003Z-agent-baseline-audit.md), [finalization](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md); untracked source/assets deliberately not staged |
-| DMI-01 | Step 1 offline vector migration + real-file reader follow-up | Reader repair and field/penalty diagnostic follow-up committed locally. Original Fe OSZICAR parses, but its requested +x state is physically misaligned and no versioned config/reference-bound read or production gate was run. **Not production-complete**: no vetted BFO symmetry fixture, trace/parity acceptance or measured noise/covariance | Codex (current), Zoo (prior) / `feat/dmi-step1-vectors` (local) | [Field/penalty validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md), [real-sample reader log](docs/sessions/2026-09-30_1610Z-agent-step1-reader-real-sample.md), [implementation](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md), [offline usage](docs/STEP1_LOCAL_USAGE.md); no production fit accepted |
+| DMI-01 | Step 1 offline vector migration + real-file reader follow-up | Reader repair and field/penalty diagnostic follow-up committed locally. Full config/reference-bound CLI readback of historical Fe run completed with a converged q0 norm reference and **failed** weighted alignment, M_int drift and penalty gates. Direct generated-config read is blocked by literal T/F versus True/False comparison; a documented historical config copy allowed the full read. **Not production-complete**: no vetted BFO symmetry fixture, trace/parity acceptance or measured noise/covariance | Codex (current), Zoo (prior) / `feat/dmi-step1-vectors` (local) | [q0 readback handoff](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md), [evidence record](evidence/2026-10-05-fe-q0-step1-readback/README.md), [field/penalty validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md), [offline usage](docs/STEP1_LOCAL_USAGE.md); no production fit accepted |
 | DMI-02 | Corrected constraint probe and pilot-only runner | Planned after DMI-01 integration | Unassigned | Local runner checks and production smoke-test evidence |
 | DMI-03 | Production operator, constraint and F0 pilots | Pending prerequisites | Unassigned | Matched executable/reference and recorded gate results |
 | DMI-04 | BFO campaign, paired fit and internal stability checks | Pending pilot results | Unassigned | Accepted dataset, fit and validation report |
@@ -74,11 +74,18 @@ now records the signed factor result and the disjoint identity intervals
 separately at the matched requested coefficient. Identity status stays
 unavailable for same-update interpretation until that association is evidenced;
 no CGA-wide exemption or tolerance increase was added. The nominal alignment
-and penalty acceptance limits remain. Supply a matching schema-3
-configuration and independent same-definition, same-RWIGS `M_int` and `MW_int`
-reference norms; only then run `step1-read` to an approved output path and report
-observed gates (never assume PASS). Verify production indexed files/build before
-any campaign; the OUTCAR iteration-order sentence in [offline usage](docs/STEP1_LOCAL_USAGE.md)
+and penalty acceptance limits remain. The [2026-10-05 q0 readback](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md)
+supplied a reconstructed schema-3 configuration and independent same-definition,
+same-RWIGS `M_int` and `MW_int` reference norms. The full CLI gate failed
+absolute MW_int alignment on both sites (1.391 degrees), M_int norm drift
+(6.018% versus 5%), and printed penalty
+(0.0039272 eV versus 0.001 eV). The independent reference is converged at q0
+with matching POSCAR and RWIGS; generated T/F tags required a documented
+historical True/False config copy because the current reader compares raw
+logical spellings. Preserve the failed state as diagnostic evidence and resolve
+the reader's logical-token contract before an unchanged prepare-to-read workflow.
+Verify production indexed files/build before any campaign; the OUTCAR
+iteration-order sentence in [offline usage](docs/STEP1_LOCAL_USAGE.md)
 was corrected in the earlier local commit.
 Integrate baseline `56288bf` and this branch sequentially after remote
 privacy/synchronization review; do not push automatically. Keep untracked VASP
@@ -95,7 +102,7 @@ README/setup wording belongs to separately scoped integration.
 - `pipeline v3/acceptance/` paths named in the historical manifest are missing
   at the recorded locations; N0 evidence has not been freshly revalidated.
 - Perlmutter executable path/hash and source/build identity.
-- Matching reference and job template.
+- Matching production reference and job template (the diagnostic Fe q0 reference does not cover BFO production).
 - Validated sphere radii, F1 LZEROZ policy and F2 initialization.
 - Paired trace convergence/noise settings and genuine SOC-axis validation.
 
@@ -116,6 +123,7 @@ implementation/tests. Second-order SOC remains deferred.
 - [DMI-01 second real-file lambda=1 read-only audit](docs/sessions/2026-09-30_1919Z-agent-step1-lambda1-real-file-audit.md); printed factor-two/sign supported at moment precision, field/penalty caveat and failing nominal alignment/penalty recorded; no production acceptance.
 - [DMI-01 field/penalty source audit](docs/sessions/2026-09-30_1933Z-agent-step1-field-penalty-source-audit.md); source shows cached penalty and later MW refresh, fixed LAMBDA path, and exact-lambda printed interval mismatch; no source/binary authentication or production acceptance.
 - [DMI-01 field/penalty validator follow-up](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md); signed factor and numerical identity separated without loosening bounds; 18 focused and 53 total local tests passed, no VASP rerun.
+- [DMI-01 q0 reference and full historical Fe readback](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md); independent reference norms and failed physical gate recorded, with generated-config logical spelling limitation and ignored local state path. No VASP rerun.
 
 Keep this file a current snapshot. Detailed commands and attempts belong in
 session logs; durable reasons belong in DECISIONS.
