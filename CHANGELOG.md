@@ -5,6 +5,10 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Single-directory Step 1 pilot preparation (2026-10-19)
+
+- Extended existing `step1-prepare`/`write_inputs` with shared material assembly: generated tags override the base INCAR once, while POSCAR/KPOINTS/POTCAR and a supplied launch template are copied unchanged. The default launch template is current-directory job.sh; its absence is explicitly reported as review-only. Existing fragment-only preparation remains available. A local ferromagnetic Fe F0 candidate is prepared with consistent targets/config/INCAR, with launch availability and inherited cutoff/resource choices recorded for review. See the [preparation handoff](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md). No scheduler, VASP execution or physical acceptance change.
+
 ### Step 1 logical INCAR equivalence (2026-10-19)
 
 - Reused the shared strict logical parser for the four Step 1 run/config boolean tags. A prepared T/F config now reads the original Fe True/False INCAR without a config edit; invalid or opposite boolean values still fail. The full real-file CLI readback reproduces the same failed physical gate and field/penalty diagnostics with unchanged thresholds. See the [follow-up session](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md). No VASP rerun.

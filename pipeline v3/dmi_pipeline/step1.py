@@ -11,7 +11,7 @@ import numpy as np
 
 from . import manifest
 from .realized import incar, logical, numbers, poscar_species
-from .workflow import _echo_check
+from .workflow import INCAR_TAGS, _echo_check
 
 CONVENTION = "lab-oszicar-sphere-v1"
 DIRECTION_DEG = 1.0
@@ -172,14 +172,41 @@ def wrap_partner(record, q_frac):
     return updated
 
 
-def write_inputs(record, directory):
+def write_inputs(record, directory, inputs=None, job_template=None):
+    """Write generated tags, optionally assembling shared VASP material inputs."""
     require_vector(record)
     directory = Path(directory)
     if directory.exists() and any(directory.iterdir()):
         raise ValueError("Input destination must be empty; do not overwrite a VASP run")
+    files, tags = {}, None
+    if inputs is not None:
+        inputs = Path(inputs)
+        tags = incar(inputs / "INCAR")
+        if not tags:
+            raise ValueError("Shared INCAR is empty")
+        unknown = set(tags) - INCAR_TAGS
+        if unknown:
+            raise ValueError(f"Unreviewed INCAR tags: {sorted(unknown)}")
+        tags.update(record["tags"])
+        for name in ("POSCAR", "KPOINTS", "POTCAR"):
+            files[name] = (inputs / name).read_bytes()
+            if not files[name].strip():
+                raise ValueError(f"Shared {name} is empty")
+        if manifest.file_hash(inputs / "POSCAR") != record["poscar_sha256"]:
+            raise ValueError("Shared POSCAR differs from the requested target")
+    if job_template is not None:
+        if inputs is None:
+            raise ValueError("A job template requires shared material inputs")
+        files["job.sh"] = Path(job_template).read_bytes()
+        if not files["job.sh"].strip():
+            raise ValueError("Job template is empty")
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "INCAR.step1").write_text("".join(f"{k} = {v}\n" for k, v in record["tags"].items()), encoding="utf-8")
     manifest.save(record, directory / "config.json")
+    if tags is not None:
+        (directory / "INCAR").write_text("".join(f"{k} = {v}\n" for k, v in tags.items()), encoding="utf-8")
+    for name, content in files.items():
+        (directory / name).write_bytes(content)
 
 
 def require_vector(record):

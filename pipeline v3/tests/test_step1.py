@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 
 from dmi_pipeline import manifest, step1
+from dmi_pipeline.__main__ import main
+from dmi_pipeline.realized import incar, numbers
 
 
 FE_FREE = """ ion        MW_int                 M_int
@@ -79,6 +81,57 @@ def test_target_numeric_and_partner_wrap(tmp_path):
     bad_recipe["partner_q_frac"] = [.75, 0, 0]
     with pytest.raises(ValueError, match="cannot regenerate"):
         step1.prepare(bad_recipe, path)
+
+
+def test_cli_prepare_shared_inputs_keeps_generated_magnetism_authoritative(tmp_path, monkeypatch, capsys):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    poscar(shared / "POSCAR")
+    (shared / "INCAR").write_text("ENCUT = 550\nISTART = 0\nICHARG = 2\n"
+                                 "MAGMOM = 9 9 9\nM_CONSTR = 0 0 0\nLSPIRAL = False\n")
+    (shared / "KPOINTS").write_bytes(b"test\n0\nGamma\n5 5 5\n0 0 0\n")
+    recipe_path = tmp_path / "recipe.json"
+    manifest.save(recipe("F0"), recipe_path)
+    job = tmp_path / "job.sh"
+    job.write_bytes(b"#!/bin/bash\nset -e\nsrun vasp_ncl > output.log\n")
+    dest = tmp_path / "pilot"
+    args = ("step1-prepare", "--recipe", recipe_path, "--inputs", shared,
+            "--job-template", job, "--output", dest)
+    base_incar = (shared / "INCAR").read_text()
+    (shared / "INCAR").write_text("")
+    empty = run_cli(*args)
+    assert empty.returncode != 0 and "Shared INCAR is empty" in empty.stderr
+    assert not dest.exists()
+    (shared / "INCAR").write_text(base_incar)
+    missing = run_cli(*args)
+    assert missing.returncode != 0 and "POTCAR" in missing.stderr
+    assert not dest.exists()
+    (shared / "POTCAR").write_bytes(b"synthetic potential; not VASP data\n")
+    result = run_cli(*args)
+    assert result.returncode == 0, result.stderr
+    config = manifest.load(dest / "config.json")
+    tags = incar(dest / "INCAR")
+    assert all(tags[key] == value for key, value in config["tags"].items())
+    assert tags["ENCUT"] == "550" and tags["ICHARG"] == "2"
+    assert numbers(tags["M_CONSTR"]).reshape(-1, 3) == pytest.approx(np.asarray(config["targets"]))
+    for name in ("POSCAR", "KPOINTS", "POTCAR"):
+        assert (dest / name).read_bytes() == (shared / name).read_bytes()
+    assert (dest / "job.sh").read_bytes() == job.read_bytes()
+    before = manifest.file_hash(dest / "INCAR")
+    repeat = run_cli(*args)
+    assert repeat.returncode != 0 and "do not overwrite" in repeat.stderr
+    assert manifest.file_hash(dest / "INCAR") == before
+    monkeypatch.chdir(tmp_path)
+    default_dest = tmp_path / "default-pilot"
+    assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
+                 "--output", str(default_dest)]) == 0
+    assert (default_dest / "job.sh").read_bytes() == job.read_bytes()
+    job.unlink()
+    review_dest = tmp_path / "review-only"
+    assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
+                 "--output", str(review_dest)]) == 0
+    assert (review_dest / "INCAR").is_file() and not (review_dest / "job.sh").exists()
+    assert "inputs prepared for review only" in capsys.readouterr().err
 
 
 def synthetic_readback(tmp_path, config, moments, weighted, ep=0, lam=0, field=None,
