@@ -10,7 +10,7 @@ import re
 import numpy as np
 
 from . import manifest
-from .realized import incar, numbers, poscar_species
+from .realized import incar, logical, numbers, poscar_species
 from .workflow import _echo_check
 
 CONVENTION = "lab-oszicar-sphere-v1"
@@ -325,6 +325,9 @@ def read_state(directory, record, config_path):
                 raise ValueError("Run INCAR QSPIRAL differs from requested input")
         elif key in {"MAGMOM", "M_CONSTR", "RWIGS", "LAMBDA", "SAXIS"}:
             if not np.allclose(numbers(tags[key]), numbers(value), atol=1e-9, rtol=0):
+                raise ValueError(f"Run INCAR {key} differs from requested input")
+        elif key in {"LNONCOLLINEAR", "LSORBIT", "LSPIRAL", "LZEROZ"}:
+            if logical(tags, key) != logical(record["tags"], key):
                 raise ValueError(f"Run INCAR {key} differs from requested input")
         elif tags[key].strip().upper() != value.upper():
             raise ValueError(f"Run INCAR {key} differs from requested input")

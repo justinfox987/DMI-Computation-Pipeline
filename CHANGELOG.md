@@ -5,6 +5,10 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 logical INCAR equivalence (2026-10-19)
+
+- Reused the shared strict logical parser for the four Step 1 run/config boolean tags. A prepared T/F config now reads the original Fe True/False INCAR without a config edit; invalid or opposite boolean values still fail. The full real-file CLI readback reproduces the same failed physical gate and field/penalty diagnostics with unchanged thresholds. See the [follow-up session](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md). No VASP rerun.
+
 ### Historical Fe q0 reference and full Step 1 readback (2026-10-05)
 
 - Recorded a converged q0 Fe sphere reference, a diagnostic F1 reconstruction of the historical +x/+x lambda=1 inputs, and the full CLI readback. The physical gate fails absolute weighted alignment, M_int norm drift and penalty limits; signed factor evidence passes, while the field/penalty same-update identity remains unavailable with a recorded interval gap. The generated config's T/F tokens fail literal comparison with historical True/False inputs, so the evidence includes a clearly labelled spelling-only historical config. No validator/tolerance or VASP change. See the [readback session](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md) and [evidence record](evidence/2026-10-05-fe-q0-step1-readback/README.md).

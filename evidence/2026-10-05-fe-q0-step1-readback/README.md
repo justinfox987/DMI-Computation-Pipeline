@@ -85,3 +85,17 @@ inspected path. The exact GPU executable's source/build identity is unavailable,
 so this timing explanation does not authenticate this run or exempt other CGA
 calculations. The failed realization gate prevents using this state as an
 accepted parent or paired Step 1 row.
+
+## 2026-10-19 logical input comparison follow-up
+
+The initial `T/F` versus `True/False` failure and the historical config above
+record the 2026-10-05 code behavior. The [focused follow-up](../../docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md)
+reused the shared strict logical parser in `step1-read`. The unmodified
+[prepared/config.json](prepared/config.json) now reaches the physical gate
+against the original run and [references.json](references.json). It produces
+the same gate and readback moments as the historical-config read; the overall
+result remains FAIL for both absolute MW_int alignments, M_int norm drift, and
+the printed penalty threshold. The new ignored local output is
+`artifacts/local/2026-10-05-fe-q0-step1-readback/state-prepared.json`, SHA-256
+`28f10cc939d6fd70a34ad2535d60b66166e9dac13179cacf6accc5e0d9337530`.
+The spelling-only historical config remains as an audit artifact.

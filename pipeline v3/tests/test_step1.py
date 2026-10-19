@@ -108,6 +108,38 @@ def synthetic_readback(tmp_path, config, moments, weighted, ep=0, lam=0, field=N
     return step1.read_state(tmp_path, config, config_path)
 
 
+def test_read_state_compares_logical_meaning_and_rejects_invalid_values(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    targets = np.asarray(config["targets"])
+    run = tmp_path / "run"
+    synthetic_readback(run, config, 2 * targets, 1.8 * targets)
+    config_path = run / "config.json"
+    incar_path, outcar_path = run / "INCAR", run / "OUTCAR"
+    incar_text, outcar_text = incar_path.read_text(), outcar_path.read_text()
+    historical = {"LNONCOLLINEAR": "True", "LSORBIT": "False",
+                  "LSPIRAL": "True", "LZEROZ": "True"}
+    for key, spelling in historical.items():
+        original = f"{key} = {config['tags'][key]}"
+        replacement = f"{key} = {spelling}"
+        incar_text = incar_text.replace(original, replacement)
+        outcar_text = outcar_text.replace(original, replacement)
+    incar_path.write_text(incar_text)
+    outcar_path.write_text(outcar_text)
+    assert step1.read_state(run, config, config_path)["provenance"]["incar_echo"]
+
+    incar_path.write_text(incar_text.replace("LSORBIT = False", "LSORBIT = True"))
+    with pytest.raises(ValueError, match="Run INCAR LSORBIT differs"):
+        step1.read_state(run, config, config_path)
+    incar_path.write_text(incar_text.replace("LSORBIT = False", "LSORBIT = INVALID"))
+    with pytest.raises(ValueError, match="Invalid logical LSORBIT"):
+        step1.read_state(run, config, config_path)
+    incar_path.write_text(incar_text)
+    config["tags"]["LZEROZ"] = "INVALID"
+    manifest.save(config, config_path)
+    with pytest.raises(ValueError, match="Invalid logical LZEROZ"):
+        step1.read_state(run, config, config_path)
+
+
 def test_parser_excerpts_are_not_convergence_evidence(tmp_path):
     file = tmp_path / "OSZICAR"
     file.write_text(FE_FREE)
