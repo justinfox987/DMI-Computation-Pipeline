@@ -108,6 +108,38 @@ def synthetic_readback(tmp_path, config, moments, weighted, ep=0, lam=0, field=N
     return step1.read_state(tmp_path, config, config_path)
 
 
+def test_read_state_compares_logical_meaning_and_rejects_invalid_values(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    targets = np.asarray(config["targets"])
+    run = tmp_path / "run"
+    synthetic_readback(run, config, 2 * targets, 1.8 * targets)
+    config_path = run / "config.json"
+    incar_path, outcar_path = run / "INCAR", run / "OUTCAR"
+    incar_text, outcar_text = incar_path.read_text(), outcar_path.read_text()
+    historical = {"LNONCOLLINEAR": "True", "LSORBIT": "False",
+                  "LSPIRAL": "True", "LZEROZ": "True"}
+    for key, spelling in historical.items():
+        original = f"{key} = {config['tags'][key]}"
+        replacement = f"{key} = {spelling}"
+        incar_text = incar_text.replace(original, replacement)
+        outcar_text = outcar_text.replace(original, replacement)
+    incar_path.write_text(incar_text)
+    outcar_path.write_text(outcar_text)
+    assert step1.read_state(run, config, config_path)["provenance"]["incar_echo"]
+
+    incar_path.write_text(incar_text.replace("LSORBIT = False", "LSORBIT = True"))
+    with pytest.raises(ValueError, match="Run INCAR LSORBIT differs"):
+        step1.read_state(run, config, config_path)
+    incar_path.write_text(incar_text.replace("LSORBIT = False", "LSORBIT = INVALID"))
+    with pytest.raises(ValueError, match="Invalid logical LSORBIT"):
+        step1.read_state(run, config, config_path)
+    incar_path.write_text(incar_text)
+    config["tags"]["LZEROZ"] = "INVALID"
+    manifest.save(config, config_path)
+    with pytest.raises(ValueError, match="Invalid logical LZEROZ"):
+        step1.read_state(run, config, config_path)
+
+
 def test_parser_excerpts_are_not_convergence_evidence(tmp_path):
     file = tmp_path / "OSZICAR"
     file.write_text(FE_FREE)
@@ -134,6 +166,9 @@ def test_parser_excerpts_are_not_convergence_evidence(tmp_path):
         file.write_text(text)
         with pytest.raises(ValueError, match=error):
             step1.sphere(file, 2)
+    file.write_text(" DAV: 1 -1\n" + FE_FREE[:FE_FREE.index("  1 F=")])
+    with pytest.raises(ValueError, match="no final F="):
+        step1.sphere(file, 2)
     file.write_text(" DAV: 1 -1\n" + FE_FREE + " DAV: 1 -1\n" + FE_CONSTRAINED)
     with pytest.raises(ValueError, match="restart|missing|ambiguous"):
         step1.sphere(file, 2)
@@ -193,7 +228,39 @@ def test_signed_gates_and_weighted_distinction(tmp_path):
     assert "printed constraint penalty exceeds threshold" in fe_gate["reasons"]
     assert "ion 1 absolute weighted alignment" in fe_gate["reasons"]
     assert fe_gate["penalty_check"].startswith("pass")
-    assert fe_gate["field_check"]["status"] == "pass: factor-two field and penalty consistent"
+    assert fe_gate["field_check"]["status"] == "pass: factor-two signed field"
+    assert fe_gate["field_check"]["identity"]["observed"] == "overlap"
+    assert fe_gate["field_check"]["identity"]["status"].startswith("unavailable: same-update")
+
+
+def test_field_factor_and_penalty_identity_remain_distinct(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    config["targets"] = [[1, 0, 0], [1, 0, 0], [0, 0, 0]]
+    run = tmp_path / "discrepant"
+    synthetic_readback(run, config,
+        [[2.259, -.033, 0], [2.259, .033, 0], [0, 0, 0]],
+        [[1.812, -.044, 0], [1.812, .044, 0], [0, 0, 0]],
+        .0039272, 1, [[0, -.088629, 0], [0, .088629, 0], [0, 0, 0]], mw_digits=3)
+    oszicar = run / "OSZICAR"
+    text = oszicar.read_text().replace(
+        "E_p = 3.92720000E-03 lambda = 1.00000000E+00",
+        "E_p = 0.39272E-02 lambda = 0.100E+01")
+    text = text.replace("DAV: 1", "CGA: 1")
+    text = text.replace("-8.862900000E-02", "-0.88629E-01").replace("8.862900000E-02", "0.88629E-01")
+    oszicar.write_text(text)
+    read = step1.read_state(run, config, run / "config.json")
+    gate = step1.validate(config, read, read["M_norm"][:2], read["MW_norm"][:2])
+    field = gate["field_check"]
+    assert field["status"] == "pass: factor-two signed field"
+    assert field["printed_factor"] == pytest.approx(2, abs=.02)
+    assert field["coefficient"] == 1.0
+    assert field["field_E_p_eV"] == pytest.approx(.0039275498205)
+    assert field["identity"]["observed"] == "disjoint"
+    assert field["identity"]["gap_eV"] == pytest.approx(2.55506125e-7)
+    assert field["identity"]["status"].startswith("unavailable: same-update")
+    assert "printed penalty disagrees with printed field" not in gate["reasons"]
+    assert "printed constraint penalty exceeds threshold" in gate["reasons"]
+    assert "ion 1 absolute weighted alignment" in gate["reasons"]
 
 
 def test_penalty_field_precision_and_absent_field(tmp_path):
@@ -206,6 +273,7 @@ def test_penalty_field_precision_and_absent_field(tmp_path):
     assert gate["passed"] and gate["penalty_check"].startswith("pass")
     assert gate["field_check"]["status"].startswith("unavailable: factor-two")
     assert gate["field_check"]["consistency"].startswith("pass: zero/small field")
+    assert gate["field_check"]["identity"]["status"].startswith("unavailable: same-update")
     assert "printed_factor" not in gate["field_check"]
     no_field = synthetic_readback(tmp_path / "absent", config, m, mw, lam=1)
     assert step1.validate(config, no_field, [2, 2], [1.8, 1.8])["field_check"]["status"].startswith("unavailable")
@@ -294,6 +362,9 @@ def test_final_loop_association_and_stale_evidence(tmp_path):
     synthetic_readback(run, config, m, mw)
     outcar, oszicar = run / "OUTCAR", run / "OSZICAR"
     clean_outcar, clean_oszicar = outcar.read_text(), oszicar.read_text()
+    outcar.write_text(clean_outcar.replace("General timing and accounting", ""))
+    with pytest.raises(ValueError, match="completed OUTCAR"):
+        step1.read_state(run, config, run / "config.json")
     # Two electronic loops with the same terminal ionic ID are not a proven match.
     outcar.write_text(clean_outcar.replace("aborting loop because EDIFF is reached",
                      "aborting loop because EDIFF is reached\nIteration 1( 1)\naborting loop because EDIFF is reached"))
@@ -317,12 +388,103 @@ def test_final_loop_association_and_stale_evidence(tmp_path):
     with pytest.raises(ValueError, match="restart|missing|associate"):
         step1.read_state(run, config, run / "config.json")
     outcar.write_text(clean_outcar.replace("General timing and accounting",
-                     "Iteration 1( 2)\naborting loop because EDIFF is reached\nGeneral timing and accounting"))
+                     "Iteration 2( 1)\naborting loop because EDIFF is reached\nGeneral timing and accounting"))
     oszicar.write_text(clean_oszicar + clean_oszicar.replace(" 1 F=", " 2 F="))
     # A complete ordered two-step record is distinguishable by the ionic IDs.
     assert step1.read_state(run, config, run / "config.json")["ionic_steps"] == [1, 2]
     oszicar.write_text(clean_oszicar + clean_oszicar)
     with pytest.raises(ValueError, match="restart|missing|associate"):
+        step1.read_state(run, config, run / "config.json")
+
+
+def test_repeated_ionic_sphere_tables_and_electronic_restart(tmp_path):
+    file = tmp_path / "OSZICAR"
+    table = FE_FREE[:FE_FREE.index("  1 F=")]
+    ep_field = FE_FREE[FE_FREE.index(" E_p ="):]
+    file.write_text(" DAV: 1 -1\n" + table + " SDA: 2 -1\n" + table +
+                    " 1 F= -1\n" + ep_field + " DAV: 1 -1\n" + table.replace("2.073", "2.074") +
+                    " CGA: 2 -1\n" + table.replace("2.073", "2.074") +
+                    " 2 F= -1\n" + ep_field)
+    result = step1.sphere(file, 2)
+    assert result["ionic_steps"] == [1, 2]
+    assert result["electronic_step"] == 2
+    assert result["M_int"][0][0] == 2.074
+    file.write_text(file.read_text().replace(" CGA: 2 -1", " CGA: 3 -1"))
+    with pytest.raises(ValueError, match="electronic loop"):
+        step1.sphere(file, 2)
+    file.write_text(file.read_text().replace(" 2 F= -1", " ion MW_int M_int\n 1 0 0 0 0 0 0\n 2 F= -1"))
+    with pytest.raises(ValueError, match="ion count mismatch"):
+        step1.sphere(file, 2)
+    file.write_text(" DAV: 1 -1\n" + table + " ion MW_int M_int\n 1 0 0 0 0 0 0\n 1 F= -1\n" +
+                    ep_field + " DAV: 1 -1\n" + table + " 2 F= -1\n" + ep_field)
+    with pytest.raises(ValueError, match="Incomplete OSZICAR ionic sphere"):
+        step1.sphere(file, 2)
+
+
+@pytest.mark.parametrize("corruption, token", [("NaN", "1.668"), ("Inf", "2.073"),
+                                             ("duplicate", None)])
+def test_earlier_sphere_table_corruption(tmp_path, corruption, token):
+    file = tmp_path / "OSZICAR"
+    table = FE_FREE[:FE_FREE.index("  1 F=")]
+    ep_field = FE_FREE[FE_FREE.index(" E_p ="):]
+    original = " DAV: 1 -1\n" + table + " 1 F= -1\n" + ep_field + " DAV: 1 -1\n" + table + " 2 F= -1\n" + ep_field
+    file.write_text(original)
+    assert step1.sphere(file, 2)["ionic_steps"] == [1, 2]
+    earlier = table.replace(token, corruption, 1) if token else table + table.splitlines()[-1] + "\n"
+    file.write_text(original.replace(table, earlier, 1))
+    with pytest.raises(ValueError, match="Nonfinite|Duplicate or extra"):
+        step1.sphere(file, 2)
+
+
+def test_real_format_terminal_sphere_and_outcar_association(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    m = 2 * np.asarray(config["targets"])
+    mw = .9 * m
+    run = tmp_path / "run"
+    synthetic_readback(run, config, m, mw)
+    outcar, oszicar = run / "OUTCAR", run / "OSZICAR"
+    original_outcar = outcar.read_text()
+    original_oszicar = oszicar.read_text()
+    first_table = original_oszicar.split(" ion MW_int M_int\n")[1].split("\n 1 F=")[0]
+    repeated = "\n E_p = 0.00000E+00 lambda = 0.000E+00\n DBL = 0\n ion MW_int M_int\n" + first_table
+    electronic = ("DAV: 1 -1\n" + "DAV: 2 -1\n" + "SDA: 3 -1\n" +
+                  "".join(f"CGA: {i} -1\n" for i in range(4, 51)))
+    oszicar.write_text(" E_p = 0.00000E+00 lambda = 0.000E+00\n DBL = 0\n ion MW_int M_int\n" +
+                       first_table + "\n" + electronic + repeated + "\n" +
+                       original_oszicar[original_oszicar.index(" 1 F="):])
+    outcar.write_text(original_outcar.replace("Iteration 1( 1)",
+                      "".join(f"Iteration 1( {i})\n" for i in range(1, 51))).replace(
+                      "vasp.test synthetic", "vasp.6.4.2 synthetic\ncompatible to vasp.4.4"))
+    read = step1.read_state(run, config, run / "config.json")
+    assert (read["ionic_step"], read["electronic_step"]) == (1, 50)
+    assert read["ionic_steps"] == [1]
+    assert read["M_int"] == pytest.approx(m)
+    assert read["MW_int"] == pytest.approx(mw)
+    assert read["lines"][0] > 1
+    outcar.write_text(outcar.read_text().replace("compatible to vasp.4.4",
+                    "compatible to vasp.4.4\nvasp.6.4.2 second run"))
+    with pytest.raises(ValueError, match="ambiguous completed OUTCAR"):
+        step1.read_state(run, config, run / "config.json")
+    outcar.write_text(original_outcar)
+    oszicar.write_text(original_oszicar + " ion MW_int M_int\n 1 0 0 0 0 0 0\n")
+    with pytest.raises(ValueError, match="count mismatch"):
+        step1.read_state(run, config, run / "config.json")
+
+
+def test_missing_ionic_sphere_table_and_swapped_outcar_indices(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    m = 2 * np.asarray(config["targets"])
+    run = tmp_path / "run"
+    synthetic_readback(run, config, m, .9 * m)
+    outcar, oszicar = run / "OUTCAR", run / "OSZICAR"
+    original_outcar, original_oszicar = outcar.read_text(), oszicar.read_text()
+    oszicar.write_text("DAV: 1 -1\n 1 F= -1 E0= -1\n E_p = 0 lambda = 0\n" +
+                       original_oszicar.replace(" 1 F=", " 2 F="))
+    with pytest.raises(ValueError, match="missing sphere blocks"):
+        step1.sphere(oszicar, 3)
+    oszicar.write_text(original_oszicar)
+    outcar.write_text(original_outcar.replace("Iteration 1( 1)", "Iteration 1( 2)"))
+    with pytest.raises(ValueError, match="first iteration|electronic loop"):
         step1.read_state(run, config, run / "config.json")
 
 

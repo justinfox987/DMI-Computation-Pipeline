@@ -153,7 +153,7 @@ The zero-target ions must be excluded, not normalized. Preserve the nominal reco
 
 Both parallel and antiparallel moments have zero penalty, and a perpendicular moment has zero first-order angular push from this term. A small penalty does not certify the requested signed state.
 
-The supplied Fe build printed `2*lambda*MW_perp` under the label `lambda*MW_perp`. Validate the numerical factor using the printed field and penalty; do not assume the label defines it for every build. Moment rounding limits the recomputed precision. Missing field data must yield an explicit unavailable diagnostic, not an invented field-validation PASS.
+The supplied Fe source prints `2*lambda*MW_perp` under the label `lambda*MW_perp`. Test the signed factor against `MW_int` separately from the numerical identity `E_p=sum(|B_c|²)/(4*lambda)`. Use an independently established coefficient when available; the number of digits in the printed lambda is not itself uncertainty in a known coefficient. Report the printed field/penalty intervals and any gap. Interpret overlap or separation as a same-update consistency result only when the moment/density update association is established. The [source timing audit](sessions/2026-09-30_1933Z-agent-step1-field-penalty-source-audit.md) found a cached penalty and later moment refresh in the supplied `ELMIN_ALL` path, but did not authenticate the sample's executable. Do not exempt all CGA runs on that basis. Moment rounding limits comparisons to `MW_int`. Missing field data must yield an explicit unavailable factor diagnostic, not an invented PASS.
 
 ### 5.3 Pair checks
 

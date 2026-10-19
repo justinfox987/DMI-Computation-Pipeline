@@ -10,7 +10,7 @@ import re
 import numpy as np
 
 from . import manifest
-from .realized import incar, numbers, poscar_species
+from .realized import incar, logical, numbers, poscar_species
 from .workflow import _echo_check
 
 CONVENTION = "lab-oszicar-sphere-v1"
@@ -20,9 +20,10 @@ RESOLUTION = 1e-8
 PENALTY_EV = 1e-3
 FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
 PENALTY = re.compile(r"\bE_p\s*=\s*(" + FLOAT + r")\s+lambda\s*=\s*(" + FLOAT + r")", re.I)
-ELECTRONIC = re.compile(r"^\s*(?:DAV|RMM|CG|DMP):\s*(\d+)\b", re.I)
+ELECTRONIC = re.compile(r"^\s*(?:DAV|RMM|CG|DMP|SDA|CGA):\s*(\d+)\b", re.I)
 SUMMARY = re.compile(r"^\s*(\d+)\s+F=")
 ITERATION = re.compile(r"Iteration\s+(\d+)\(\s*(\d+)\)")
+BANNER = re.compile(r"^[ \t]*vasp\.\S+", re.I | re.M)
 
 
 def printed_step(token):
@@ -262,12 +263,31 @@ def sphere(path, nions):
     if not field_headers and any(line.strip() for line in lines[p + 1:]):
         raise ValueError("Trailing data after terminal OSZICAR penalty")
     previous = [i for i, line in enumerate(lines[:start]) if SUMMARY.match(line)]
-    if len(headers) != len(previous) + 1:
-        raise ValueError("OSZICAR ionic steps missing sphere blocks or contain restarts")
-    electronic = [int(match.group(1)) for line in lines[(previous[-1] + 1 if previous else 0):start]
-                  if (match := ELECTRONIC.match(line))]
-    if not electronic or electronic[0] != 1 or electronic != list(range(1, electronic[-1] + 1)):
-        raise ValueError("Terminal OSZICAR electronic loop missing or ambiguous")
+    # VASP may print several sphere tables per electronic iteration; require
+    # complete tables and an indexed loop within each ionic step.
+    boundary = -1
+    for summary_line in previous + [f]:
+        step_headers = [i for i in headers if boundary < i < summary_line]
+        if not step_headers:
+            raise ValueError("OSZICAR ionic steps missing sphere blocks or contain restarts")
+        for header in step_headers:
+            for ion in range(nions):
+                row = lines[header + 1 + ion].split() if header + 1 + ion < summary_line else []
+                if len(row) != 7 or row[0] != str(ion + 1):
+                    raise ValueError("Incomplete OSZICAR ionic sphere block")
+                try:
+                    values = [float(x.replace("D", "E").replace("d", "e")) for x in row[1:]]
+                except ValueError as error:
+                    raise ValueError("Invalid OSZICAR sphere number") from error
+                if not np.all(np.isfinite(values)):
+                    raise ValueError("Nonfinite OSZICAR sphere moment")
+            if header + 1 + nions < summary_line and re.match(r"^\s*\d+\s+", lines[header + 1 + nions]):
+                raise ValueError("Duplicate or extra OSZICAR ionic sphere ion")
+        electronic = [int(match.group(1)) for line in lines[boundary + 1:summary_line]
+                      if (match := ELECTRONIC.match(line))]
+        if not electronic or electronic != list(range(1, electronic[-1] + 1)):
+            raise ValueError("OSZICAR electronic loop missing or ambiguous")
+        boundary = summary_line
     steps = [int(SUMMARY.match(lines[i]).group(1)) for i in previous + [f]]
     if steps != list(range(1, steps[-1] + 1)):
         raise ValueError("OSZICAR ionic summaries contain a restart or missing step")
@@ -306,6 +326,9 @@ def read_state(directory, record, config_path):
         elif key in {"MAGMOM", "M_CONSTR", "RWIGS", "LAMBDA", "SAXIS"}:
             if not np.allclose(numbers(tags[key]), numbers(value), atol=1e-9, rtol=0):
                 raise ValueError(f"Run INCAR {key} differs from requested input")
+        elif key in {"LNONCOLLINEAR", "LSORBIT", "LSPIRAL", "LZEROZ"}:
+            if logical(tags, key) != logical(record["tags"], key):
+                raise ValueError(f"Run INCAR {key} differs from requested input")
         elif tags[key].strip().upper() != value.upper():
             raise ValueError(f"Run INCAR {key} differs from requested input")
     if not np.allclose(actual_q, stored_q, atol=1e-9, rtol=0):
@@ -315,21 +338,21 @@ def read_state(directory, record, config_path):
     if not np.allclose(numbers(tags["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
         raise ValueError("Requested M_CONSTR differs from versioned target vectors")
     outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
-    # Concatenated restarts cannot establish unique OSZICAR/OUTCAR provenance.
-    if outcar.count("General timing and accounting") != 1 or outcar.lower().count("vasp.") > 1:
+    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
+    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
         raise ValueError("Missing or ambiguous completed OUTCAR run segment")
     converged = outcar.rfind("aborting loop because EDIFF is reached")
     iterations = list(ITERATION.finditer(outcar))
     footer = outcar.rfind("General timing and accounting")
     if (not iterations or converged < iterations[-1].end() or converged > footer or
-            ITERATION.search(outcar[footer:]) or re.search(r"\bvasp\.", outcar[footer:], re.I)):
+            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
         raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
-    # OUTCAR Iteration E(I) prints electronic E first, ionic I second.
-    outcar_steps = [int(match.group(2)) for match in iterations if int(match.group(1)) == 1]
+    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
+    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
     if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
         raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
     for step in outcar_steps:
-        count = [int(match.group(1)) for match in iterations if int(match.group(2)) == step]
+        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
         if count != list(range(1, count[-1] + 1)):
             raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
     for echoed in re.findall(r"^\s*QSPIRAL\s*=\s*(.*)$", outcar, re.M):
@@ -339,7 +362,7 @@ def read_state(directory, record, config_path):
     _echo_check(directory)
     oszicar = directory / "OSZICAR"
     result = sphere(oszicar, len(record["species"]))
-    electronic, ionic = (int(x) for x in iterations[-1].groups())
+    ionic, electronic = (int(x) for x in iterations[-1].groups())
     if (result["ionic_steps"] != outcar_steps or
             (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
         raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
@@ -415,9 +438,12 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
             raise ValueError(f"Invalid {label} magnitude reference")
         if any(abs(actual[ion] - ref[site]) / ref[site] >= MOMENT_DRIFT for site, ion in enumerate(indices)):
             reasons.append(f"{label} magnitude drift")
-    ep, lam = readback["E_p_eV"], readback["lambda"]
-    if not np.all(np.isfinite([ep, lam])) or ep < 0 or lam < 0:
+    ep, printed_lam = readback["E_p_eV"], readback["lambda"]
+    if not np.all(np.isfinite([ep, printed_lam])) or ep < 0 or printed_lam < 0:
         raise ValueError("Invalid printed final penalty or lambda")
+    # read_state has matched this requested coefficient to the run INCAR and
+    # OUTCAR echo. Its use as the effective coefficient still needs build evidence.
+    lam = float(numbers(record["tags"]["LAMBDA"])[0])
     if lam > 0 and ep >= PENALTY_EV:
         reasons.append("printed constraint penalty exceeds threshold")
     precision = readback["precision"]
@@ -433,52 +459,58 @@ def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=Fals
         perps[ion] = perp
         predicted[ion] = 2 * lam * perp
         penalty += lam * np.dot(perp, perp)
-    # Bound the penalty from the last printed MW_int and lambda digits, not a
-    # fixed percent tolerance that could accept contradictory small penalties.
+    # Bound the penalty from the printed MW_int digits and requested coefficient.
     perp_error = np.zeros_like(mw_error)
     perp_error[indices] = mw_error[indices] + np.abs(u[indices]) * np.sum(np.abs(u[indices]) * mw_error[indices], axis=1)[:, None]
     low = np.maximum(np.abs(perps) - perp_error, 0)
     high = np.abs(perps) + perp_error
-    lam_error = precision["lambda"] / 2
     ep_error = precision["E_p_eV"] / 2
-    penalty_low = max(0, lam - lam_error) * np.sum(low[indices] ** 2)
-    penalty_high = (lam + lam_error) * np.sum(high[indices] ** 2)
+    penalty_low = lam * np.sum(low[indices] ** 2)
+    penalty_high = lam * np.sum(high[indices] ** 2)
     if ep + ep_error < penalty_low or ep - ep_error > penalty_high:
         reasons.append("printed penalty disagrees with MW_int recomputation")
     penalty_check = ("fail: MW_int/penalty contradiction" if "printed penalty disagrees with MW_int recomputation" in reasons
                      else "pass: MW_int/penalty consistent within printed precision")
-    field_check = {"status": "unavailable: no printed field"}
+    field_check = {"status": "unavailable: no printed field",
+                   "identity": {"status": "unavailable: no printed field"}}
     if field is not None:
         printed = np.asarray(field, dtype=float)
         field_error = np.asarray(precision["printed_field"], dtype=float) / 2
         if printed.shape != mw.shape or field_error.shape != mw.shape or not np.all(np.isfinite(printed)):
             raise ValueError("Invalid printed field ion count or values")
-        field_check = {"status": "unavailable: factor-two unresolved at printed precision"}
+        field_check = {"status": "unavailable: factor-two unresolved at printed precision",
+                       "coefficient": lam,
+                       "coefficient_source": "requested LAMBDA matched to run INCAR and OUTCAR echo"}
         # Compare signed Cartesian components; magnitudes alone miss a reversed field.
-        field_tolerance = 2 * (lam + lam_error) * perp_error + 2 * lam_error * np.abs(perps)
+        field_tolerance = 2 * lam * perp_error
         if np.any(np.abs(printed - predicted) > field_tolerance + field_error):
             field_check["status"] = "fail: printed field disagrees with MW_int"
             reasons.append("printed field disagrees with factor-two convention")
         field_penalty = float(np.sum(np.square(printed[indices])) / (4 * lam)) if lam > 0 else None
         field_check["field_E_p_eV"] = field_penalty
-        if lam > lam_error:
-            fp_low = np.sum(np.maximum(np.abs(printed[indices]) - field_error[indices], 0) ** 2) / (4 * (lam + lam_error))
-            fp_high = np.sum((np.abs(printed[indices]) + field_error[indices]) ** 2) / (4 * (lam - lam_error))
-            if ep + ep_error < fp_low or ep - ep_error > fp_high:
-                field_check["status"] = "fail: printed penalty disagrees with field"
-                reasons.append("printed penalty disagrees with printed field")
-            # Resolve both the measured signal and the difference from a factor-one field.
+        if lam > 0:
+            fp_low = np.sum(np.maximum(np.abs(printed[indices]) - field_error[indices], 0) ** 2) / (4 * lam)
+            fp_high = np.sum((np.abs(printed[indices]) + field_error[indices]) ** 2) / (4 * lam)
+            gap = max(float(fp_low - (ep + ep_error)), float((ep - ep_error) - fp_high), 0.0)
+            field_check["identity"] = {
+                "status": "unavailable: same-update association not established",
+                "observed": "disjoint" if gap > 0 else "overlap",
+                "gap_eV": gap, "field_E_p_interval_eV": [float(fp_low), float(fp_high)],
+                "printed_E_p_interval_eV": [float(ep - ep_error), float(ep + ep_error)]}
+        else:
+            field_check["identity"] = {"status": "unavailable: zero coefficient"}
+            if field_check["status"].startswith("fail"):
+                field_check["status"] = "fail: nonzero zero-lambda field"
+        # Resolve both the measured signal and the difference from a factor-one field.
+        if lam > 0 and not field_check["status"].startswith("fail"):
             resolved = (np.linalg.norm(printed[indices]) > np.linalg.norm(field_error[indices]) and
                         np.any(lam * np.abs(perps[indices]) > (field_tolerance + field_error)[indices]))
-            if resolved and penalty_check.startswith("pass") and not field_check["status"].startswith("fail"):
-                field_check["status"] = "pass: factor-two field and penalty consistent"
+            if resolved:
+                field_check["status"] = "pass: factor-two signed field"
                 field_check["printed_factor"] = float(np.sum(printed[indices] * perps[indices]) /
                                                        (lam * np.sum(perps[indices] ** 2)))
-            elif not field_check["status"].startswith("fail") and penalty_check.startswith("pass"):
-                field_check["consistency"] = "pass: zero/small field and penalty consistent within printed precision"
-        else:
-            field_check["status"] = ("fail: nonzero zero-lambda field" if "printed field disagrees with factor-two convention" in reasons
-                                     else "unavailable: lambda unresolved at printed precision")
+            else:
+                field_check["consistency"] = "pass: zero/small field agrees with MW_int within printed precision"
     return {"passed": not reasons, "reasons": reasons, "spins": spins.tolist(),
             "phase_rms_deg": float(np.sqrt(np.mean(np.square(phase_errors)))) if phase_errors else None,
             "common_z_deg": float(np.rad2deg(offset)), "recomputed_E_p_eV": float(penalty),

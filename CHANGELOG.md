@@ -5,6 +5,27 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Step 1 logical INCAR equivalence (2026-10-19)
+
+- Reused the shared strict logical parser for the four Step 1 run/config boolean tags. A prepared T/F config now reads the original Fe True/False INCAR without a config edit; invalid or opposite boolean values still fail. The full real-file CLI readback reproduces the same failed physical gate and field/penalty diagnostics with unchanged thresholds. See the [follow-up session](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md). No VASP rerun.
+
+### Historical Fe q0 reference and full Step 1 readback (2026-10-05)
+
+- Recorded a converged q0 Fe sphere reference, a diagnostic F1 reconstruction of the historical +x/+x lambda=1 inputs, and the full CLI readback. The physical gate fails absolute weighted alignment, M_int norm drift and penalty limits; signed factor evidence passes, while the field/penalty same-update identity remains unavailable with a recorded interval gap. The generated config's T/F tokens fail literal comparison with historical True/False inputs, so the evidence includes a clearly labelled spelling-only historical config. No validator/tolerance or VASP change. See the [readback session](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md) and [evidence record](evidence/2026-10-05-fe-q0-step1-readback/README.md).
+
+### Step 1 field and penalty diagnostics (2026-09-30)
+
+- Split signed factor-two evidence from the field/penalty identity in the existing Step 1 validator. The identity now records printed intervals and any gap at the requested coefficient matched to run inputs, with same-update interpretation unavailable until separately established. The lambda=1 Fe discrepancy remains visible; alignment and penalty acceptance limits are unchanged. Added a focused CGA-format regression and updated the spec/usage; 18 focused and 53 total local tests pass. See the [validator handoff](docs/sessions/2026-09-30_2011Z-agent-step1-field-penalty-validator.md). No VASP rerun or production acceptance.
+
+### Step 1 field and penalty source audit (2026-09-30)
+
+- Traced the original lambda=1 Fe sample against supplied VASP mode-1 source: the final printed penalty is cached before a later moment refresh, while signed fields use current moments; the source coefficient remains the requested 1.0. The field/penalty printed intervals are disjoint at exact lambda 1, while factor-two and sign remain supported at printed-moment precision. No code or tolerance change, VASP rerun, or production gate; see the [source audit](docs/sessions/2026-09-30_1933Z-agent-step1-field-penalty-source-audit.md).
+
+### Step 1 original-file reader repair handoff (2026-09-30)
+
+- Committed the reviewed reader repair for repeated OSZICAR sphere tables, SDA/CGA iterations, actual OUTCAR run banners and `Iteration I(E)` association, with distinct missing-summary and missing-OUTCAR-footer checks. The original Fe sample parses at ionic/electronic step 1/50 (95 sphere tables, one ionic summary); 17 focused and 52 total local software tests pass. No push.
+- The sample's requested both-Fe +x directions do not establish physical F0 realization, and zero lambda/field cannot verify a nonzero-lambda convention. No versioned config/reference-bound read, production gate or VASP job; see [real-sample handoff](docs/sessions/2026-09-30_1610Z-agent-step1-reader-real-sample.md).
+
 ### Step 1 final review follow-up (2026-09-30)
 
 - Rejected malformed or broadcastable QSPIRAL values at stored/requested/run/echo boundaries and mismatched per-species RWIGS between otherwise valid partners.

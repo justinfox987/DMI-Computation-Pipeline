@@ -1,0 +1,59 @@
+{
+  "schema_version": 3,
+  "convention": "lab-oszicar-sphere-v1",
+  "id": "reader_test_2-historical-reconstruction",
+  "family": "F1",
+  "side": "+",
+  "q_frac": [
+    0.25,
+    0.0,
+    0.0
+  ],
+  "axis": "z",
+  "magnetic_indices": [
+    0,
+    1
+  ],
+  "signs": [
+    1,
+    1
+  ],
+  "species": [
+    "Fe",
+    "Fe"
+  ],
+  "poscar_sha256": "91e11367c9d093742a9f166e0b64c22a95db4d34ce7aa51f9a7bc3e98b9665fc",
+  "targets": [
+    [
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      1.0000000000000002,
+      0.0,
+      0.0
+    ]
+  ],
+  "seed_magnitudes": [
+    2.2,
+    2.2
+  ],
+  "recipe": {
+    "angle_deg": -45,
+    "f1_policy": "diagnostic"
+  },
+  "tags": {
+    "LNONCOLLINEAR": "True",
+    "LSORBIT": "False",
+    "LSPIRAL": "True",
+    "SAXIS": "0 0 1",
+    "I_CONSTRAINED_M": "1",
+    "LAMBDA": "1.0",
+    "LZEROZ": "True",
+    "QSPIRAL": "0.25 0.0 0.0",
+    "RWIGS": "1.5",
+    "MAGMOM": "2.2 0 0 2.2 0 0",
+    "M_CONSTR": "1 0 0 1 0 0"
+  }
+}
