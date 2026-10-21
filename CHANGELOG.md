@@ -5,6 +5,10 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Explicit Perlmutter pilot interfaces (2026-10-21)
+
+- Removed current-directory job.sh discovery: include a launch script only through `--job-template`. Material/recipe/run/readback paths stay caller supplied, with executable configuration in the existing working launch script. Added ENINI to the shared input whitelist so cutoff settings can be supplied and echoed without selecting new values. Added the [Perlmutter sequence](docs/PERLMUTTER_F0_PILOT.md), portable installation instructions and regression coverage through synthetic shared-input preparation/readback. Local pilot directories are generator tests; no local cluster assets are required. No calculation submitted. See the [handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md).
+
 ### Single-directory Step 1 pilot preparation (2026-10-19)
 
 - Extended existing `step1-prepare`/`write_inputs` with shared material assembly: generated tags override the base INCAR once, while POSCAR/KPOINTS/POTCAR and a supplied launch template are copied unchanged. The default launch template is current-directory job.sh; its absence is explicitly reported as review-only. Existing fragment-only preparation remains available. A local ferromagnetic Fe F0 candidate is prepared with consistent targets/config/INCAR, with launch availability and inherited cutoff/resource choices recorded for review. See the [preparation handoff](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md). No scheduler, VASP execution or physical acceptance change.

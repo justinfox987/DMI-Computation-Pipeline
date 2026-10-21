@@ -37,7 +37,7 @@ def main(argv=None) -> int:
     material = prepare.add_mutually_exclusive_group(required=True)
     material.add_argument("--poscar", type=Path)
     material.add_argument("--inputs", type=Path, help="Shared directory with POSCAR, INCAR, KPOINTS and POTCAR")
-    prepare.add_argument("--job-template", type=Path, help="Launch script for --inputs (default: job.sh in current directory)")
+    prepare.add_argument("--job-template", type=Path, help="Explicit launch script for --inputs; copied unchanged as job.sh")
     prepare.add_argument("--output", type=Path, required=True)
     wrap = commands.add_parser("step1-wrap-partner", help="Shift prepared negative q without regenerating targets")
     wrap.add_argument("--config", type=Path, required=True)
@@ -60,13 +60,10 @@ def main(argv=None) -> int:
     try:
         if args.command == "step1-prepare":
             record = step1.prepare(manifest.load(args.recipe), args.inputs / "POSCAR" if args.inputs else args.poscar)
-            job = args.job_template
-            if args.inputs and job is None and Path("job.sh").is_file():
-                job = Path("job.sh")
-            step1.write_inputs(record, args.output, args.inputs, job)
+            step1.write_inputs(record, args.output, args.inputs, args.job_template)
             print(args.output / "config.json")
-            if args.inputs and job is None:
-                print("Launch template missing: no job.sh in current directory; inputs prepared for review only.", file=sys.stderr)
+            if args.inputs and args.job_template is None:
+                print("No --job-template supplied; inputs prepared for review only.", file=sys.stderr)
             return 0
         if args.command == "step1-wrap-partner":
             record = step1.wrap_partner(manifest.load(args.config), args.q_frac)

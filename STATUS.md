@@ -1,12 +1,12 @@
 # Current project status
 
-**Last reconciled:** 2026-10-19 UTC on local `feat/dmi-step1-vectors`; the [single Fe F0 preparation handoff](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md) records shared-input assembly through the existing Step 1 writer and a local pilot for review. Its working launch script is absent locally and the inherited cutoff needs a decision. The earlier [logical comparison follow-up](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md) reaches the same failed historical Fe gate. No push in this session.
+**Last reconciled:** 2026-10-21 UTC on local `feat/dmi-step1-vectors`; the [Perlmutter portability handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md) makes pilot template selection explicit and documents cluster generation/submission/readback. The local F0 directory is a generator test. Cluster-only assets are supplied on Perlmutter, not prerequisites for local software completion. No submission or push in this session.
 
 **Code checkout inspected:** tracked `pipeline v3/` reader and tests, status/usage/spec and original Fe files. A full Step 1 CLI readback now exists for the lambda=1 sample with a converged q0 norm reference; its realization gate fails. No production VASP acceptance or N0 replay.
 
 **Integration branch / base commit:** local `main` and `origin/main` at `e2b85cb422e327e0c17268b56ede5a79a649fd79` (initial project commit). Configured `origin`: `https://github.com/justinfox987/DMI-Computation-Pipeline.git`; no fetch or privacy check.
 
-**Handoff owner / branch / scope:** Codex / `feat/dmi-step1-vectors` / one Fe F0 pilot preparation through the existing Step 1 CLI; no scheduler implementation or VASP submission. Preserving prior parser/readback work. Branch descended from local committed baseline `56288bf`, not merged `main`. One writer in this checkout; initial HEAD `6b9c342` matched the local tracking reference, with no fetch or new remote verification.
+**Handoff owner / branch / scope:** Codex / `feat/dmi-step1-vectors` / explicit Perlmutter interfaces for the single F0 preparation/launch/readback sequence, preserving prior physics and reader checks. No new scheduler or submission. Initial HEAD `bbea7ef` was one commit ahead of the local tracking reference; no fetch or remote verification. One writer in this checkout.
 
 **Preservation:** before audit, no tracked/staged edits; 6,504 Git-visible untracked file paths under `vasp files/` (ignored paths excluded), plus ignored local `pipeline v3/noq/` runs. The two full VASP distribution copies (6,466 paths, including testsuite data) are now ignored without moving or deleting them; 38 asset paths remain Git-visible and untracked, including the Patch B spec and smaller patch/source collections. Nothing under `vasp files/` was edited or staged. No remote privacy or synchronization check was made.
 
@@ -30,7 +30,7 @@ those locations in this checkout; N0 was not replayed.
 |---|---|---|---|---|
 | REPO-01 | Reconcile actual repo, baseline and safe tracking boundary | Local handoff and selective VASP-distribution ignore boundary finalized; remote privacy/sync and stale starter wording not verified | Zoo / `docs/repo-baseline-audit` (handoff only) | [Baseline audit](docs/sessions/2026-09-29_2003Z-agent-baseline-audit.md), [finalization](docs/sessions/2026-09-29_2024Z-agent-baseline-finalization.md); untracked source/assets deliberately not staged |
 | DMI-01 | Step 1 offline vector migration + real-file reader follow-up | Reader repair, field/penalty diagnostic and logical input comparison fixes have local evidence. Full CLI readback of historical Fe run using the unmodified prepared config and converged q0 norm reference **fails** weighted alignment, M_int drift and penalty gates. **Not production-complete**: no vetted BFO symmetry fixture, trace/parity acceptance or measured noise/covariance | Codex (current), Zoo (prior) / `feat/dmi-step1-vectors` (local) | [logical comparison handoff](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md), [q0 readback handoff](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md), [evidence record](evidence/2026-10-05-fe-q0-step1-readback/README.md), [offline usage](docs/STEP1_LOCAL_USAGE.md); no production fit accepted |
-| DMI-02 | Corrected constraint probe and pilot-only runner | Limited single-pilot input assembly implemented using existing Step 1 preparation. Local F0 Fe candidate is review-only: working job.sh expected in current directory at generation, absent locally; cutoff/resource settings need review. Corrected probe, scheduler and smoke test remain planned | Codex / `feat/dmi-step1-vectors` for preparation only | [Preparation handoff](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md), [settings and input record](evidence/2026-10-19-fe-f0-preparation/README.md); no job submitted |
+| DMI-02 | Corrected constraint probe and pilot-only runner | Single-pilot preparation/readback interfaces verified locally. Explicit material/recipe/template/output paths; executable/resources remain configured by the working cluster script. Current-directory script discovery removed. Cluster generation, ordinary sbatch submission and readback sequence documented; real smoke test and broader probe/campaign runner remain outstanding | Codex / `feat/dmi-step1-vectors` for single-pilot interface | [Portability handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md), [Perlmutter sequence](docs/PERLMUTTER_F0_PILOT.md); 55 local tests pass, no job submitted |
 | DMI-03 | Production operator, constraint and F0 pilots | Pending prerequisites | Unassigned | Matched executable/reference and recorded gate results |
 | DMI-04 | BFO campaign, paired fit and internal stability checks | Pending pilot results | Unassigned | Accepted dataset, fit and validation report |
 | DMI-05 | Independent physical DMI comparisons | Protocol/results outstanding | Unassigned | Matched external-anchor comparisons |
@@ -59,15 +59,16 @@ VASP run or N0 replay.
 
 ## Immediate next action
 
-Review the [generated Fe F0 candidate](evidence/2026-10-19-fe-f0-preparation/README.md)
-at ignored `artifacts/local/2026-10-19-fe-f0-pilot/F0-plus/`: q=(0.25,0,0),
-ferromagnetic signs (+,+), lambda=1, cold start. Decide the ENCUT/ENINI setting
-in light of the historical 550 eV spiral warning and reconcile inherited
-NCORE/KPAR with the working GPU job.sh. The user will supply job.sh in the
-generation command's current directory; the writer copies it unchanged when
-present and reports review-only status when absent. Regenerate to a new empty
-output after reviewing the draft settings. No scheduler or submission is
-authorized by this preparation task; no new realization acceptance exists.
+Transfer/install the tested code, then follow the [Perlmutter pilot sequence](docs/PERLMUTTER_F0_PILOT.md)
+with explicit cluster material, recipe, job-template, executable and output paths.
+The [local F0 candidate](evidence/2026-10-19-fe-f0-preparation/README.md) is only
+a generator test. Decide q/signs/lambda and ENCUT/ENINI, resolve the historical
+spiral warning, and reconcile NCORE/KPAR with the working script on Perlmutter.
+Supply that script via `--job-template`; current-directory discovery is removed.
+Review cluster identities and syntax before a later user submission. Then perform
+the real launch/convergence/readback checks. Missing local copies of cluster
+assets do not block software completion; numerical settings and executable/build
+validation remain unresolved scientific/cluster checks.
 
 Verify intended Fe site signs/settings and resolve the cutoff warning and
 requested-target mismatch for both samples. The [lambda=1 read-only audit](docs/sessions/2026-09-30_1919Z-agent-step1-lambda1-real-file-audit.md)
@@ -137,6 +138,7 @@ implementation/tests. Second-order SOC remains deferred.
 - [DMI-01 q0 reference and full historical Fe readback](docs/sessions/2026-10-05_2030Z-agent-step1-q0-readback.md); independent reference norms and failed physical gate recorded, with generated-config logical spelling limitation and ignored local state path. No VASP rerun.
 - [DMI-01 strict logical comparison and direct prepared-config readback](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md); 19 focused and 54 total local tests pass, unmodified prepared config reaches the same failed physical gate, no VASP rerun.
 - [Single Fe F0 pilot preparation](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md); reused target generation, extended shared-input writing and default current-directory job.sh copying, prepared review-only local input directory; 20 focused and 55 total local tests pass, no VASP execution.
+- [Explicit Perlmutter pilot interfaces](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md); supersedes current-directory template discovery, supports explicit ENINI through the existing whitelist, documents generation/sbatch/readback and host provenance; 55 local tests and runbook Bash syntax pass, no cluster execution.
 
 Keep this file a current snapshot. Detailed commands and attempts belong in
 session logs; durable reasons belong in DECISIONS.

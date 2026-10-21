@@ -1,5 +1,13 @@
 # Fe F0 pilot preparation review
 
+**2026-10-21 clarification:** this local directory is a generator test. Generate
+the real pilot on Perlmutter from explicit cluster paths. Current preparation
+requires `--job-template PATH` to include a launch script and never searches the
+current directory. The default-discovery behavior described in the historical
+2026-10-19 record below is superseded. See the
+[Perlmutter sequence](../../docs/PERLMUTTER_F0_PILOT.md); missing local copies of
+cluster-only assets do not block local software completion.
+
 Prepared 2026-10-19 with the existing schema-3 target generator and the extended
 `step1-prepare` shared-input writer. No VASP job was submitted or executed.
 

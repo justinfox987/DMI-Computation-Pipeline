@@ -87,13 +87,13 @@ def test_cli_prepare_shared_inputs_keeps_generated_magnetism_authoritative(tmp_p
     shared = tmp_path / "shared"
     shared.mkdir()
     poscar(shared / "POSCAR")
-    (shared / "INCAR").write_text("ENCUT = 550\nISTART = 0\nICHARG = 2\n"
+    (shared / "INCAR").write_text("ENCUT = 550\nENINI = 500\nISTART = 0\nICHARG = 2\n"
                                  "MAGMOM = 9 9 9\nM_CONSTR = 0 0 0\nLSPIRAL = False\n")
     (shared / "KPOINTS").write_bytes(b"test\n0\nGamma\n5 5 5\n0 0 0\n")
     recipe_path = tmp_path / "recipe.json"
     manifest.save(recipe("F0"), recipe_path)
     job = tmp_path / "job.sh"
-    job.write_bytes(b"#!/bin/bash\nset -e\nsrun vasp_ncl > output.log\n")
+    job.write_bytes(b'#!/bin/bash\nset -e\n: "${VASP_EXECUTABLE:?Supply cluster executable}"\nsrun "$VASP_EXECUTABLE" > output.log\n')
     dest = tmp_path / "pilot"
     args = ("step1-prepare", "--recipe", recipe_path, "--inputs", shared,
             "--job-template", job, "--output", dest)
@@ -101,6 +101,10 @@ def test_cli_prepare_shared_inputs_keeps_generated_magnetism_authoritative(tmp_p
     (shared / "INCAR").write_text("")
     empty = run_cli(*args)
     assert empty.returncode != 0 and "Shared INCAR is empty" in empty.stderr
+    assert not dest.exists()
+    (shared / "INCAR").write_text(base_incar + "ENINII = 500\n")
+    typo = run_cli(*args)
+    assert typo.returncode != 0 and "Unreviewed INCAR tags" in typo.stderr
     assert not dest.exists()
     (shared / "INCAR").write_text(base_incar)
     missing = run_cli(*args)
@@ -112,7 +116,7 @@ def test_cli_prepare_shared_inputs_keeps_generated_magnetism_authoritative(tmp_p
     config = manifest.load(dest / "config.json")
     tags = incar(dest / "INCAR")
     assert all(tags[key] == value for key, value in config["tags"].items())
-    assert tags["ENCUT"] == "550" and tags["ICHARG"] == "2"
+    assert tags["ENCUT"] == "550" and tags["ENINI"] == "500" and tags["ICHARG"] == "2"
     assert numbers(tags["M_CONSTR"]).reshape(-1, 3) == pytest.approx(np.asarray(config["targets"]))
     for name in ("POSCAR", "KPOINTS", "POTCAR"):
         assert (dest / name).read_bytes() == (shared / name).read_bytes()
@@ -122,16 +126,29 @@ def test_cli_prepare_shared_inputs_keeps_generated_magnetism_authoritative(tmp_p
     assert repeat.returncode != 0 and "do not overwrite" in repeat.stderr
     assert manifest.file_hash(dest / "INCAR") == before
     monkeypatch.chdir(tmp_path)
-    default_dest = tmp_path / "default-pilot"
-    assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
-                 "--output", str(default_dest)]) == 0
-    assert (default_dest / "job.sh").read_bytes() == job.read_bytes()
-    job.unlink()
     review_dest = tmp_path / "review-only"
     assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
                  "--output", str(review_dest)]) == 0
     assert (review_dest / "INCAR").is_file() and not (review_dest / "job.sh").exists()
     assert "inputs prepared for review only" in capsys.readouterr().err
+    missing_job_dest = tmp_path / "missing-job"
+    assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
+                 "--job-template", str(tmp_path / "absent.sh"), "--output", str(missing_job_dest)]) == 1
+    assert not missing_job_dest.exists()
+
+    # Synthetic completion of the materialized pilot; the cluster launcher is never run.
+    (dest / "OUTCAR").write_text("vasp.test synthetic\n" + (dest / "INCAR").read_text() +
+        "Iteration 1( 1)\naborting loop because EDIFF is reached\nGeneral timing and accounting\n")
+    rows = [f" {i + 1} " + " ".join(f"{v:.10f}" for v in [*(1.8 * np.array(u)), *(2 * np.array(u))])
+            for i, u in enumerate(config["targets"])]
+    (dest / "OSZICAR").write_text(" DAV: 1 -1\n ion MW_int M_int\n" + "\n".join(rows) +
+        "\n 1 F= -1 E0= -1\n E_p = 0.0E+00 lambda = 0.0E+00\n")
+    references = tmp_path / "references.json"
+    manifest.save({"M_int": [2, 2], "MW_int": [1.8, 1.8]}, references)
+    state = tmp_path / "readback" / "state.json"
+    assert main(["step1-read", "--config", str(dest / "config.json"), "--run", str(dest),
+                 "--references", str(references), "--output", str(state)]) == 0
+    assert manifest.load(state)["gate"]["passed"]
 
 
 def synthetic_readback(tmp_path, config, moments, weighted, ep=0, lam=0, field=None,
