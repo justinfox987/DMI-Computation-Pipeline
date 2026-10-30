@@ -139,6 +139,7 @@ implementation/tests. Second-order SOC remains deferred.
 - [DMI-01 strict logical comparison and direct prepared-config readback](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md); 19 focused and 54 total local tests pass, unmodified prepared config reaches the same failed physical gate, no VASP rerun.
 - [Single Fe F0 pilot preparation](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md); reused target generation, extended shared-input writing and default current-directory job.sh copying, prepared review-only local input directory; 20 focused and 55 total local tests pass, no VASP execution.
 - [Explicit Perlmutter pilot interfaces](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md); supersedes current-directory template discovery, supports explicit ENINI through the existing whitelist, documents generation/sbatch/readback and host provenance; 55 local tests and runbook Bash syntax pass, no cluster execution.
+- [Perlmutter Fe pilot runner T0 baseline audit](docs/sessions/2026-10-30_1516Z-agent-pilot-runner-t0-baseline.md); Zoo / `feat/dmi-step1-vectors`: 55 passed, five reported claims verified with historical physical rejection retained; corrected the untracked T0..T6 plan for T1 extraction, q0/two-case import and T5 launch provenance; next T1 check-run extraction, no cluster execution or commit.
 
 Keep this file a current snapshot. Detailed commands and attempts belong in
 session logs; durable reasons belong in DECISIONS.
