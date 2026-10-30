@@ -45,6 +45,11 @@ def main(argv=None) -> int:
     plan_source = campaign_plan.add_mutually_exclusive_group(required=True)
     plan_source.add_argument("--root", type=Path)
     plan_source.add_argument("--campaign", type=Path)
+    campaign_reference = commands.add_parser("campaign-reference", help="Verify a completed independent q0 reference against campaign cases")
+    campaign_reference.add_argument("--root", type=Path, required=True)
+    campaign_reference.add_argument("--run", type=Path, help="Completed q0 run; defaults to prepared generated reference")
+    campaign_reference.add_argument("--config", type=Path, help="Explicit q0 config or magnetic_indices mapping for an imported run")
+    campaign_reference.add_argument("--output", type=Path, help="Must be ROOT/reference when provided")
     wrap = commands.add_parser("step1-wrap-partner", help="Shift prepared negative q without regenerating targets")
     wrap.add_argument("--config", type=Path, required=True)
     wrap.add_argument("--q-frac", type=float, nargs=3, required=True)
@@ -76,6 +81,14 @@ def main(argv=None) -> int:
             else:
                 plan = campaign.build_plan(args.campaign)[0]
             print(json.dumps({key: plan[key] for key in ("run_count", "cases", "pairs", "reference")}, indent=2))
+            return 0
+        if args.command == "campaign-reference":
+            differences = campaign.check_reference(args.root, args.run, args.config, args.output)
+            if differences:
+                for difference in differences:
+                    print(f"BLOCK: {difference}")
+                return 1
+            print("PASS: independent q0 reference compatible with every consuming case")
             return 0
         if args.command == "step1-prepare":
             record = step1.prepare(manifest.load(args.recipe), args.inputs / "POSCAR" if args.inputs else args.poscar)

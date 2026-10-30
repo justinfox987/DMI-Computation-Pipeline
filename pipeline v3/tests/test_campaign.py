@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 
-from dmi_pipeline import campaign, manifest, step1
+from dmi_pipeline import campaign, manifest, reference, step1
 from dmi_pipeline.realized import incar, numbers
 from tests.test_step1 import poscar, recipe, run_cli
 
@@ -40,6 +40,17 @@ def synthetic_campaign(tmp_path):
                       {"id": "minus", "side": "-", "q_frac": [0.25, 0, 0], "purpose": "pair member",
                        "pair": "fe"}]}
     manifest.save(data, source)
+    run = tmp_path / "q0-completed"
+    config = reference.prepare_q0(dict(defaults, id="reference-q0"), shared / "POSCAR")
+    step1.write_inputs(config, run, shared, job)
+    (run / "OUTCAR").write_text("vasp.test synthetic\n" + (run / "INCAR").read_text() +
+                                  "Iteration 1( 1)\naborting loop because EDIFF is reached\nGeneral timing and accounting\n")
+    (run / "OSZICAR").write_text(" DAV: 1 -1\n ion MW_int M_int\n"
+         " 1 1.800 0.000 0.000 2.000 0.000 0.000\n"
+         " 2 1.800 0.000 0.000 2.000 0.000 0.000\n"
+         " 3 0.000 0.000 0.000 0.000 0.000 0.000\n"
+         " 1 F= -1 E0= -1\n E_p = 0.0E+00 lambda = 0.0E+00\n")
+    reference.extract(run, run / "config.json", tmp_path / "independent-q0-reference")
     return source, data, shared, job, tmp_path / "campaign-run"
 
 
@@ -89,7 +100,8 @@ def test_synthetic_plan_dependencies_and_hashes(tmp_path):
     assert plan["schema"] == "dmi-plan-1" and plan["run_count"] == 2
     assert plan["pairs"] == [{"id": "fe", "plus": "plus", "minus": "minus"}]
     assert plan["reference"] == {"mode": "import", "path": data["reference"]["path"],
-                                 "status": "unverified; T3 extraction and compatibility pending"}
+                                 "status": "verified-import",
+                                 "records": "reference/references.json and reference/reference-provenance.json"}
     for entry in plan["cases"]:
         assert entry["purpose"] == "pair member" and entry["pair"] == "fe"
         assert entry["side"] in ("+", "-")
@@ -133,7 +145,6 @@ def test_synthetic_plan_dependencies_and_hashes(tmp_path):
     ("invalid_q", lambda d: d["cases"][1].update(q_frac=[0, 0, 0]), "unwrapped positive"),
     ("negative_q_double_flip", lambda d: d["cases"][1].update(q_frac=[-0.25, 0, 0]), "unwrapped positive"),
     ("wrong_reference_mode", lambda d: d["reference"].update(mode="other"), "reference.mode"),
-    ("generated_reference", lambda d: d.update(reference={"mode": "generate"}), r"not yet implemented \(T3\)"),
 ])
 def test_synthetic_invalid_campaign_leaves_root_uncreated(tmp_path, label, change, expected):
     source, data, shared, job, root = synthetic_campaign(tmp_path)
@@ -196,7 +207,10 @@ def test_synthetic_cli_prepare_and_plan_round_trip(tmp_path):
     assert "Prepared 2 runs" in prepared.stdout
     shown = run_cli("campaign-plan", "--root", root)
     assert shown.returncode == 0, shown.stderr
-    assert json.loads(preview.stdout) == json.loads(shown.stdout)
+    assert json.loads(preview.stdout)["reference"]["status"] == "unverified-import"
+    assert json.loads(shown.stdout)["reference"]["status"] == "verified-import"
+    for key in ("run_count", "cases", "pairs"):
+        assert json.loads(preview.stdout)[key] == json.loads(shown.stdout)[key]
     assert '"execution_parents": []' in shown.stdout
     assert '"acceptance_requires": [' in shown.stdout
     assert "import:reference-q0" in shown.stdout and "fe" in shown.stdout
@@ -217,15 +231,16 @@ def test_synthetic_reference_generate_plan_only(tmp_path):
     preview = json.loads(result.stdout)
     assert preview["run_count"] == 3
     assert preview["cases"][0]["id"] == "reference-q0"
-    assert preview["cases"][0]["status"] == "preparation deferred to T3"
+    assert preview["cases"][0]["status"] == "reference-producing"
+    assert preview["reference"]["status"] == "pending-generate"
     for entry in preview["cases"][1:]:
         assert entry["execution_parents"] == []
         assert entry["acceptance_requires"] == ["reference-q0"]
     assert not root.exists()
     prepare_result = run_cli("campaign-prepare", "--campaign", source)
-    assert prepare_result.returncode == 1
-    assert "not yet implemented (T3)" in prepare_result.stderr
-    assert not root.exists()
+    assert prepare_result.returncode == 0, prepare_result.stderr
+    assert manifest.load(root / "runs" / "reference-q0" / "config.json")["q_frac"] == [0, 0, 0]
+    assert manifest.load(root / "plan.json")["reference"]["status"] == "pending-generate"
 
 
 @pytest.mark.parametrize("collision", ["source", "material", "template", "reference"])

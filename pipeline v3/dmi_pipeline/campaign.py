@@ -1,10 +1,10 @@
-"""Prepare a small Step 1 campaign without scheduling or reference extraction."""
+"""Prepare a small Step 1 campaign and verify independent q0 references."""
 
 import json
 from pathlib import Path
 import re
 
-from . import manifest, step1
+from . import manifest, reference, step1
 from .realized import incar
 from .workflow import INCAR_TAGS
 
@@ -64,19 +64,28 @@ def build_plan(source):
         raise ValueError("Campaign run_root must be empty; do not overwrite a VASP run")
 
     ref = data["reference"]
-    _keys(ref, {"mode", "path"}, {"mode"}, "reference")
+    _keys(ref, {"mode", "path", "config"}, {"mode"}, "reference")
     if ref["mode"] == "import":
         if not isinstance(ref.get("path"), str) or not ref["path"].strip():
             raise ValueError("Imported reference needs an explicit path")
         reference_path = (source.parent / ref["path"]).resolve()
         if reference_path == root or root in reference_path.parents or reference_path in root.parents:
             raise ValueError("Output collision: imported reference overlaps run_root")
-        reference = {"mode": "import", "path": ref["path"], "status": "unverified; T3 extraction and compatibility pending"}
+        reference_entry = {"mode": "import", "path": ref["path"], "status": "unverified-import"}
+        if "config" in ref:
+            if not isinstance(ref["config"], str) or not ref["config"].strip():
+                raise ValueError("Imported reference config must be an explicit JSON path")
+            reference_config = (source.parent / ref["config"]).resolve()
+            if not reference_config.is_file():
+                raise ValueError("Imported reference config must be an existing explicit JSON path")
+            if reference_config == root or root in reference_config.parents:
+                raise ValueError("Output collision: reference config overlaps run_root")
+            reference_entry["config"] = ref["config"]
         reference_id = "import:reference-q0"
     elif ref["mode"] == "generate":
-        if "path" in ref:
-            raise ValueError("Generated reference must not have an import path")
-        reference = {"mode": "generate", "id": "reference-q0", "status": "preparation deferred to T3"}
+        if "path" in ref or "config" in ref:
+            raise ValueError("Generated reference must not have an import path or config")
+        reference_entry = {"mode": "generate", "id": "reference-q0", "status": "pending-generate"}
         reference_id = "reference-q0"
     else:
         raise ValueError("reference.mode must be import or generate")
@@ -191,12 +200,20 @@ def build_plan(source):
         pairs.append({"id": pair, "plus": plus, "minus": minus})
 
     if ref["mode"] == "generate":
+        reference_recipe = dict(data["defaults"], id="reference-q0", family="F0", side="+",
+                                q_frac=[0, 0, 0], **{"lambda": 0, "lzeroz": True})
+        reference_recipe.pop("angle_deg", None)
+        reference_recipe.pop("f1_policy", None)
+        if not cold:
+            raise ValueError("Generated reference needs cold ISTART=0, ICHARG=2 inputs")
+        records["reference-q0"] = reference.prepare_q0(reference_recipe, material / "POSCAR")
+        recipes["reference-q0"] = reference_recipe
         entries.insert(0, {"id": "reference-q0", "purpose": "q0 reference", "pair": None,
-                           "side": None, "initialization": "preparation deferred to T3", "run_dir": "runs/reference-q0",
-                           "execution_parents": [], "acceptance_requires": [], "reference": None,
-                           "status": "preparation deferred to T3"})
+                           "side": "+", "initialization": "cold (ISTART=0, ICHARG=2)",
+                           "run_dir": "runs/reference-q0", "execution_parents": [],
+                           "acceptance_requires": [], "reference": None, "status": "reference-producing"})
     plan = {"schema": PLAN_SCHEMA, "run_count": len(entries), "cases": entries, "pairs": pairs,
-            "reference": reference,
+            "reference": reference_entry,
             "inputs": {"campaign_sha256": manifest.file_hash(source),
                        "material": {name: manifest.file_hash(material / name) for name in MATERIAL_FILES},
                        "job_template_sha256": manifest.file_hash(job)}}
@@ -209,14 +226,86 @@ def build_plan(source):
 
 
 def prepare(source):
-    """Validate first; then copy the original campaign and expand every finite-q run."""
+    """Verify imports before any run-root write, then expand all prepared runs."""
     plan, recipes, records, root, material, job = build_plan(source)
-    if plan["reference"]["mode"] == "generate":
-        raise ValueError("reference.mode generate preparation not yet implemented (T3); reference-q0 is reserved in the plan")
+    imported = None
+    if plan["reference"]["mode"] == "import":
+        path = (Path(source).resolve().parent / plan["reference"]["path"]).resolve()
+        if path.is_dir():
+            if (path / "references.json").exists():
+                path = path / "references.json"
+            else:
+                config = ((Path(source).resolve().parent / plan["reference"]["config"]).resolve()
+                          if "config" in plan["reference"] else path / "config.json")
+                if not config.is_file():
+                    raise ValueError("Imported q0 run needs config.json or reference.config with explicit magnetic_indices")
+                imported = reference.extract(path, config)
+        if imported is None:
+            imported = reference.verify_files(path)
+        for case_id in records:
+            differences = reference.compatible(imported[1], records[case_id], material)
+            if differences:
+                raise ValueError(f"Reference incompatible with {case_id}: {'; '.join(differences)}")
+        if (root / "reference" / "references.json").exists():
+            raise ValueError("Reference destination already contains evidence")
+        plan["reference"]["status"] = "verified-import"
+        plan["reference"]["records"] = "reference/references.json and reference/reference-provenance.json"
     root.mkdir(parents=True, exist_ok=True)
     (root / "campaign.json").write_bytes(Path(source).read_bytes())
     for case_id, recipe in recipes.items():
         manifest.save(recipe, root / "cases" / case_id / "recipe.json")
         step1.write_inputs(records[case_id], root / "runs" / case_id, material, job)
+    if imported is not None:
+        manifest.save(imported[0], root / "reference" / "references.json")
+        provenance = dict(imported[1], references_sha256=manifest.file_hash(root / "reference" / "references.json"))
+        manifest.save(provenance, root / "reference" / "reference-provenance.json")
     manifest.save(plan, root / "plan.json")
     return plan
+
+
+def check_reference(root, run=None, config=None, output=None):
+    """Recheck a completed q0 run, then test every planned consumer before marking verified."""
+    root = Path(root).resolve()
+    plan = manifest.load(root / "plan.json")
+    if plan.get("schema") != PLAN_SCHEMA:
+        raise ValueError("Expected dmi-plan-1 in prepared root")
+    destination = (root / "reference").resolve()
+    if output is not None and Path(output).resolve() != destination:
+        raise ValueError("Campaign reference output must be ROOT/reference to bind the plan")
+    mode = plan["reference"]["mode"]
+    if mode == "generate":
+        expected = (root / "runs" / "reference-q0").resolve()
+        if run is not None and Path(run).resolve() != expected:
+            raise ValueError("Generated reference must be runs/reference-q0, never a finite-q case")
+        run = expected
+    if run is not None:
+        run = Path(run).resolve()
+        if run in {(root / "runs" / entry["id"]).resolve() for entry in plan["cases"] if entry["id"] != "reference-q0"}:
+            raise ValueError("A finite-q case cannot be its own reference")
+        if mode == "import" and (destination / "references.json").exists():
+            raise ValueError("Imported reference already verified; preserve prior evidence")
+        config = Path(config).resolve() if config is not None else run / "config.json"
+        refs, provenance = reference.extract(run, config)
+    else:
+        if config is not None:
+            raise ValueError("--config requires --run")
+        refs, provenance = reference.verify_files(destination / "references.json")
+    differences = []
+    for entry in plan["cases"]:
+        if entry["id"] == "reference-q0":
+            continue
+        config_path = root / entry["run_dir"] / "config.json"
+        differences.extend(f"{entry['id']}: {reason}" for reason in
+                           reference.compatible(provenance, manifest.load(config_path), config_path.parent))
+    if differences:
+        return differences
+    if run is not None:
+        if (destination / "references.json").exists() or (destination / "reference-provenance.json").exists():
+            raise ValueError("Reference output already exists; preserve prior evidence")
+        manifest.save(refs, destination / "references.json")
+        provenance["references_sha256"] = manifest.file_hash(destination / "references.json")
+        manifest.save(provenance, destination / "reference-provenance.json")
+    plan["reference"]["status"] = "verified-generate" if mode == "generate" else "verified-import"
+    plan["reference"]["records"] = "reference/references.json and reference/reference-provenance.json"
+    manifest.save(plan, root / "plan.json")
+    return []

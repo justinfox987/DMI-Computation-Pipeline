@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- Added independent q0 sphere-reference preparation/extraction with hashed provenance and strict per-case compatibility; campaign import/generate and `campaign-reference` now verify before acceptance. 106 -> 136 local tests pass; no VASP or cluster run. See the [T3 handoff](docs/sessions/2026-10-30_1559Z-agent-pilot-runner-t3-reference.md).
+
 ### Fe F0 pilot campaign preparation (2026-10-30)
 
 - Added `campaign-prepare` and `campaign-plan` with pre-write plan validation, two-kind dependencies, explicit imported-reference provenance pending T3, SHA-256 input inventory, and per-case expansion through the unchanged Step 1 generator/writer. Added a two-run Fe example and 44 synthetic tests; 106 total local tests pass. Generated q0 preparation, submission and reference checks remain for T3/T4. See the [T2 handoff](docs/sessions/2026-10-30_1538Z-agent-pilot-runner-t2-campaign.md).

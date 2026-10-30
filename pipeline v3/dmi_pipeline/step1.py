@@ -106,10 +106,15 @@ def prepare(recipe, poscar):
     if "partner_q_frac" in recipe:
         raise ValueError("Prepare cannot regenerate a wrapped partner; use step1-wrap-partner on a prepared negative record")
     species, _ = positions(poscar)
-    indices = recipe["magnetic_indices"]
     q = vector(recipe["q_frac"], "q_frac")
     if np.allclose(q, np.rint(q), atol=1e-12):
         raise ValueError("Generic-q model excludes reciprocal-lattice q")
+    return _prepare_record(recipe, poscar, q, species)
+
+
+def _prepare_record(recipe, poscar, q, species):
+    """Shared target/tag construction after the production q check or explicit q0 selection."""
+    indices = recipe["magnetic_indices"]
     rwigs = np.asarray(recipe["rwigs"], dtype=float)
     if rwigs.shape != (len(dict.fromkeys(species)),) or not np.all(np.isfinite(rwigs)) or np.any(rwigs <= 0):
         raise ValueError("Supply one positive RWIGS radius per POSCAR species")
