@@ -424,6 +424,70 @@ def test_pair_rejects_mismatched_species_radii(tmp_path):
         step1.paired(*states, basis, -.0005, .0005)
 
 
+def test_check_run_returns_terminal_sphere_and_outcar_steps_without_config(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    m = 2 * np.asarray(config["targets"])
+    mw = .9 * m
+    run = tmp_path / "run"
+    synthetic_readback(run, config, m, mw)
+    outcar = run / "OUTCAR"
+    outcar.write_text(outcar.read_text().replace("aborting loop because EDIFF is reached",
+        "aborting loop because EDIFF is reached\nIteration 2( 1)\nIteration 2( 2)\naborting loop because EDIFF is reached"))
+    oszicar = run / "OSZICAR"
+    first = oszicar.read_text()
+    second = first.replace("DAV: 1  -1", "DAV: 1  -1\n DAV: 2 -1").replace(" 1 F=", " 2 F=")
+    oszicar.write_text(first + second)
+    (run / "config.json").unlink()
+    (run / "POSCAR").unlink()
+
+    checked = step1.check_run(run, 3)
+    assert set(checked) == {"sphere", "outcar"}
+    assert checked["outcar"] == {"final_step": [2, 2], "ionic_steps": [1, 2],
+                                 "build_banner": "vasp.test synthetic"}
+    sphere = checked["sphere"]
+    assert sphere["ionic_steps"] == [1, 2]
+    assert (sphere["ionic_step"], sphere["electronic_step"]) == (2, 2)
+    assert np.asarray(sphere["M_int"]) == pytest.approx(np.asarray([[2, 0, 0], [-1.414213562, -1.414213562, 0], [0, 0, 0]]))
+    assert np.asarray(sphere["MW_int"]) == pytest.approx(np.asarray([[1.8, 0, 0], [-1.272792206, -1.272792206, 0], [0, 0, 0]]))
+    assert sphere["source"] == "OSZICAR"
+    assert "provenance" not in sphere
+
+
+@pytest.mark.parametrize("failure, message", [
+    ("not_converged", "Final electronic loop did not reach EDIFF after its last iteration"),
+    ("stale_ediff", "Final electronic loop did not reach EDIFF after its last iteration"),
+    ("step_mismatch", "Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop"),
+    ("truncated_oszicar", "Terminal OSZICAR sphere block ion count mismatch"),
+    ("multiple_segments", "Missing or ambiguous completed OUTCAR run segment"),
+    ("echo_mismatch", "OUTCAR does not echo the requested RWIGS=1.3 0.8"),
+])
+def test_check_run_rejects_unassociated_or_incomplete_runs(tmp_path, failure, message):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    targets = np.asarray(config["targets"])
+    run = tmp_path / "run"
+    synthetic_readback(run, config, 2 * targets, 1.8 * targets)
+    outcar, oszicar = run / "OUTCAR", run / "OSZICAR"
+    if failure == "not_converged":
+        outcar.write_text(outcar.read_text().replace("aborting loop because EDIFF is reached", "NELM exhausted"))
+    elif failure == "stale_ediff":
+        outcar.write_text(outcar.read_text().replace(
+            "aborting loop because EDIFF is reached\nGeneral timing and accounting",
+            "aborting loop because EDIFF is reached\nIteration 1( 2)\nGeneral timing and accounting"))
+    elif failure == "step_mismatch":
+        outcar.write_text(outcar.read_text().replace(
+            "General timing and accounting",
+            "Iteration 2( 1)\naborting loop because EDIFF is reached\nGeneral timing and accounting"))
+    elif failure == "truncated_oszicar":
+        oszicar.write_text(oszicar.read_text() + " DAV: 1 -1\n ion MW_int M_int\n 1 0 0 0 0 0 0\n")
+    elif failure == "multiple_segments":
+        outcar.write_text(outcar.read_text() + outcar.read_text())
+    elif failure == "echo_mismatch":
+        outcar.write_text(outcar.read_text().replace("RWIGS = 1.3 0.8", "RWIGS = 1.4 0.8"))
+    with pytest.raises(ValueError) as error:
+        step1.check_run(run, 3)
+    assert str(error.value) == message
+
+
 def test_final_loop_association_and_stale_evidence(tmp_path):
     config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
     m = 2 * np.asarray(config["targets"])

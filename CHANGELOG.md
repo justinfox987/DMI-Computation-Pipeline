@@ -5,6 +5,10 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Shared Step 1 run convergence check (2026-10-30)
+
+- Extracted `step1.check_run(directory, nions)` for independent OUTCAR convergence, run INCAR echo and terminal OSZICAR sphere/step association; `read_state` retains config-specific comparisons and unchanged provenance/readback. Seven synthetic boundary cases added; 62 local tests pass. No physical validation or cluster execution. See the [T1 handoff](docs/sessions/2026-10-30_1526Z-agent-pilot-runner-t1-check-run.md).
+
 ### Explicit Perlmutter pilot interfaces (2026-10-21)
 
 - Removed current-directory job.sh discovery: include a launch script only through `--job-template`. Material/recipe/run/readback paths stay caller supplied, with executable configuration in the existing working launch script. Added ENINI to the shared input whitelist so cutoff settings can be supplied and echoed without selecting new values. Added the [Perlmutter sequence](docs/PERLMUTTER_F0_PILOT.md), portable installation instructions and regression coverage through synthetic shared-input preparation/readback. Local pilot directories are generator tests; no local cluster assets are required. No calculation submitted. See the [handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md).

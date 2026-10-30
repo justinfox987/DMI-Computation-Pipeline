@@ -215,7 +215,7 @@ def require_vector(record):
 
 
 def sphere(path, nions):
-    """Parse terminal OSZICAR ionic record; segment convergence is checked by read_state.
+    """Parse terminal OSZICAR ionic record; segment convergence is checked by check_run.
 
     Fail closed for incomplete or ambiguous restarts rather than taking the last
     earlier complete table. Convergence is checked independently in OUTCAR.
@@ -327,6 +327,37 @@ def sphere(path, nions):
             "lines": [start + 1, max(p + 1, (field_headers[0] + 1 + nions) if field_headers else p + 1)]}
 
 
+def check_run(directory, nions) -> dict:
+    """Check one converged OUTCAR segment against the terminal OSZICAR sphere."""
+    directory = Path(directory)
+    outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
+    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
+    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
+        raise ValueError("Missing or ambiguous completed OUTCAR run segment")
+    converged = outcar.rfind("aborting loop because EDIFF is reached")
+    iterations = list(ITERATION.finditer(outcar))
+    footer = outcar.rfind("General timing and accounting")
+    if (not iterations or converged < iterations[-1].end() or converged > footer or
+            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
+        raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
+    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
+    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
+    if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
+        raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
+    for step in outcar_steps:
+        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
+        if count != list(range(1, count[-1] + 1)):
+            raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
+    _echo_check(directory)
+    result = sphere(directory / "OSZICAR", nions)
+    ionic, electronic = (int(x) for x in iterations[-1].groups())
+    if (result["ionic_steps"] != outcar_steps or
+            (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
+        raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
+    return {"sphere": result, "outcar": {"final_step": [ionic, electronic],
+            "build_banner": outcar.splitlines()[0].strip(), "ionic_steps": outcar_steps}}
+
+
 def read_state(directory, record, config_path):
     """Check matching run inputs and independent final electronic convergence."""
     require_vector(record)
@@ -365,42 +396,20 @@ def read_state(directory, record, config_path):
     if not np.allclose(numbers(tags["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
         raise ValueError("Requested M_CONSTR differs from versioned target vectors")
     outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
-    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
-    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
-        raise ValueError("Missing or ambiguous completed OUTCAR run segment")
-    converged = outcar.rfind("aborting loop because EDIFF is reached")
-    iterations = list(ITERATION.finditer(outcar))
-    footer = outcar.rfind("General timing and accounting")
-    if (not iterations or converged < iterations[-1].end() or converged > footer or
-            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
-        raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
-    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
-    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
-    if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
-        raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
-    for step in outcar_steps:
-        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
-        if count != list(range(1, count[-1] + 1)):
-            raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
     for echoed in re.findall(r"^\s*QSPIRAL\s*=\s*(.*)$", outcar, re.M):
         echoed_q = vector(numbers(echoed), "OUTCAR QSPIRAL")
         if not np.allclose(echoed_q, stored_q, atol=1e-9, rtol=0):
             raise ValueError("OUTCAR QSPIRAL differs from stored model q_frac")
-    _echo_check(directory)
-    oszicar = directory / "OSZICAR"
-    result = sphere(oszicar, len(record["species"]))
-    ionic, electronic = (int(x) for x in iterations[-1].groups())
-    if (result["ionic_steps"] != outcar_steps or
-            (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
-        raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
+    checked = check_run(directory, len(record["species"]))
+    result = checked["sphere"]
     if not np.isclose(result["lambda"], numbers(tags["LAMBDA"])[0], atol=1e-10, rtol=1e-6):
         raise ValueError("Printed final lambda differs from requested LAMBDA")
     result["provenance"] = {"files": manifest.fingerprints(
         [config_path] + [directory / name for name in ("POSCAR", "INCAR", "OUTCAR", "OSZICAR")]),
         "config_path": str(config_path.resolve()), "run_path": str(directory.resolve()),
-        "outcar_final_ediff": True, "final_step": [ionic, electronic],
+        "outcar_final_ediff": True, "final_step": checked["outcar"]["final_step"],
         "segment": "single completed OUTCAR run; matched terminal ionic/electronic step",
-        "build_banner": outcar.splitlines()[0].strip(), "input_tags": record["tags"],
+        "build_banner": checked["outcar"]["build_banner"], "input_tags": record["tags"],
         "incar_echo": True}
     return result
 
