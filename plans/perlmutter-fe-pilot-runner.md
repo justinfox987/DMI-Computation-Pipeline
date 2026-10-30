@@ -57,11 +57,11 @@ single completed OUTCAR segment, final EDIFF after last iteration, ionic/electro
 }
 ```
 
-- `reference.mode` is `import` (completed q0 run directory or `references.json` + provenance) or `generate` (T3 builds a q0 case, included in the plan as case `reference-q0`). The two-case example above imports a reference; generation adds a third scheduled case.
-- Merge: case fields override `defaults` key by key; no deep merge of lists. Unknown keys rejected. Executable and resources are NOT in the campaign (owned by `job_template`).
+- `reference.mode` is `import` (a caller-supplied path to a completed q0 run or `references.json` + provenance, **not checked or extracted until T3**) or `generate` (T3 builds a q0 case, included in the plan as case `reference-q0`). The two-case example above imports a reference; generation reserves a third plan case with `status: "preparation deferred to T3"`, and T2 `campaign-prepare` fails explicitly without writing. `campaign-plan --campaign FILE` previews that three-case plan without writing. Plan top-level `reference` records mode/path/status for imports or mode/id/status for generation.
+- Merge: case recipe fields override `defaults` key by key; no deep merge of lists. Cases additionally require `id`, `side`, `q_frac`, `purpose`, and may declare `pair`, `execution_parents` and additional `acceptance_requires` (case IDs). `id` is inserted into each resolved recipe. Unknown keys rejected. Executable and resources are NOT in the campaign (owned by `job_template`). Paths may be absolute or relative to the campaign file; the copied campaign preserves the original bytes.
 - Negative member is given the same unwrapped positive `q_frac` with `side: "-"`; `step1.prepare` reflects it. Test must show q and targets equal single-recipe output and the sign applied exactly once.
 - Expansion writes, under `run_root`: `campaign.json` (original copy), `cases/<id>/recipe.json` (fully resolved), `runs/<id>/` via `step1.write_inputs` (config.json, INCAR.step1, INCAR, POSCAR, KPOINTS, POTCAR, job.sh), `plan.json`. Finite-q cases pass through the same `step1.prepare` and `step1.write_inputs` as the single CLI; a generated q0 reference uses T3's explicit `reference.prepare_q0` and reuses `step1.write_inputs` without weakening the finite-q exclusion.
-- Case IDs: `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, unique, no path separators. Reject output collisions and nonempty destinations.
+- Case and pair IDs: `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, unique case IDs, no path separators, `..`, trailing dots or Windows reserved names. Reject case-insensitive output collisions, reserved `reference-q0`, input/output path overlaps and nonempty destinations. Inputs must exist and be nonempty before writing; `job_template` is always explicit. Shared POTCAR stays copied unchanged and is ignored by Git. The Python `CASE_ID` regex includes a single trailing dot, which is rejected separately as unsafe on Windows.
 
 `plan.json` schema `"dmi-plan-1"`:
 
@@ -78,14 +78,15 @@ single completed OUTCAR segment, final EDIFF after last iteration, ionic/electro
     "reference": "import:reference-q0"
   }],
   "pairs": [{"id": "fe-f0-q025", "plus": "...", "minus": "..."}],
+  "reference": {"mode": "import", "path": "ABS/PATH/reference", "status": "unverified; T3 extraction and compatibility pending"},
   "inputs": {"campaign_sha256": "...", "material": {"POSCAR": "sha", "INCAR": "sha", "KPOINTS": "sha", "POTCAR": "sha"}, "job_template_sha256": "..."}
 }
 ```
 
 - `execution_parents`: restart or ordering dependencies only. Cold-start pair members have none.
 - `acceptance_requires`: reference and any accepted-state prerequisites. These do not create execution dependencies. Keep the two fields distinct everywhere.
-- Initialization must be checked in the shared INCAR: cold pilot requires `ISTART=0`, `ICHARG=2`; otherwise reject unless a case declares an existing execution parent.
-- Plan validation (before anything runs): duplicate/unsafe IDs, output collisions, invalid recipe via `step1.prepare`, missing parents, cycles, a pair with other than one `+` and one `-` member, pair members with differing family/axis/q-modulo-sign/material. `campaign-plan` prints run count and dependencies. No runtime estimates.
+- Initialization is checked via the shared INCAR parser: a case without a declared execution parent requires `ISTART=0`, `ICHARG=2`; a case with an existing in-plan parent records that parent separately even if the shared INCAR is cold. T2 does **not** stage or verify restart files; T4 must resolve restart ownership/consistency before any execution. Referenced parents must be finite-q cases in the same plan (the import q0 reference is an acceptance prerequisite, not a restart parent).
+- Plan validation before any run-root write: duplicate/unsafe IDs, output collisions, invalid recipe via `step1.prepare`, missing parents/prerequisites, parent cycles, a pair with other than one `+` and one `-` member, pair members with differing family/axis/unwrapped positive q/material or other resolved recipe settings. T2 requires the first nonzero component of the input q to be positive to reject already-negated negative partners; this is a campaign input convention, not a change to single-recipe physics. `campaign-plan --root ROOT` reads a prepared plan; `--campaign FILE` validates and previews without writing. Both print run count, pairs and the two dependency kinds, never runtime estimates.
 - Fe example lives at `evidence/` is NOT correct for runnable inputs; place the example at `examples/fe-f0-pilot/campaign.json` (paths are placeholders the user edits) and a synthetic test fixture under `pipeline v3/tests/`.
 
 ## T3 contract: reference preparation and extraction

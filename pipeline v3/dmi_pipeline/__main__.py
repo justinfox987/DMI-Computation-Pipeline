@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 
-from . import manifest
+from . import campaign, manifest
 from .dumpio import load_cocc, load_cproj, load_cso, load_ferwe
 from . import step1
 from .gates import gate_c0, gate_m1
@@ -39,6 +39,12 @@ def main(argv=None) -> int:
     material.add_argument("--inputs", type=Path, help="Shared directory with POSCAR, INCAR, KPOINTS and POTCAR")
     prepare.add_argument("--job-template", type=Path, help="Explicit launch script for --inputs; copied unchanged as job.sh")
     prepare.add_argument("--output", type=Path, required=True)
+    campaign_prepare = commands.add_parser("campaign-prepare", help="Expand and validate a campaign without submitting jobs")
+    campaign_prepare.add_argument("--campaign", type=Path, required=True)
+    campaign_plan = commands.add_parser("campaign-plan", help="Inspect a prepared root or validate a campaign without writing")
+    plan_source = campaign_plan.add_mutually_exclusive_group(required=True)
+    plan_source.add_argument("--root", type=Path)
+    plan_source.add_argument("--campaign", type=Path)
     wrap = commands.add_parser("step1-wrap-partner", help="Shift prepared negative q without regenerating targets")
     wrap.add_argument("--config", type=Path, required=True)
     wrap.add_argument("--q-frac", type=float, nargs=3, required=True)
@@ -58,6 +64,19 @@ def main(argv=None) -> int:
     solver.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "campaign-prepare":
+            plan = campaign.prepare(args.campaign)
+            print(f"Prepared {plan['run_count']} runs")
+            return 0
+        if args.command == "campaign-plan":
+            if args.root is not None:
+                plan = manifest.load(args.root / "plan.json")
+                if plan.get("schema") != campaign.PLAN_SCHEMA:
+                    raise ValueError("Expected dmi-plan-1 in prepared root")
+            else:
+                plan = campaign.build_plan(args.campaign)[0]
+            print(json.dumps({key: plan[key] for key in ("run_count", "cases", "pairs", "reference")}, indent=2))
+            return 0
         if args.command == "step1-prepare":
             record = step1.prepare(manifest.load(args.recipe), args.inputs / "POSCAR" if args.inputs else args.poscar)
             step1.write_inputs(record, args.output, args.inputs, args.job_template)
@@ -111,9 +130,9 @@ def main(argv=None) -> int:
             print(json.dumps(result, indent=2))
             return 0 if result["passed"] else 1
         if args.command == "status":
-            campaign = manifest.load(args.manifest)
-            result = {"acceptance": campaign["acceptance"], "runs": {}}
-            for kind, record in campaign["runs"].items():
+            null_manifest = manifest.load(args.manifest)
+            result = {"acceptance": null_manifest["acceptance"], "runs": {}}
+            for kind, record in null_manifest["runs"].items():
                 result["runs"][kind] = "DONE" if record["passed"] else record.get("error", "FAILED")
             print(json.dumps(result, indent=2))
             return 0

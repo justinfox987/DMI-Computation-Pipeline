@@ -5,6 +5,10 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+### Fe F0 pilot campaign preparation (2026-10-30)
+
+- Added `campaign-prepare` and `campaign-plan` with pre-write plan validation, two-kind dependencies, explicit imported-reference provenance pending T3, SHA-256 input inventory, and per-case expansion through the unchanged Step 1 generator/writer. Added a two-run Fe example and 44 synthetic tests; 106 total local tests pass. Generated q0 preparation, submission and reference checks remain for T3/T4. See the [T2 handoff](docs/sessions/2026-10-30_1538Z-agent-pilot-runner-t2-campaign.md).
+
 ### Shared Step 1 run convergence check (2026-10-30)
 
 - Extracted `step1.check_run(directory, nions)` for independent OUTCAR convergence, run INCAR echo and terminal OSZICAR sphere/step association; `read_state` retains config-specific comparisons and unchanged provenance/readback. Seven synthetic boundary cases added; 62 local tests pass. No physical validation or cluster execution. See the [T1 handoff](docs/sessions/2026-10-30_1526Z-agent-pilot-runner-t1-check-run.md).
