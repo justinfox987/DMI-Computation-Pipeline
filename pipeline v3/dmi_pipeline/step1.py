@@ -419,6 +419,17 @@ def read_state(directory, record, config_path):
     return result
 
 
+def read_and_gate(config_path, directory, references_path, output, common_z=False):
+    """Use the same config-bound read, physical gate and atomic state write for both CLIs."""
+    config = manifest.load(config_path)
+    readback = read_state(directory, config, config_path)
+    references = manifest.load(references_path)
+    gate = validate(config, readback, references.get("M_int"), references.get("MW_int"), common_z)
+    value = {"config": config, "readback": readback, "gate": gate}
+    manifest.save(value, output)
+    return value
+
+
 def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=False):
     require_vector(record)
     provenance = readback.get("provenance", {})

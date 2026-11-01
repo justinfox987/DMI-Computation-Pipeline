@@ -3,9 +3,10 @@
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import sys
 
-from . import campaign, manifest
+from . import campaign, manifest, runner
 from .dumpio import load_cocc, load_cproj, load_cso, load_ferwe
 from . import step1
 from .gates import gate_c0, gate_m1
@@ -50,6 +51,20 @@ def main(argv=None) -> int:
     campaign_reference.add_argument("--run", type=Path, help="Completed q0 run; defaults to prepared generated reference")
     campaign_reference.add_argument("--config", type=Path, help="Explicit q0 config or magnetic_indices mapping for an imported run")
     campaign_reference.add_argument("--output", type=Path, help="Must be ROOT/reference when provided")
+    submit = commands.add_parser("campaign-submit", help="Preview or confirm ordinary Slurm submission")
+    submit.add_argument("--root", type=Path, required=True)
+    submit.add_argument("--max-concurrent", type=int)
+    submit.add_argument("--yes", action="store_true", help="Explicitly allow input staging and sbatch")
+    submit.add_argument("--clear-stale-lock", action="store_true", help="Only after verifying no other writer is active")
+    resume = commands.add_parser("campaign-resume", help="Reconcile jobs; optionally confirm new submissions")
+    resume.add_argument("--root", type=Path, required=True)
+    resume.add_argument("--retry", action="store_true", help="Permit new attempt after a recorded failure")
+    resume.add_argument("--yes", action="store_true", help="Explicitly allow staging and sbatch")
+    resume.add_argument("--clear-stale-lock", action="store_true")
+    campaign_status = commands.add_parser("campaign-status", help="Reconcile and show individual case results")
+    campaign_status.add_argument("--root", type=Path, required=True)
+    campaign_status.add_argument("--json", action="store_true")
+    campaign_status.add_argument("--clear-stale-lock", action="store_true")
     wrap = commands.add_parser("step1-wrap-partner", help="Shift prepared negative q without regenerating targets")
     wrap.add_argument("--config", type=Path, required=True)
     wrap.add_argument("--q-frac", type=float, nargs=3, required=True)
@@ -90,6 +105,16 @@ def main(argv=None) -> int:
                 return 1
             print("PASS: independent q0 reference compatible with every consuming case")
             return 0
+        if args.command == "campaign-submit":
+            runner.submit(args.root, max_concurrent=args.max_concurrent, yes=args.yes,
+                          clear_stale_lock=args.clear_stale_lock)
+            return 0
+        if args.command == "campaign-resume":
+            runner.resume(args.root, retry=args.retry, yes=args.yes, clear_stale_lock=args.clear_stale_lock)
+            return 0
+        if args.command == "campaign-status":
+            runner.status(args.root, json_output=args.json, clear_stale_lock=args.clear_stale_lock)
+            return 0
         if args.command == "step1-prepare":
             record = step1.prepare(manifest.load(args.recipe), args.inputs / "POSCAR" if args.inputs else args.poscar)
             step1.write_inputs(record, args.output, args.inputs, args.job_template)
@@ -103,12 +128,8 @@ def main(argv=None) -> int:
             print(args.output / "config.json")
             return 0
         if args.command == "step1-read":
-            config = manifest.load(args.config)
-            readback = step1.read_state(args.run, config, args.config)
-            references = manifest.load(args.references)
-            gate = step1.validate(config, readback, references.get("M_int"), references.get("MW_int"), args.common_z)
-            value = {"config": config, "readback": readback, "gate": gate}
-            manifest.save(value, args.output)
+            value = step1.read_and_gate(args.config, args.run, args.references, args.output, args.common_z)
+            gate = value["gate"]
             print(json.dumps({"passed": gate["passed"], "reasons": gate["reasons"]}, indent=2))
             return 0 if gate["passed"] else 1
         if args.command == "step1-row":
@@ -160,7 +181,7 @@ def main(argv=None) -> int:
             manifest.save(result, args.output)
         print(json.dumps(result, indent=2))
         return 0 if result["passed"] else 1
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 

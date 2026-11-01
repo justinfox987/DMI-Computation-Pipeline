@@ -110,11 +110,18 @@ def test_synthetic_plan_dependencies_and_hashes(tmp_path):
         assert entry["execution_parents"] == []
         assert entry["acceptance_requires"] == ["import:reference-q0"]
         assert entry["reference"] == "import:reference-q0"
-    assert plan["inputs"] == {"campaign_sha256": manifest.file_hash(source),
-                              "material": {name: manifest.file_hash(shared / name)
-                                           for name in ("POSCAR", "INCAR", "KPOINTS", "POTCAR")},
-                              "job_template_sha256": manifest.file_hash(job)}
-    assert all(not (root / name).exists() for name in ("submissions.json", "jobsall.sh", "submission.lock"))
+    assert {key: value for key, value in plan["inputs"].items() if key not in ("prepared", "jobsall_sha256")} == {
+        "campaign_sha256": manifest.file_hash(source),
+        "material": {name: manifest.file_hash(shared / name)
+                     for name in ("POSCAR", "INCAR", "KPOINTS", "POTCAR")},
+        "job_template_sha256": manifest.file_hash(job),
+        "source_paths": {"campaign": str(source.resolve()),
+                         "material": str(shared.resolve()),
+                         "job_template": str(job.resolve())}}
+    assert plan["inputs"]["jobsall_sha256"] == manifest.file_hash(root / "jobsall.sh")
+    assert all(not (root / name).exists() for name in ("submissions.json", "submission.lock"))
+    assert (root / "jobsall.sh").is_file()
+    assert set(plan["inputs"]["prepared"]) == {"plus", "minus"}
     assert not any(root.rglob("submission-id.txt"))
 
 

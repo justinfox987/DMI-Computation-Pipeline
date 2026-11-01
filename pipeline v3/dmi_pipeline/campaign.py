@@ -3,9 +3,10 @@
 import json
 from pathlib import Path
 import re
+import sys
 
 from . import manifest, reference, step1
-from .realized import incar
+from .realized import incar, numbers
 from .workflow import INCAR_TAGS
 
 SCHEMA = "dmi-campaign-1"
@@ -17,6 +18,9 @@ RECIPE_FIELDS = {"family", "side", "q_frac", "axis", "magnetic_indices", "signs"
 CASE_FIELDS = RECIPE_FIELDS | {"id", "purpose", "pair", "execution_parents", "acceptance_requires"}
 CAMPAIGN_FIELDS = {"schema", "run_root", "material", "job_template", "reference", "defaults", "cases"}
 MATERIAL_FILES = ("POSCAR", "INCAR", "KPOINTS", "POTCAR")
+INPUT_FILES = ("config.json", "POSCAR", "INCAR", "KPOINTS", "POTCAR", "job.sh")
+# The controller only runs Python and submits calculation jobs; it never runs VASP.
+JOBSALL_WALLTIME = "00:10:00"
 RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 
 
@@ -31,7 +35,7 @@ def _keys(value, allowed, required, name):
         raise ValueError(f"Missing {name} keys: {sorted(missing)}")
 
 
-def _id(value, name):
+def validate_id(value, name):
     if (not isinstance(value, str) or not CASE_ID.fullmatch(value) or ".." in value
             or value.endswith(".") or value.split(".", 1)[0].upper() in RESERVED_NAMES):
         raise ValueError(f"Unsafe {name}: {value!r}")
@@ -41,7 +45,62 @@ def _list(value, name):
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value) or len(value) != len(set(value)):
         raise ValueError(f"{name} must be a list of unique names")
     for item in value:
-        _id(item, name)
+        validate_id(item, name)
+
+
+def restart_enabled(tags):
+    return int(numbers(tags.get("ISTART", "0"))[0]) != 0 or int(numbers(tags.get("ICHARG", "2"))[0]) >= 10
+
+
+def case_parents(entry):
+    return entry["execution_parents"] + [name for name in entry["acceptance_requires"]
+                                          if name != "import:reference-q0"]
+
+
+def write_jobsall(root, template):
+    """Write the prepared submission job; return its byte hash for plan inputs."""
+    root = Path(root).resolve()
+    directives = []
+    found = False
+    owned = ("--job-name", "--output", "--error", "--time", "--dependency",
+             "--chdir", "--array", "--open-mode")
+    short_owned = "JoetdDa"
+    for line in Path(template).read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            break
+        if not stripped.startswith("#SBATCH") or not re.match(r"^#SBATCH(?:\s|$)", stripped):
+            continue
+        found = True
+        option = stripped[len("#SBATCH"):].strip().split(maxsplit=1)
+        if not option:
+            raise ValueError(f"Empty #SBATCH directive in {template}")
+        flag = option[0]
+        if flag.startswith("--") and flag.split("=", 1)[0] in owned:
+            continue
+        if flag.startswith("-") and not flag.startswith("--") and flag[1:2] in short_owned:
+            continue
+        directives.append(stripped)
+    if not found:
+        print("WARNING: job template has no leading #SBATCH directives; jobsall.sh has no account/queue directives")
+
+    # Bash double quotes keep spaces literal while preventing interpolation from prepared paths.
+    quoted_root = '"' + root.as_posix().replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`") + '"'
+    python = Path(sys.executable).as_posix().replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    lines = ["#!/bin/bash", *directives,
+             f"#SBATCH --job-name={root.name}-jobsall",
+             f"#SBATCH --output={quoted_root[:-1]}/jobsall-%j.out\"",
+             f"#SBATCH --error={quoted_root[:-1]}/jobsall-%j.err\"",
+             f"#SBATCH --time={JOBSALL_WALLTIME}",
+             "set -euo pipefail",
+             f"cd {quoted_root}",
+             "# TODO(T5): set PYTHONPATH to the frozen code snapshot before this invocation.",
+             "# sbatch jobsall.sh is the operator's explicit confirmation of submission.",
+             f'"${{PYTHON:-{python}}}" -B -m dmi_pipeline campaign-submit --root {quoted_root} --yes']
+    path = root / "jobsall.sh"
+    with path.open("w", encoding="utf-8", newline="\n") as output:
+        output.write("\n".join(lines) + "\n")
+    return manifest.file_hash(path)
 
 
 def build_plan(source):
@@ -55,6 +114,7 @@ def build_plan(source):
         if not isinstance(data[name], str) or not data[name].strip():
             raise ValueError(f"{name} must be an explicit path")
     root = (source.parent / data["run_root"]).resolve()
+    validate_id(root.name, "run_root name for jobsall job-name")
     material = (source.parent / data["material"]).resolve()
     job = (source.parent / data["job_template"]).resolve()
     if (source == root or root in source.parents or root == material or root in material.parents
@@ -112,7 +172,7 @@ def build_plan(source):
     for case in data["cases"]:
         _keys(case, CASE_FIELDS, {"id", "side", "q_frac", "purpose"}, "case")
         case_id = case["id"]
-        _id(case_id, "case id")
+        validate_id(case_id, "case id")
         # Windows paths can alias by case or a trailing dot; reject them before writing.
         path_key = case_id.rstrip(".").casefold()
         if path_key in seen_paths or case_id == "reference-q0":
@@ -144,7 +204,7 @@ def build_plan(source):
         records[case_id] = record
         pair = case.get("pair")
         if pair is not None:
-            _id(pair, "pair id")
+            validate_id(pair, "pair id")
             pair_members.setdefault(pair, []).append(case_id)
         if parents:
             initialization = "declared execution parent; shared INCAR: ISTART=0, ICHARG=2" if cold else "restart (declared execution parent)"
@@ -215,8 +275,10 @@ def build_plan(source):
     plan = {"schema": PLAN_SCHEMA, "run_count": len(entries), "cases": entries, "pairs": pairs,
             "reference": reference_entry,
             "inputs": {"campaign_sha256": manifest.file_hash(source),
-                       "material": {name: manifest.file_hash(material / name) for name in MATERIAL_FILES},
-                       "job_template_sha256": manifest.file_hash(job)}}
+                      "material": {name: manifest.file_hash(material / name) for name in MATERIAL_FILES},
+                      "job_template_sha256": manifest.file_hash(job),
+                      "source_paths": {"campaign": str(source), "material": str(material),
+                                       "job_template": str(job)}}}
     try:
         json.dumps(plan, allow_nan=False)
         json.dumps(recipes, allow_nan=False)
@@ -259,6 +321,10 @@ def prepare(source):
         manifest.save(imported[0], root / "reference" / "references.json")
         provenance = dict(imported[1], references_sha256=manifest.file_hash(root / "reference" / "references.json"))
         manifest.save(provenance, root / "reference" / "reference-provenance.json")
+    plan["inputs"]["prepared"] = {
+        case_id: {name: manifest.file_hash(root / "runs" / case_id / name) for name in INPUT_FILES}
+        for case_id in recipes}
+    plan["inputs"]["jobsall_sha256"] = write_jobsall(root, job)
     manifest.save(plan, root / "plan.json")
     return plan
 
@@ -275,9 +341,11 @@ def check_reference(root, run=None, config=None, output=None):
     mode = plan["reference"]["mode"]
     if mode == "generate":
         expected = (root / "runs" / "reference-q0").resolve()
-        if run is not None and Path(run).resolve() != expected:
-            raise ValueError("Generated reference must be runs/reference-q0, never a finite-q case")
-        run = expected
+        if run is not None and Path(run).resolve() != expected and not (
+                Path(run).resolve().parent == expected and
+                Path(run).name.startswith("attempt-") and Path(run).name[8:].isdigit()):
+            raise ValueError("Generated reference must be a runs/reference-q0 attempt, never a finite-q case")
+        run = Path(run).resolve() if run is not None else expected
     if run is not None:
         run = Path(run).resolve()
         if run in {(root / "runs" / entry["id"]).resolve() for entry in plan["cases"] if entry["id"] != "reference-q0"}:

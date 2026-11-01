@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- Added the Fe pilot T4 runner baseline and hardened the submit path: prepared, hashed Slurm `jobsall.sh`, locked and explicitly confirmed fake-tested submission, private restart staging and exact scheduler options. Local 153 -> 160 tests and generated-script Bash syntax pass; reconcile/readback/resume are still being hardened in T4b. No VASP or cluster jobs. See the [T4a handoff](docs/sessions/2026-10-30_2124Z-agent-pilot-runner-t4a-submit-path.md).
+
 - Added independent q0 sphere-reference preparation/extraction with hashed provenance and strict per-case compatibility; campaign import/generate and `campaign-reference` now verify before acceptance. 106 -> 136 local tests pass; no VASP or cluster run. See the [T3 handoff](docs/sessions/2026-10-30_1559Z-agent-pilot-runner-t3-reference.md).
 
 ### Fe F0 pilot campaign preparation (2026-10-30)
