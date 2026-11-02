@@ -226,7 +226,7 @@ def test_synthetic_submit_dependencies_keep_science_and_lane_ancestors(tmp_path)
     fake = FakeScheduler()
     runner.submit(root, fake, max_concurrent=1, yes=True)
     assert len(fake.calls) == 3
-    for (argv, cwd), case in zip(fake.calls, ("plus", "minus", "other")):
+    for (argv, cwd), case in zip(fake.calls, ("plus", "other", "minus")):
         assert cwd == root / "runs" / case / "attempt-001"
         assert argv[:9] == ["sbatch", "--parsable", f"--chdir={cwd}", "--export=ALL",
                             f"--output={cwd / 'slurm-%j.out'}", f"--error={cwd / 'slurm-%j.err'}",
@@ -234,8 +234,8 @@ def test_synthetic_submit_dependencies_keep_science_and_lane_ancestors(tmp_path)
                             "--kill-on-invalid-dep=yes"]
         assert argv[-1] == str(cwd / "job.sh")
     assert not any(arg.startswith("--dependency=") for arg in fake.calls[0][0])
-    assert "--dependency=afterok:10001,afterany:10001" in fake.calls[1][0]
-    assert "--dependency=afterany:10001:10002" in fake.calls[2][0]
+    assert "--dependency=afterany:10001" in fake.calls[1][0]
+    assert "--dependency=afterok:10001,afterany:10001:10002" in fake.calls[2][0]
 
 
 def test_synthetic_slurm_submit_scrubs_inherited_scheduler_options(monkeypatch, tmp_path):
@@ -581,14 +581,49 @@ def test_live_job_does_not_write_result_or_resubmit_and_readback_only_once(tmp_p
     assert calls == [1] and result.read_bytes() == before
 
 
-def test_reconcile_orders_reference_then_execution_parent_then_plan_peers(tmp_path):
-    root, _ = prepared(tmp_path, generated=True)
+@pytest.mark.parametrize("parent_gate", [True, False])
+def test_generated_reference_and_execution_parent_reconcile_in_one_pass(tmp_path, monkeypatch, parent_gate):
+    source, data, shared, job, root = synthetic_campaign(tmp_path)
+    job.write_text(TEMPLATE)
+    data["reference"] = {"mode": "generate"}
+    data["cases"][1]["execution_parents"] = ["plus"]
+    manifest.save(data, source)
+    campaign.prepare(source)
     plan = manifest.load(root / "plan.json")
-    plan["cases"][2]["execution_parents"] = ["plus"]
-    plan["cases"] = [plan["cases"][2], plan["cases"][1], plan["cases"][0]]
-    manifest.save(plan, root / "plan.json")
-    _, ordered = runner._plan(root)
-    assert [entry["id"] for entry in ordered] == ["reference-q0", "plus", "minus"]
+    assert [entry["id"] for entry in plan["cases"]] == ["reference-q0", "plus", "minus"]
+    assert plan["cases"][2]["execution_parents"] == ["plus"]
+    fake = FakeScheduler()
+    runner.submit(root, fake, max_concurrent=3, yes=True)
+    synthetic_finish(root, fake, "reference-q0")
+    synthetic_finish(root, fake, "plus", gate=parent_gate)
+    synthetic_finish(root, fake, "minus")
+    calls = []
+    original_reference = campaign.check_reference
+    original_readback = runner.step1.read_and_gate
+
+    def checked_reference(*args, **kwargs):
+        calls.append("reference-q0")
+        return original_reference(*args, **kwargs)
+
+    def checked_readback(config, directory, references, output):
+        calls.append(directory.parent.name)
+        return original_readback(config, directory, references, output)
+
+    monkeypatch.setattr(campaign, "check_reference", checked_reference)
+    monkeypatch.setattr(runner.step1, "read_and_gate", checked_readback)
+    rows = {row["case_id"]: row for row in runner.status(root, fake)["cases"]}
+    assert manifest.load(root / "plan.json")["reference"]["status"] == "verified-generate"
+    assert rows["reference-q0"]["status"] == "accepted"
+    assert rows["plus"]["status"] == ("accepted" if parent_gate else "rejected")
+    assert rows["minus"]["status"] == ("accepted" if parent_gate else "blocked")
+    assert calls == (["reference-q0", "plus", "minus"] if parent_gate else ["reference-q0", "plus"])
+    assert rows["plus"]["readback"] == "passed"
+    if parent_gate:
+        assert rows["minus"]["readback"] == "passed"
+        assert manifest.load(root / "runs" / "minus" / "result.json")["status"] == "accepted"
+    else:
+        assert "prerequisite plus" in rows["minus"]["blocked_reason"]
+        assert not (root / "runs" / "minus" / "attempt-001" / "readback" / "state.json").exists()
 
 
 @pytest.mark.parametrize("state", ["FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL"])

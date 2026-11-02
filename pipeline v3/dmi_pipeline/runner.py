@@ -211,8 +211,7 @@ def _plan(root, verify_inputs=True):
                  all(parent in [item["id"] for item in ordered] for parent in entry["execution_parents"])]
         if not ready:
             raise ValueError("Execution parent cycle in prepared plan")
-        # Parents first; prioritize q0 among peers while retaining plan order.
-        ordered.append(next((entry for entry in ready if entry["id"] == "reference-q0"), ready[0]))
+        ordered.extend(ready)
     for entry in ordered:
         directory = root / entry["run_dir"]
         if set(inputs["prepared"][entry["id"]]) != set(campaign.INPUT_FILES):
