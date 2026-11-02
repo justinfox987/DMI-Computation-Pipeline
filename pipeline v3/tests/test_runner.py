@@ -82,7 +82,7 @@ def test_dry_run_submission_and_exact_argv_cwd(tmp_path, capsys):
         assert ledger["cases"][case_id]["attempts"][0]["job_id"].isdigit()
         assert not any((cwd / name).exists() for name in ("WAVECAR", "CHGCAR", "CHG"))
     assert runner.parse_job_id("12345;cluster\n") == "12345"
-    assert set(ledger) == {"schema", "max_concurrent", "code_identity", "cases", "lanes"}
+    assert set(ledger) == {"schema", "max_concurrent", "code_identity", "plan_inputs", "cases", "lanes"}
     assert "SUBMIT" in capsys.readouterr().out
 
 
@@ -90,12 +90,14 @@ def test_generated_reference_runs_independently_and_blocks_acceptance(tmp_path):
     root, data = prepared(tmp_path, generated=True)
     fake = FakeScheduler()
     runner.submit(root, fake, max_concurrent=3, yes=True)
+    assert [cwd.parent.name for _, cwd in fake.calls] == ["reference-q0", "plus", "minus"]
     assert len(fake.calls) == 3
     assert all(not any(arg.startswith("--dependency=") for arg in argv) for argv, _ in fake.calls)
     synthetic_finish(root, fake, "plus")
     synthetic_finish(root, fake, "minus")
     report = runner.status(root, fake)
-    assert {row["status"] for row in report["cases"] if row["case_id"] != "reference-q0"} == {"blocked"}
+    assert {row["status"] for row in report["cases"] if row["case_id"] != "reference-q0"} == {"submitted"}
+    assert all(manifest.load(root / "runs" / case / "result.json")["pending_reference"] for case in ("plus", "minus"))
     synthetic_finish(root, fake, "reference-q0")
     report = runner.status(root, fake)
     assert {row["status"] for row in report["cases"]} == {"accepted"}
@@ -160,8 +162,8 @@ def test_interrupted_submission_never_resubmits_and_lock(tmp_path):
     job = item.pop("job_id")
     item["status"] = "submitting"
     manifest.save(ledger, root / "submissions.json")
-    with pytest.raises(ValueError, match="Unresolved"):
-        runner.resume(root, fake, yes=True)
+    runner.resume(root, fake, yes=True)
+    assert manifest.load(root / "submissions.json")["cases"]["plus"]["status"] == "unresolved"
     assert len(fake.calls) == 2
     fake.matches[(item["job_name"], str(root / "runs" / "plus" / item["directory"]))] = [job]
     runner.status(root, fake)
@@ -224,7 +226,7 @@ def test_synthetic_submit_dependencies_keep_science_and_lane_ancestors(tmp_path)
     fake = FakeScheduler()
     runner.submit(root, fake, max_concurrent=1, yes=True)
     assert len(fake.calls) == 3
-    for (argv, cwd), case in zip(fake.calls, ("plus", "other", "minus")):
+    for (argv, cwd), case in zip(fake.calls, ("plus", "minus", "other")):
         assert cwd == root / "runs" / case / "attempt-001"
         assert argv[:9] == ["sbatch", "--parsable", f"--chdir={cwd}", "--export=ALL",
                             f"--output={cwd / 'slurm-%j.out'}", f"--error={cwd / 'slurm-%j.err'}",
@@ -232,8 +234,8 @@ def test_synthetic_submit_dependencies_keep_science_and_lane_ancestors(tmp_path)
                             "--kill-on-invalid-dep=yes"]
         assert argv[-1] == str(cwd / "job.sh")
     assert not any(arg.startswith("--dependency=") for arg in fake.calls[0][0])
-    assert "--dependency=afterany:10001" in fake.calls[1][0]
-    assert "--dependency=afterok:10001,afterany:10001:10002" in fake.calls[2][0]
+    assert "--dependency=afterok:10001,afterany:10001" in fake.calls[1][0]
+    assert "--dependency=afterany:10001:10002" in fake.calls[2][0]
 
 
 def test_synthetic_slurm_submit_scrubs_inherited_scheduler_options(monkeypatch, tmp_path):
@@ -365,3 +367,277 @@ def test_synthetic_completed_submit_is_idempotent(tmp_path):
     assert len(fake.calls) == 2
     assert all(len(manifest.load(root / "submissions.json")["cases"][name]["attempts"]) == 1
                for name in ("plus", "minus"))
+
+
+def test_reference_verified_mid_pass_releases_both_synthetic_gates(tmp_path):
+    root, _ = prepared(tmp_path, generated=True)
+    fake = FakeScheduler()
+    runner.submit(root, fake, max_concurrent=3, yes=True)
+    synthetic_finish(root, fake, "plus")
+    synthetic_finish(root, fake, "minus", gate=False)
+    synthetic_finish(root, fake, "reference-q0")
+    rows = {row["case_id"]: row for row in runner.status(root, fake)["cases"]}
+    assert rows["reference-q0"]["status"] == "accepted"
+    assert rows["plus"]["status"] == "accepted"
+    assert rows["minus"]["status"] == "rejected"
+
+
+def test_pending_reference_synthetic_resume_releases_without_duplicate_readback(tmp_path):
+    root, _ = prepared(tmp_path, generated=True)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus")
+    runner.status(root, fake)
+    path = root / "runs" / "plus" / "result.json"
+    assert manifest.load(path)["pending_reference"] is True
+    assert not (root / "runs" / "plus" / "attempt-001" / "readback" / "state.json").exists()
+    synthetic_finish(root, fake, "reference-q0")
+    runner.resume(root, fake, yes=True)
+    assert manifest.load(path)["status"] == "accepted"
+    assert not manifest.load(path).get("pending_reference")
+    assert len(fake.calls) == 3
+
+
+def test_terminal_failures_remain_terminal_without_scheduler_history(tmp_path):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus", failed=True)
+    synthetic_finish(root, fake, "minus", gate=False)
+    runner.status(root, fake)
+    fake.jobs.clear()
+    rows = {row["case_id"]: row["status"] for row in runner.status(root, fake)["cases"]}
+    assert rows == {"plus": "execution_failed", "minus": "rejected"}
+    runner.resume(root, fake, yes=True)
+    assert len(fake.calls) == 2
+
+
+def test_uncertain_job_is_not_retried(tmp_path):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    fake.jobs.pop("10001")
+    runner.resume(root, fake, retry=True, yes=True)
+    ledger = manifest.load(root / "submissions.json")
+    assert ledger["cases"]["plus"]["status"] == "unresolved"
+    assert len(ledger["cases"]["plus"]["attempts"]) == 1
+    assert len(fake.calls) == 2
+
+
+def test_failed_parent_blocks_descendant_without_new_submission(tmp_path):
+    source, data, shared, job, root = synthetic_campaign(tmp_path)
+    job.write_text(TEMPLATE)
+    data["cases"][1]["execution_parents"] = ["plus"]
+    manifest.save(data, source)
+    campaign.prepare(source)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus", failed=True)
+    runner.resume(root, fake, yes=True)
+    ledger = manifest.load(root / "submissions.json")
+    assert ledger["cases"]["minus"]["status"] == "blocked"
+    assert "prerequisite plus" in ledger["cases"]["minus"]["blocked_reason"]
+    assert len(fake.calls) == 2
+    assert not (root / "runs" / "minus" / "attempt-002").exists()
+
+
+def test_blocked_restart_child_waits_for_new_accepted_parent(tmp_path):
+    source, data, shared, job, root = synthetic_campaign(tmp_path)
+    job.write_text(TEMPLATE)
+    data["cases"][1]["execution_parents"] = ["plus"]
+    manifest.save(data, source)
+    campaign.prepare(source)
+    child = root / "runs" / "minus"
+    (child / "INCAR").write_text((child / "INCAR").read_text().replace("ISTART = 0", "ISTART = 1"))
+    plan = manifest.load(root / "plan.json")
+    plan["inputs"]["prepared"]["minus"]["INCAR"] = manifest.file_hash(child / "INCAR")
+    manifest.save(plan, root / "plan.json")
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    assert len(fake.calls) == 1 and not (child / "attempt-001").exists()
+    synthetic_finish(root, fake, "plus", failed=True)
+    runner.resume(root, fake, yes=True)
+    fake.jobs.clear()
+    report = runner.status(root, fake)
+    assert report["cases"][1]["status"] == "blocked"
+    assert "execution parent plus" in report["cases"][1]["blocked_reason"]
+    assert not (child / "attempt-001").exists()
+    runner.resume(root, fake, retry=True, yes=True)
+    parent = synthetic_finish(root, fake, "plus")
+    for name in runner.RESTART_FILES:
+        (parent / name).write_bytes((name + " synthetic restart").encode())
+    runner.resume(root, fake, yes=True)
+    assert (child / "attempt-001" / "WAVECAR").read_bytes() == (parent / "WAVECAR").read_bytes()
+    assert len(fake.calls) == 3
+
+
+def test_rejected_parent_blocks_accepted_child_without_releasing_it(tmp_path):
+    source, data, shared, job, root = synthetic_campaign(tmp_path)
+    job.write_text(TEMPLATE)
+    data["cases"][1]["execution_parents"] = ["plus"]
+    manifest.save(data, source)
+    campaign.prepare(source)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus", gate=False)
+    synthetic_finish(root, fake, "minus")
+    report = runner.status(root, fake)
+    assert {row["case_id"]: row["status"] for row in report["cases"]} == {
+        "plus": "rejected", "minus": "blocked"}
+    assert "prerequisite plus" in report["cases"][1]["blocked_reason"]
+    assert not (root / "runs" / "minus" / "attempt-001" / "readback" / "state.json").exists()
+
+
+@pytest.mark.parametrize("change", ["attempt INCAR", "reference", "provenance", "plan template"])
+def test_cached_synthetic_acceptance_invalidates_without_mutating_attempt(tmp_path, change):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus")
+    runner.status(root, fake)
+    attempt = root / "runs" / "plus" / "attempt-001"
+    if change == "attempt INCAR":
+        target = attempt / "INCAR"
+    elif change == "reference":
+        target = root / "reference" / "references.json"
+    elif change == "provenance":
+        target = root / "reference" / "reference-provenance.json"
+    else:
+        target = root / "plan.json"
+    if change == "plan template":
+        plan = manifest.load(target)
+        plan["inputs"]["job_template_sha256"] = "0" * 64
+        manifest.save(plan, target)
+    else:
+        target.write_bytes(target.read_bytes() + b" \n")
+    snapshot = {str(path.relative_to(attempt)): path.read_bytes() for path in attempt.rglob("*") if path.is_file()}
+    rows = runner.status(root, fake)["cases"]
+    assert rows[0]["status"] == "prepared"
+    assert "cached acceptance invalid" in rows[0]["blocked_reason"]
+    assert {str(path.relative_to(attempt)): path.read_bytes() for path in attempt.rglob("*") if path.is_file()} == snapshot
+    runner.resume(root, fake, yes=True)
+    assert len(fake.calls) == 2
+
+
+def test_reference_incompatibility_blocks_completed_case_without_readback(tmp_path):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus")
+    provenance = root / "reference" / "reference-provenance.json"
+    record = manifest.load(provenance)
+    record["magnetic_indices"] = [1, 0]
+    manifest.save(record, provenance)
+    rows = runner.status(root, fake)["cases"]
+    assert rows[0]["status"] == "blocked"
+    assert "reference verification failed" in rows[0]["blocked_reason"]
+    assert not (root / "runs" / "plus" / "attempt-001" / "readback" / "state.json").exists()
+
+
+def test_parent_restart_hash_change_invalidates_accepted_child(tmp_path):
+    source, data, shared, job, root = synthetic_campaign(tmp_path)
+    job.write_text(TEMPLATE)
+    data["cases"][1]["execution_parents"] = ["plus"]
+    manifest.save(data, source)
+    campaign.prepare(source)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    parent = synthetic_finish(root, fake, "plus")
+    for name in runner.RESTART_FILES:
+        (parent / name).write_bytes((name + " synthetic parent").encode())
+    synthetic_finish(root, fake, "minus")
+    assert {row["status"] for row in runner.status(root, fake)["cases"]} == {"accepted"}
+    child = root / "runs" / "minus" / "attempt-001"
+    snapshot = {str(path.relative_to(child)): path.read_bytes() for path in child.rglob("*") if path.is_file()}
+    (parent / "WAVECAR").write_bytes(b"synthetic changed wave")
+    rows = runner.status(root, fake)["cases"]
+    assert rows[0]["status"] == "prepared" and rows[1]["status"] != "accepted"
+    assert "restart WAVECAR" in rows[0]["blocked_reason"]
+    assert "parent plus" in rows[1]["blocked_reason"]
+    assert {str(path.relative_to(child)): path.read_bytes() for path in child.rglob("*") if path.is_file()} == snapshot
+
+
+def test_live_job_does_not_write_result_or_resubmit_and_readback_only_once(tmp_path, monkeypatch):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    fake.jobs["10001"]["state"] = "RUNNING"
+    runner.resume(root, fake, yes=True)
+    result = root / "runs" / "plus" / "result.json"
+    assert not result.exists() and len(fake.calls) == 2
+    assert runner.status(root, fake)["cases"][0]["execution"]["state"] == "RUNNING"
+    synthetic_finish(root, fake, "plus")
+    original = runner.step1.read_and_gate
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runner.step1, "read_and_gate", counted)
+    runner.status(root, fake)
+    before = result.read_bytes()
+    runner.resume(root, fake, yes=True)
+    assert calls == [1] and result.read_bytes() == before
+
+
+def test_reconcile_orders_reference_then_execution_parent_then_plan_peers(tmp_path):
+    root, _ = prepared(tmp_path, generated=True)
+    plan = manifest.load(root / "plan.json")
+    plan["cases"][2]["execution_parents"] = ["plus"]
+    plan["cases"] = [plan["cases"][2], plan["cases"][1], plan["cases"][0]]
+    manifest.save(plan, root / "plan.json")
+    _, ordered = runner._plan(root)
+    assert [entry["id"] for entry in ordered] == ["reference-q0", "plus", "minus"]
+
+
+@pytest.mark.parametrize("state", ["FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL"])
+def test_scheduler_terminal_synthetic_execution_failure(tmp_path, state):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    fake.jobs["10001"] = {"state": state, "exit_code": "1:0"}
+    runner.status(root, fake)
+    result = manifest.load(root / "runs" / "plus" / "result.json")
+    assert result["status"] == "execution_failed" and result["execution"]["state"] == state
+    assert result["readback"] is None
+
+
+def test_completed_missing_outputs_is_readback_failed_and_nonzero_does_not_read(tmp_path):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    fake.jobs["10001"] = {"state": "COMPLETED", "exit_code": "0:0"}
+    synthetic_finish(root, fake, "minus", failed=True)
+    runner.status(root, fake)
+    assert manifest.load(root / "runs" / "plus" / "result.json")["status"] == "readback_failed"
+    result = manifest.load(root / "runs" / "minus" / "result.json")
+    assert result["status"] == "execution_failed" and result["readback"] is None
+    assert not (root / "runs" / "minus" / "attempt-001" / "readback" / "state.json").exists()
+
+
+def test_crash_on_second_scheduler_lookup_keeps_atomic_ledger_and_releases_lock(tmp_path):
+    root, _ = prepared(tmp_path)
+    fake = FakeScheduler()
+    runner.submit(root, fake, yes=True)
+    synthetic_finish(root, fake, "plus")
+    synthetic_finish(root, fake, "minus")
+    original = fake.states
+    seen = []
+
+    def crash(ids):
+        seen.append(ids)
+        if len(seen) == 2:
+            raise RuntimeError("synthetic scheduler crash")
+        return {"10001": fake.jobs["10001"]}  # Missing second job forces a second lookup.
+
+    fake.states = crash
+    with pytest.raises(RuntimeError, match="synthetic scheduler crash"):
+        runner.resume(root, fake, yes=True)
+    assert not (root / "submission.lock").exists()
+    ledger = manifest.load(root / "submissions.json")
+    assert ledger["schema"] == "dmi-submissions-1"
+    assert ledger["cases"]["plus"]["status"] == "accepted"
+    fake.states = original
+    runner.resume(root, fake, yes=True)
+    assert {case["status"] for case in manifest.load(root / "submissions.json")["cases"].values()} == {"accepted"}

@@ -20,6 +20,11 @@ from .realized import incar
 RESTART_FILES = ("WAVECAR", "CHGCAR")
 LIVE = {"PENDING", "CONFIGURING", "RUNNING", "COMPLETING", "SUSPENDED", "RESIZING"}
 FAILURES = {"execution_failed", "readback_failed", "rejected", "blocked"}
+# prepared -> submitting -> submitted -> running -> execution_failed/readback_failed/rejected/accepted.
+# Any case -> blocked on a failed prerequisite, with its reason recorded.
+# submitting/submitted/running -> unresolved ONLY if job identity/state cannot be reconciled;
+# unresolved -> the observed state on a later reconcile. Terminal attempts stay terminal
+# unless evidence changes; then the case needs an explicit retry in a NEW attempt.
 LAUNCH = re.compile(r"(?:^|[;&|\s])(?:srun|mpirun|mpiexec|aprun|ibrun|vasp(?:_[A-Za-z0-9]+)?|\"\$VASP_EXECUTABLE\"|\$VASP_EXECUTABLE)(?=\s|$)")
 
 
@@ -153,7 +158,7 @@ def check_template(path, bash=None):
         raise ValueError(f"Unsafe template {path}: " + "; ".join(errors))
 
 
-def _plan(root):
+def _plan(root, verify_inputs=True):
     root = Path(root).resolve()
     plan = manifest.load(root / "plan.json")
     cases = plan.get("cases")
@@ -190,29 +195,32 @@ def _plan(root):
     if (set(paths) != {"campaign", "material", "job_template"} or
             set(inputs.get("prepared", {})) != set(ids) or not inputs.get("jobsall_sha256")):
         raise ValueError("Plan lacks recorded source/prepared/jobsall hashes; prepare this campaign again")
-    if not (root / "jobsall.sh").is_file() or manifest.file_hash(root / "jobsall.sh") != inputs["jobsall_sha256"]:
-        raise ValueError("jobsall.sh changed since preparation; prepare a new campaign rather than submitting an edited script")
-    expected = {paths["campaign"]: inputs["campaign_sha256"],
-                paths["job_template"]: inputs["job_template_sha256"]}
-    expected.update({str(Path(paths["material"]) / name): digest
-                     for name, digest in inputs["material"].items()})
-    manifest.check_files(expected)
-    if manifest.file_hash(root / "campaign.json") != inputs["campaign_sha256"]:
-        raise ValueError("Prepared campaign differs from plan")
+    if verify_inputs:
+        if not (root / "jobsall.sh").is_file() or manifest.file_hash(root / "jobsall.sh") != inputs["jobsall_sha256"]:
+            raise ValueError("jobsall.sh changed since preparation; prepare a new campaign rather than submitting an edited script")
+        expected = {paths["campaign"]: inputs["campaign_sha256"],
+                    paths["job_template"]: inputs["job_template_sha256"]}
+        expected.update({str(Path(paths["material"]) / name): digest
+                         for name, digest in inputs["material"].items()})
+        manifest.check_files(expected)
+        if manifest.file_hash(root / "campaign.json") != inputs["campaign_sha256"]:
+            raise ValueError("Prepared campaign differs from plan")
     ordered = []
     while len(ordered) < len(cases):
         ready = [entry for entry in cases if entry not in ordered and
                  all(parent in [item["id"] for item in ordered] for parent in entry["execution_parents"])]
         if not ready:
             raise ValueError("Execution parent cycle in prepared plan")
-        ordered.extend(ready)
+        # Parents first; prioritize q0 among peers while retaining plan order.
+        ordered.append(next((entry for entry in ready if entry["id"] == "reference-q0"), ready[0]))
     for entry in ordered:
         directory = root / entry["run_dir"]
         if set(inputs["prepared"][entry["id"]]) != set(campaign.INPUT_FILES):
             raise ValueError(f"Prepared hashes missing for {entry['id']}")
-        manifest.check_files({str(directory / name): inputs["prepared"][entry["id"]][name]
-                               for name in campaign.INPUT_FILES})
-        check_template(directory / "job.sh")
+        if verify_inputs:
+            manifest.check_files({str(directory / name): inputs["prepared"][entry["id"]][name]
+                                   for name in campaign.INPUT_FILES})
+            check_template(directory / "job.sh")
     return plan, ordered
 
 
@@ -228,7 +236,7 @@ def _ledger(root, plan, bound):
             raise ValueError("Concurrency bound is already pinned in submissions.json")
         return ledger
     return {"schema": "dmi-submissions-1", "max_concurrent": bound or 2,
-            "lanes": [[] for _ in range(bound or 2)],
+            "lanes": [[] for _ in range(bound or 2)], "plan_inputs": plan["inputs"],
             "code_identity": None,  # TODO(T5): bind a verified frozen code snapshot here.
             "cases": {entry["id"]: {"status": "prepared", "attempts": [], "planned": True,
                                     "submitted": False, "blocked_reason": None} for entry in plan["cases"]}}
@@ -249,48 +257,87 @@ def _reference(root, plan):
     return refs
 
 
-def cache_valid(root, entry, result, ledger, plan):
-    """Single cache boundary; T5 must verify code_identity and executable record here."""
+def cache_valid(root, entry, result, ledger, plan, reason=False):
+    """One evidence boundary; T5 replaces the code_identity=None seam here."""
+    problem = None
     try:
-        if (result.get("status") not in ("accepted", "rejected") or
-                not isinstance(result.get("execution"), dict) or
-                result["execution"].get("state") != "COMPLETED" or
-                result["execution"].get("exit_code") not in ("0:0", "0", 0) or
-                result.get("readback") != "passed" or result.get("gate", {}).get("passed") is not (result["status"] == "accepted") or
-                result.get("code_identity") != ledger["code_identity"]):
-            return False
-        attempt = root / entry["run_dir"] / result["attempt"]
-        # VASP may write restart outputs after a cold attempt was staged; those
-        # outputs are not input files and must not invalidate its accepted gate.
-        staged = campaign.INPUT_FILES + (RESTART_FILES if campaign.restart_enabled(incar(attempt / "INCAR")) else ())
-        if set(result["input_hashes"]) != {str(attempt / name) for name in staged}:
-            return False
-        manifest.check_files(result["input_hashes"])
-        expected_outputs = {str(attempt / name) for name in ("OUTCAR", "OSZICAR")}
-        if entry["id"] != "reference-q0":
-            expected_outputs.add(str(attempt / "readback" / "state.json"))
-        if set(result["output_hashes"]) != expected_outputs:
-            return False
-        manifest.check_files(result["output_hashes"])
-        if entry["id"] == "reference-q0" and plan["reference"]["status"] != "verified-generate":
-            return False
-        if entry["reference"]:
-            if plan["reference"]["status"] not in ("verified-import", "verified-generate"):
-                return False
-            if result.get("reference_hash") != manifest.file_hash(root / "reference" / "references.json"):
-                return False
-            _reference(root, plan)
-        if result["status"] == "accepted":
-            for parent in campaign.case_parents(entry):
-                parent_result = manifest.load(root / "runs" / parent / "result.json")
-                if parent_result.get("status") != "accepted" or result["parent_hashes"].get(parent) != manifest.file_hash(root / "runs" / parent / "result.json"):
-                    return False
-        state = manifest.load(root / entry["run_dir"] / result["attempt"] / "readback" / "state.json") if entry["id"] != "reference-q0" else None
-        if state is not None and state["gate"]["passed"] is not (result["status"] == "accepted"):
-            return False
-        return True
-    except (OSError, ValueError, KeyError, TypeError):
-        return False
+        if result.get("status") not in ("accepted", "rejected") or result.get("readback") != "passed":
+            problem = "completed readback missing"
+        elif (not isinstance(result.get("execution"), dict) or
+              result["execution"].get("state") != "COMPLETED" or
+              result["execution"].get("exit_code") not in ("0:0", "0", 0) or
+              result.get("gate", {}).get("passed") is not (result["status"] == "accepted")):
+            problem = "execution or gate evidence changed"
+        elif result.get("code_identity") != ledger["code_identity"]:
+            problem = "code identity changed"
+        elif ledger.get("plan_inputs") != plan["inputs"]:
+            problem = "plan input hashes changed"
+        else:
+            inputs = plan["inputs"]
+            paths = inputs["source_paths"]
+            expected = {paths["campaign"]: inputs["campaign_sha256"],
+                        str(root / "campaign.json"): inputs["campaign_sha256"],
+                        paths["job_template"]: inputs["job_template_sha256"],
+                        str(root / "jobsall.sh"): inputs["jobsall_sha256"]}
+            for name, digest in inputs["material"].items():
+                expected[str(Path(paths["material"]) / name)] = digest
+            for name, digest in inputs["prepared"][entry["id"]].items():
+                expected[str(root / entry["run_dir"] / name)] = digest
+            manifest.check_files(expected)
+            attempt = root / entry["run_dir"] / result["attempt"]
+            # Cold VASP restart outputs are not staged inputs; restart copies are.
+            staged = campaign.INPUT_FILES + (RESTART_FILES if campaign.restart_enabled(incar(attempt / "INCAR")) else ())
+            if set(result["input_hashes"]) != {str(attempt / name) for name in staged}:
+                problem = "attempt input inventory changed"
+            else:
+                manifest.check_files(result["input_hashes"])
+                outputs = {str(attempt / name) for name in ("OUTCAR", "OSZICAR")}
+                if entry["id"] != "reference-q0":
+                    outputs.add(str(attempt / "readback" / "state.json"))
+                if set(result["output_hashes"]) != outputs:
+                    problem = "readback output inventory changed"
+                else:
+                    manifest.check_files(result["output_hashes"])
+                    if (entry["id"] == "reference-q0" and plan["reference"]["status"] != "verified-generate") or (
+                            entry["id"] != "reference-q0" and plan["reference"]["status"] not in
+                            ("verified-import", "verified-generate")):
+                        problem = "reference is not verified"
+                    else:
+                        ref_path = root / "reference" / "references.json"
+                        provenance_path = ref_path.with_name("reference-provenance.json")
+                        if (result.get("reference_hash") != manifest.file_hash(ref_path) or
+                                result.get("reference_provenance_hash") != manifest.file_hash(provenance_path)):
+                            problem = "reference or provenance hash changed"
+                        else:
+                            _reference(root, plan)
+                    if problem is None:
+                        for name, digest in result.get("restart_hashes", {}).items():
+                            if digest != manifest.file_hash(attempt / name):
+                                problem = f"restart {name} output changed"
+                                break
+                    if problem is None:
+                        for parent in campaign.case_parents(entry):
+                            parent_path = root / "runs" / parent / "result.json"
+                            parent_result = manifest.load(parent_path)
+                            if (parent_result.get("status") != "accepted" or
+                                    result.get("parent_hashes", {}).get(parent) != manifest.file_hash(parent_path)):
+                                problem = f"parent {parent} evidence changed"
+                                break
+                            if parent in entry["execution_parents"] and campaign.restart_enabled(incar(attempt / "INCAR")):
+                                for name in RESTART_FILES:
+                                    digest = parent_result.get("restart_hashes", {}).get(name)
+                                    if digest is None or digest != manifest.file_hash(root / "runs" / parent / parent_result["attempt"] / name):
+                                        problem = f"parent {parent} restart {name} changed"
+                                        break
+                            if problem:
+                                break
+                    if problem is None and entry["id"] != "reference-q0":
+                        state = manifest.load(attempt / "readback" / "state.json")
+                        if state["gate"]["passed"] is not (result["status"] == "accepted"):
+                            problem = "readback gate changed"
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        problem = f"evidence missing or changed: {error}"
+    return (problem is None, problem) if reason else problem is None
 
 
 def _script(attempt):
@@ -355,132 +402,165 @@ def _reconcile(root, plan, ordered, ledger, scheduler):
         if not case["attempts"]:
             continue
         record = case["attempts"][-1]
-        if case["status"] == "blocked" and record["status"] in ("submitted", "running"):
-            case["status"] = record["status"]
-            case["blocked_reason"] = None
         attempt = root / entry["run_dir"] / record["directory"]
+        result_path = root / entry["run_dir"] / "result.json"
         if record["status"] == "submitting" and not record.get("job_id"):
             matches = scheduler.find(record["job_name"], str(attempt))
-            if len(matches) == 1:
-                record["job_id"] = matches[0]
-                record["status"] = "submitted"
-                manifest.save(ledger, root / "submissions.json")
-            else:
+            if len(matches) != 1:
                 case["status"] = "unresolved"
                 case["blocked_reason"] = "interrupted submission: inspect Slurm name/comment before retry"
+                manifest.save(ledger, root / "submissions.json")
                 continue
+            record["job_id"] = matches[0]
+            record["status"] = case["status"] = "submitted"
+            case["blocked_reason"] = None
+            manifest.save(ledger, root / "submissions.json")
         if not record.get("job_id"):
             continue
+        if case["status"] == "prepared" and record["status"] in ("accepted", "rejected"):
+            continue  # Invalidated evidence stays invalid until an explicit new attempt.
+        if record["status"] in ("accepted", "rejected") and result_path.is_file():
+            previous = manifest.load(result_path)
+            valid, problem = cache_valid(root, entry, previous, ledger, plan, reason=True)
+            if not valid:
+                case["status"] = "prepared"
+                case["blocked_reason"] = f"cached acceptance invalid: {problem}; --retry required"
+                manifest.save(dict(previous, status="prepared", blocked_reason=case["blocked_reason"]), result_path)
+                manifest.save(ledger, root / "submissions.json")
+                continue
+            blocked = next((parent for parent in campaign.case_parents(entry)
+                            if ledger["cases"][parent]["status"] != "accepted"), None)
+            if blocked is not None:
+                case["status"] = "blocked"
+                case["blocked_reason"] = f"prerequisite {blocked} is not accepted"
+            else:
+                case["status"] = record["status"]
+                case["blocked_reason"] = None
+            continue
+        if record["status"] in FAILURES:
+            case["status"] = record["status"]
+            continue
+        if case["status"] == "blocked" and record["status"] in ("submitted", "running"):
+            blocked = next((parent for parent in campaign.case_parents(entry)
+                            if ledger["cases"][parent]["status"] in FAILURES), None)
+            if blocked is not None:
+                case["blocked_reason"] = f"prerequisite {blocked} is not accepted"
+                continue
         evidence = states.get(record["job_id"])
         if evidence is None:
             evidence = scheduler.states([record["job_id"]]).get(record["job_id"])
         if evidence is None:
-            if record["status"] in ("accepted", "rejected") and (root / entry["run_dir"] / "result.json").is_file():
-                if cache_valid(root, entry, manifest.load(root / entry["run_dir"] / "result.json"), ledger, plan):
-                    case["status"] = record["status"]
-                    continue
             case["status"] = "unresolved"
             case["blocked_reason"] = "scheduler job state unavailable"
+            manifest.save(ledger, root / "submissions.json")
             continue
         state = evidence["state"] if isinstance(evidence, dict) else evidence
         exit_code = evidence.get("exit_code") if isinstance(evidence, dict) else None
         record["execution"] = {"state": state, "exit_code": exit_code}
         if state in LIVE:
-            case["status"] = "running" if state == "RUNNING" else "submitted"
-            record["status"] = case["status"]
+            record["status"] = "running" if state == "RUNNING" else "submitted"
+            blocked = next((parent for parent in campaign.case_parents(entry)
+                            if ledger["cases"][parent]["status"] in FAILURES), None)
+            if blocked is not None:
+                case["status"] = "blocked"
+                case["blocked_reason"] = f"prerequisite {blocked} is not accepted"
+            else:
+                case["status"] = record["status"]
+                case["blocked_reason"] = None
+            manifest.save(ledger, root / "submissions.json")
+            continue
+        if state not in LIVE and state != "COMPLETED" and state not in {"FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY"}:
+            case["status"] = "unresolved"
+            case["blocked_reason"] = f"unknown scheduler job state: {state}"
+            manifest.save(ledger, root / "submissions.json")
             continue
         if state != "COMPLETED" or exit_code not in ("0:0", "0", 0):
-            if entry["id"] == "reference-q0" and plan["reference"]["status"] != "failed-generate":
-                plan["reference"]["status"] = "failed-generate"
-                manifest.save(plan, root / "plan.json")
-            if record["status"] != "execution_failed":
-                case["status"] = record["status"] = "execution_failed"
-                record["readback"] = None
-                record["gate"] = None
-                _write_result(root, entry, ledger, record)
-            case["status"] = "execution_failed"
-            continue
-        if record["status"] in ("accepted", "rejected", "blocked") and (root / entry["run_dir"] / "result.json").is_file():
-            previous = manifest.load(root / entry["run_dir"] / "result.json")
-            if cache_valid(root, entry, previous, ledger, plan):
-                case["status"] = record["status"]
-                continue
-            if record["status"] == "blocked" and (previous.get("gate") or {}).get("passed") is True:
-                parents = campaign.case_parents(entry)
-                if all(ledger["cases"][parent]["status"] == "accepted" for parent in parents):
-                    parent_hashes = {parent: manifest.file_hash(root / "runs" / parent / "result.json")
-                                     for parent in parents}
-                    candidate = dict(previous, status="accepted", blocked_reason=None,
-                                     readback="passed", parent_hashes=parent_hashes)
-                    if cache_valid(root, entry, candidate, ledger, plan):
-                        record["status"] = case["status"] = "accepted"
-                        record["readback"] = "passed"
-                        case["blocked_reason"] = None
-                        manifest.save(candidate, root / entry["run_dir"] / "result.json")
-                        continue
-            if record["status"] != "readback_failed":
-                case["status"] = record["status"] = "readback_failed"
-                record["readback"] = "cached evidence changed"
-                record["gate"] = None
-                _write_result(root, entry, ledger, record)
-            else:
-                case["status"] = "readback_failed"
-            continue
-        if not (attempt / "OUTCAR").is_file() or not (attempt / "OSZICAR").is_file():
-            if entry["id"] == "reference-q0" and plan["reference"]["status"] != "failed-generate":
+            if entry["id"] == "reference-q0":
                 plan["reference"]["status"] = "failed-generate"
                 manifest.save(plan, root / "plan.json")
             case["status"] = record["status"] = "execution_failed"
+            record["readback"] = None
+            record["gate"] = None
+            _write_result(root, entry, ledger, record)
+            manifest.save(ledger, root / "submissions.json")
+            continue
+        if not (attempt / "OUTCAR").is_file() or not (attempt / "OSZICAR").is_file():
+            if entry["id"] == "reference-q0":
+                plan["reference"]["status"] = "failed-generate"
+                manifest.save(plan, root / "plan.json")
+            case["status"] = record["status"] = "readback_failed"
             record["readback"] = "missing OUTCAR or OSZICAR"
             _write_result(root, entry, ledger, record)
+            manifest.save(ledger, root / "submissions.json")
             continue
-        if record["status"] == "readback_failed":
+        if entry["id"] != "reference-q0" and plan["reference"]["status"] != "verified-generate" and plan["reference"]["status"] != "verified-import":
+            if plan["reference"]["status"] == "failed-generate":
+                case["status"] = "blocked"
+                case["blocked_reason"] = "reference-q0 failed; acceptance prerequisite not met"
+            else:
+                # The job completed but reference acceptance is still pending, not failed.
+                case["status"] = "submitted"
+                case["blocked_reason"] = None
+                if not result_path.exists():
+                    _write_result(root, entry, ledger, record, pending_reference=True)
+            manifest.save(ledger, root / "submissions.json")
             continue
+        if entry["id"] != "reference-q0":
+            blocked = next((parent for parent in campaign.case_parents(entry)
+                            if ledger["cases"][parent]["status"] in FAILURES), None)
+            if blocked is not None:
+                case["status"] = "blocked"
+                case["blocked_reason"] = f"prerequisite {blocked} is not accepted"
+                manifest.save(ledger, root / "submissions.json")
+                continue
+            pending = next((parent for parent in campaign.case_parents(entry)
+                            if ledger["cases"][parent]["status"] != "accepted"), None)
+            if pending is not None:
+                case["status"] = "submitted"
+                case["blocked_reason"] = None
+                manifest.save(ledger, root / "submissions.json")
+                continue
         try:
             manifest.check_files(record["input_hashes"])
+            inputs = plan["inputs"]
+            if ledger.get("plan_inputs") != inputs:
+                raise ValueError("plan input hashes changed")
+            _plan(root)  # The readback inputs must still match preparation.
             if entry["id"] == "reference-q0":
                 if plan["reference"]["status"] == "failed-generate":
                     raise ValueError("Generated reference previously failed; explicit new attempt required")
                 differences = campaign.check_reference(root, run=attempt, config=attempt / "config.json")
-                plan = manifest.load(root / "plan.json")
                 if differences:
                     raise ValueError("; ".join(differences))
-                ref_hash = manifest.file_hash(root / "reference" / "references.json")
+                # The reference writer updated plan.json; use that one authoritative state.
+                plan.update(manifest.load(root / "plan.json"))
                 record["gate"] = {"passed": True, "reasons": []}
             else:
-                if not plan["reference"]["status"].startswith("verified"):
-                    case["status"] = "blocked"
-                    case["blocked_reason"] = "reference not verified"
-                    continue
                 try:
                     _reference(root, plan)
                 except (OSError, ValueError, KeyError) as error:
                     case["status"] = "blocked"
                     case["blocked_reason"] = f"reference verification failed: {error}"
+                    manifest.save(ledger, root / "submissions.json")
                     continue
-                case["blocked_reason"] = None
                 state_path = attempt / "readback" / "state.json"
                 if state_path.exists():
                     raise ValueError("Existing state cannot be overwritten without verified cache")
                 value = step1.read_and_gate(attempt / "config.json", attempt,
                                             root / "reference" / "references.json", state_path)
                 record["gate"] = value["gate"]
-                ref_hash = manifest.file_hash(root / "reference" / "references.json")
             record["readback"] = "passed"
             case["status"] = record["status"] = "accepted" if record["gate"]["passed"] else "rejected"
-            parent_hashes = {}
-            if case["status"] == "accepted":
-                for parent in campaign.case_parents(entry):
-                    if ledger["cases"][parent]["status"] != "accepted":
-                        case["status"] = record["status"] = "blocked"
-                        case["blocked_reason"] = f"prerequisite {parent} is not accepted"
-                        break
-                    parent_hashes[parent] = manifest.file_hash(root / "runs" / parent / "result.json")
+            case["blocked_reason"] = None
+            parent_hashes = {parent: manifest.file_hash(root / "runs" / parent / "result.json")
+                             for parent in campaign.case_parents(entry)}
             output_hashes = manifest.fingerprints([attempt / name for name in ("OUTCAR", "OSZICAR")])
             if entry["id"] != "reference-q0":
                 output_hashes.update(manifest.fingerprints([attempt / "readback" / "state.json"]))
             restart_hashes = {name: manifest.file_hash(attempt / name) for name in RESTART_FILES if (attempt / name).is_file()}
-            _write_result(root, entry, ledger, record, reference_hash=ref_hash,
+            ref_path = root / "reference" / "references.json"
+            _write_result(root, entry, ledger, record, reference_hash=manifest.file_hash(ref_path),
+                          reference_provenance_hash=manifest.file_hash(ref_path.with_name("reference-provenance.json")),
                           parent_hashes=parent_hashes, output_hashes=output_hashes,
                           restart_hashes=restart_hashes)
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -491,7 +571,7 @@ def _reconcile(root, plan, ordered, ledger, scheduler):
             record["readback"] = str(error)
             record["gate"] = None
             _write_result(root, entry, ledger, record)
-    manifest.save(ledger, root / "submissions.json")
+        manifest.save(ledger, root / "submissions.json")
 
 
 def _advance(root, scheduler, bound=None, yes=False, retry=False, clear_stale_lock=False, resume=False):
@@ -499,14 +579,11 @@ def _advance(root, scheduler, bound=None, yes=False, retry=False, clear_stale_lo
     if bound is not None and (type(bound) is not int or bound < 1):
         raise ValueError("--max-concurrent must be a positive integer")
     with locked(root, clear_stale_lock):
-        plan, ordered = _plan(root)
+        existing = (root / "submissions.json").exists()
+        plan, ordered = _plan(root, verify_inputs=not existing)
         ledger = _ledger(root, plan, bound)
-        # A failed/changed reference must be recorded as blocked evidence, not
-        # turned into a silent substitute for accepted pair readback.
-        if resume or (root / "submissions.json").exists():
+        if resume or existing:
             _reconcile(root, plan, ordered, ledger, scheduler)
-        if any(case["status"] == "unresolved" for case in ledger["cases"].values()):
-            raise ValueError("Unresolved submission/job: inspect Slurm and do not resubmit blindly")
         lanes = [list(lane) for lane in ledger["lanes"]]
         submitted = 0
         for entry in ordered:
@@ -515,8 +592,9 @@ def _advance(root, scheduler, bound=None, yes=False, retry=False, clear_stale_lo
             if case["status"] == "accepted":
                 print(f"SKIP {name}: accepted")
                 continue
-            if case["status"] in ("submitted", "running"):
-                print(f"SKIP {name}: live job")
+            if (case["status"] in ("submitted", "running", "unresolved") or
+                    (case["attempts"] and case["attempts"][-1]["status"] in ("submitted", "running", "submitting"))):
+                print(f"SKIP {name}: {case['status']}; no duplicate submission")
                 continue
             if case["attempts"] and not retry:
                 print(f"SKIP {name}: {case['status']}; --retry required for a new attempt")
@@ -581,6 +659,7 @@ def _advance(root, scheduler, bound=None, yes=False, retry=False, clear_stale_lo
                 print(f"DRY RUN {name}: cwd={attempt} argv={json.dumps(argv)}")
                 lane.append(f"planned-{name}")
                 continue
+            _plan(root)  # Before any new submission, check every pinned input and template.
             input_hashes = _stage(root, entry, attempt, ledger, plan)
             record = {"directory": attempt.name, "status": "submitting", "job_id": None,
                       "job_name": job_name, "lane": lane_index, "input_hashes": input_hashes,
@@ -617,7 +696,7 @@ def resume(root, scheduler=None, retry=False, yes=False, clear_stale_lock=False)
 def status(root, scheduler=None, json_output=False, clear_stale_lock=False):
     root = Path(root).resolve()
     with locked(root, clear_stale_lock):
-        plan, ordered = _plan(root)
+        plan, ordered = _plan(root, verify_inputs=not (root / "submissions.json").exists())
         ledger = _ledger(root, plan, None)
         if (root / "submissions.json").exists():
             _reconcile(root, plan, ordered, ledger, scheduler or Slurm())
