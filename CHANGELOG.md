@@ -5,6 +5,26 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- Added the Fe pilot T4 runner baseline and hardened the submit path: prepared, hashed Slurm `jobsall.sh`, locked and explicitly confirmed fake-tested submission, private restart staging and exact scheduler options. Local 153 -> 160 tests and generated-script Bash syntax pass; reconcile/readback/resume are still being hardened in T4b. No VASP or cluster jobs. See the [T4a handoff](docs/sessions/2026-10-30_2124Z-agent-pilot-runner-t4a-submit-path.md).
+
+- Added independent q0 sphere-reference preparation/extraction with hashed provenance and strict per-case compatibility; campaign import/generate and `campaign-reference` now verify before acceptance. 106 -> 136 local tests pass; no VASP or cluster run. See the [T3 handoff](docs/sessions/2026-10-30_1559Z-agent-pilot-runner-t3-reference.md).
+
+### Fe F0 pilot campaign preparation (2026-10-30)
+
+- Added `campaign-prepare` and `campaign-plan` with pre-write plan validation, two-kind dependencies, explicit imported-reference provenance pending T3, SHA-256 input inventory, and per-case expansion through the unchanged Step 1 generator/writer. Added a two-run Fe example and 44 synthetic tests; 106 total local tests pass. Generated q0 preparation, submission and reference checks remain for T3/T4. See the [T2 handoff](docs/sessions/2026-10-30_1538Z-agent-pilot-runner-t2-campaign.md).
+
+### Shared Step 1 run convergence check (2026-10-30)
+
+- Extracted `step1.check_run(directory, nions)` for independent OUTCAR convergence, run INCAR echo and terminal OSZICAR sphere/step association; `read_state` retains config-specific comparisons and unchanged provenance/readback. Seven synthetic boundary cases added; 62 local tests pass. No physical validation or cluster execution. See the [T1 handoff](docs/sessions/2026-10-30_1526Z-agent-pilot-runner-t1-check-run.md).
+
+### Explicit Perlmutter pilot interfaces (2026-10-21)
+
+- Removed current-directory job.sh discovery: include a launch script only through `--job-template`. Material/recipe/run/readback paths stay caller supplied, with executable configuration in the existing working launch script. Added ENINI to the shared input whitelist so cutoff settings can be supplied and echoed without selecting new values. Added the [Perlmutter sequence](docs/PERLMUTTER_F0_PILOT.md), portable installation instructions and regression coverage through synthetic shared-input preparation/readback. Local pilot directories are generator tests; no local cluster assets are required. No calculation submitted. See the [handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md).
+
+### Single-directory Step 1 pilot preparation (2026-10-19)
+
+- Extended existing `step1-prepare`/`write_inputs` with shared material assembly: generated tags override the base INCAR once, while POSCAR/KPOINTS/POTCAR and a supplied launch template are copied unchanged. The default launch template is current-directory job.sh; its absence is explicitly reported as review-only. Existing fragment-only preparation remains available. A local ferromagnetic Fe F0 candidate is prepared with consistent targets/config/INCAR, with launch availability and inherited cutoff/resource choices recorded for review. See the [preparation handoff](docs/sessions/2026-10-19_1627Z-agent-fe-f0-preparation.md). No scheduler, VASP execution or physical acceptance change.
+
 ### Step 1 logical INCAR equivalence (2026-10-19)
 
 - Reused the shared strict logical parser for the four Step 1 run/config boolean tags. A prepared T/F config now reads the original Fe True/False INCAR without a config edit; invalid or opposite boolean values still fail. The full real-file CLI readback reproduces the same failed physical gate and field/penalty diagnostics with unchanged thresholds. See the [follow-up session](docs/sessions/2026-10-19_1556Z-agent-step1-logical-readback.md). No VASP rerun.

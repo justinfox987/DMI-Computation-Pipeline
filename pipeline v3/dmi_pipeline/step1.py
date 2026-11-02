@@ -11,7 +11,7 @@ import numpy as np
 
 from . import manifest
 from .realized import incar, logical, numbers, poscar_species
-from .workflow import _echo_check
+from .workflow import INCAR_TAGS, _echo_check
 
 CONVENTION = "lab-oszicar-sphere-v1"
 DIRECTION_DEG = 1.0
@@ -106,10 +106,15 @@ def prepare(recipe, poscar):
     if "partner_q_frac" in recipe:
         raise ValueError("Prepare cannot regenerate a wrapped partner; use step1-wrap-partner on a prepared negative record")
     species, _ = positions(poscar)
-    indices = recipe["magnetic_indices"]
     q = vector(recipe["q_frac"], "q_frac")
     if np.allclose(q, np.rint(q), atol=1e-12):
         raise ValueError("Generic-q model excludes reciprocal-lattice q")
+    return _prepare_record(recipe, poscar, q, species)
+
+
+def _prepare_record(recipe, poscar, q, species):
+    """Shared target/tag construction after the production q check or explicit q0 selection."""
+    indices = recipe["magnetic_indices"]
     rwigs = np.asarray(recipe["rwigs"], dtype=float)
     if rwigs.shape != (len(dict.fromkeys(species)),) or not np.all(np.isfinite(rwigs)) or np.any(rwigs <= 0):
         raise ValueError("Supply one positive RWIGS radius per POSCAR species")
@@ -172,14 +177,41 @@ def wrap_partner(record, q_frac):
     return updated
 
 
-def write_inputs(record, directory):
+def write_inputs(record, directory, inputs=None, job_template=None):
+    """Write generated tags, optionally assembling shared VASP material inputs."""
     require_vector(record)
     directory = Path(directory)
     if directory.exists() and any(directory.iterdir()):
         raise ValueError("Input destination must be empty; do not overwrite a VASP run")
+    files, tags = {}, None
+    if inputs is not None:
+        inputs = Path(inputs)
+        tags = incar(inputs / "INCAR")
+        if not tags:
+            raise ValueError("Shared INCAR is empty")
+        unknown = set(tags) - INCAR_TAGS
+        if unknown:
+            raise ValueError(f"Unreviewed INCAR tags: {sorted(unknown)}")
+        tags.update(record["tags"])
+        for name in ("POSCAR", "KPOINTS", "POTCAR"):
+            files[name] = (inputs / name).read_bytes()
+            if not files[name].strip():
+                raise ValueError(f"Shared {name} is empty")
+        if manifest.file_hash(inputs / "POSCAR") != record["poscar_sha256"]:
+            raise ValueError("Shared POSCAR differs from the requested target")
+    if job_template is not None:
+        if inputs is None:
+            raise ValueError("A job template requires shared material inputs")
+        files["job.sh"] = Path(job_template).read_bytes()
+        if not files["job.sh"].strip():
+            raise ValueError("Job template is empty")
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "INCAR.step1").write_text("".join(f"{k} = {v}\n" for k, v in record["tags"].items()), encoding="utf-8")
     manifest.save(record, directory / "config.json")
+    if tags is not None:
+        (directory / "INCAR").write_text("".join(f"{k} = {v}\n" for k, v in tags.items()), encoding="utf-8")
+    for name, content in files.items():
+        (directory / name).write_bytes(content)
 
 
 def require_vector(record):
@@ -188,7 +220,7 @@ def require_vector(record):
 
 
 def sphere(path, nions):
-    """Parse terminal OSZICAR ionic record; segment convergence is checked by read_state.
+    """Parse terminal OSZICAR ionic record; segment convergence is checked by check_run.
 
     Fail closed for incomplete or ambiguous restarts rather than taking the last
     earlier complete table. Convergence is checked independently in OUTCAR.
@@ -300,6 +332,37 @@ def sphere(path, nions):
             "lines": [start + 1, max(p + 1, (field_headers[0] + 1 + nions) if field_headers else p + 1)]}
 
 
+def check_run(directory, nions) -> dict:
+    """Check one converged OUTCAR segment against the terminal OSZICAR sphere."""
+    directory = Path(directory)
+    outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
+    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
+    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
+        raise ValueError("Missing or ambiguous completed OUTCAR run segment")
+    converged = outcar.rfind("aborting loop because EDIFF is reached")
+    iterations = list(ITERATION.finditer(outcar))
+    footer = outcar.rfind("General timing and accounting")
+    if (not iterations or converged < iterations[-1].end() or converged > footer or
+            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
+        raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
+    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
+    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
+    if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
+        raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
+    for step in outcar_steps:
+        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
+        if count != list(range(1, count[-1] + 1)):
+            raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
+    _echo_check(directory)
+    result = sphere(directory / "OSZICAR", nions)
+    ionic, electronic = (int(x) for x in iterations[-1].groups())
+    if (result["ionic_steps"] != outcar_steps or
+            (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
+        raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
+    return {"sphere": result, "outcar": {"final_step": [ionic, electronic],
+            "build_banner": outcar.splitlines()[0].strip(), "ionic_steps": outcar_steps}}
+
+
 def read_state(directory, record, config_path):
     """Check matching run inputs and independent final electronic convergence."""
     require_vector(record)
@@ -338,44 +401,33 @@ def read_state(directory, record, config_path):
     if not np.allclose(numbers(tags["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
         raise ValueError("Requested M_CONSTR differs from versioned target vectors")
     outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
-    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
-    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
-        raise ValueError("Missing or ambiguous completed OUTCAR run segment")
-    converged = outcar.rfind("aborting loop because EDIFF is reached")
-    iterations = list(ITERATION.finditer(outcar))
-    footer = outcar.rfind("General timing and accounting")
-    if (not iterations or converged < iterations[-1].end() or converged > footer or
-            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
-        raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
-    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
-    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
-    if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
-        raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
-    for step in outcar_steps:
-        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
-        if count != list(range(1, count[-1] + 1)):
-            raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
     for echoed in re.findall(r"^\s*QSPIRAL\s*=\s*(.*)$", outcar, re.M):
         echoed_q = vector(numbers(echoed), "OUTCAR QSPIRAL")
         if not np.allclose(echoed_q, stored_q, atol=1e-9, rtol=0):
             raise ValueError("OUTCAR QSPIRAL differs from stored model q_frac")
-    _echo_check(directory)
-    oszicar = directory / "OSZICAR"
-    result = sphere(oszicar, len(record["species"]))
-    ionic, electronic = (int(x) for x in iterations[-1].groups())
-    if (result["ionic_steps"] != outcar_steps or
-            (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
-        raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
+    checked = check_run(directory, len(record["species"]))
+    result = checked["sphere"]
     if not np.isclose(result["lambda"], numbers(tags["LAMBDA"])[0], atol=1e-10, rtol=1e-6):
         raise ValueError("Printed final lambda differs from requested LAMBDA")
     result["provenance"] = {"files": manifest.fingerprints(
         [config_path] + [directory / name for name in ("POSCAR", "INCAR", "OUTCAR", "OSZICAR")]),
         "config_path": str(config_path.resolve()), "run_path": str(directory.resolve()),
-        "outcar_final_ediff": True, "final_step": [ionic, electronic],
+        "outcar_final_ediff": True, "final_step": checked["outcar"]["final_step"],
         "segment": "single completed OUTCAR run; matched terminal ionic/electronic step",
-        "build_banner": outcar.splitlines()[0].strip(), "input_tags": record["tags"],
+        "build_banner": checked["outcar"]["build_banner"], "input_tags": record["tags"],
         "incar_echo": True}
     return result
+
+
+def read_and_gate(config_path, directory, references_path, output, common_z=False):
+    """Use the same config-bound read, physical gate and atomic state write for both CLIs."""
+    config = manifest.load(config_path)
+    readback = read_state(directory, config, config_path)
+    references = manifest.load(references_path)
+    gate = validate(config, readback, references.get("M_int"), references.get("MW_int"), common_z)
+    value = {"config": config, "readback": readback, "gate": gate}
+    manifest.save(value, output)
+    return value
 
 
 def validate(record, readback, moment_ref=None, weighted_ref=None, common_z=False):

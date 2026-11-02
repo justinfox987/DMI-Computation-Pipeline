@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 
 from dmi_pipeline import manifest, step1
+from dmi_pipeline.__main__ import main
+from dmi_pipeline.realized import incar, numbers
 
 
 FE_FREE = """ ion        MW_int                 M_int
@@ -79,6 +81,74 @@ def test_target_numeric_and_partner_wrap(tmp_path):
     bad_recipe["partner_q_frac"] = [.75, 0, 0]
     with pytest.raises(ValueError, match="cannot regenerate"):
         step1.prepare(bad_recipe, path)
+
+
+def test_cli_prepare_shared_inputs_keeps_generated_magnetism_authoritative(tmp_path, monkeypatch, capsys):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    poscar(shared / "POSCAR")
+    (shared / "INCAR").write_text("ENCUT = 550\nENINI = 500\nISTART = 0\nICHARG = 2\n"
+                                 "MAGMOM = 9 9 9\nM_CONSTR = 0 0 0\nLSPIRAL = False\n")
+    (shared / "KPOINTS").write_bytes(b"test\n0\nGamma\n5 5 5\n0 0 0\n")
+    recipe_path = tmp_path / "recipe.json"
+    manifest.save(recipe("F0"), recipe_path)
+    job = tmp_path / "job.sh"
+    job.write_bytes(b'#!/bin/bash\nset -e\n: "${VASP_EXECUTABLE:?Supply cluster executable}"\nsrun "$VASP_EXECUTABLE" > output.log\n')
+    dest = tmp_path / "pilot"
+    args = ("step1-prepare", "--recipe", recipe_path, "--inputs", shared,
+            "--job-template", job, "--output", dest)
+    base_incar = (shared / "INCAR").read_text()
+    (shared / "INCAR").write_text("")
+    empty = run_cli(*args)
+    assert empty.returncode != 0 and "Shared INCAR is empty" in empty.stderr
+    assert not dest.exists()
+    (shared / "INCAR").write_text(base_incar + "ENINII = 500\n")
+    typo = run_cli(*args)
+    assert typo.returncode != 0 and "Unreviewed INCAR tags" in typo.stderr
+    assert not dest.exists()
+    (shared / "INCAR").write_text(base_incar)
+    missing = run_cli(*args)
+    assert missing.returncode != 0 and "POTCAR" in missing.stderr
+    assert not dest.exists()
+    (shared / "POTCAR").write_bytes(b"synthetic potential; not VASP data\n")
+    result = run_cli(*args)
+    assert result.returncode == 0, result.stderr
+    config = manifest.load(dest / "config.json")
+    tags = incar(dest / "INCAR")
+    assert all(tags[key] == value for key, value in config["tags"].items())
+    assert tags["ENCUT"] == "550" and tags["ENINI"] == "500" and tags["ICHARG"] == "2"
+    assert numbers(tags["M_CONSTR"]).reshape(-1, 3) == pytest.approx(np.asarray(config["targets"]))
+    for name in ("POSCAR", "KPOINTS", "POTCAR"):
+        assert (dest / name).read_bytes() == (shared / name).read_bytes()
+    assert (dest / "job.sh").read_bytes() == job.read_bytes()
+    before = manifest.file_hash(dest / "INCAR")
+    repeat = run_cli(*args)
+    assert repeat.returncode != 0 and "do not overwrite" in repeat.stderr
+    assert manifest.file_hash(dest / "INCAR") == before
+    monkeypatch.chdir(tmp_path)
+    review_dest = tmp_path / "review-only"
+    assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
+                 "--output", str(review_dest)]) == 0
+    assert (review_dest / "INCAR").is_file() and not (review_dest / "job.sh").exists()
+    assert "inputs prepared for review only" in capsys.readouterr().err
+    missing_job_dest = tmp_path / "missing-job"
+    assert main(["step1-prepare", "--recipe", str(recipe_path), "--inputs", str(shared),
+                 "--job-template", str(tmp_path / "absent.sh"), "--output", str(missing_job_dest)]) == 1
+    assert not missing_job_dest.exists()
+
+    # Synthetic completion of the materialized pilot; the cluster launcher is never run.
+    (dest / "OUTCAR").write_text("vasp.test synthetic\n" + (dest / "INCAR").read_text() +
+        "Iteration 1( 1)\naborting loop because EDIFF is reached\nGeneral timing and accounting\n")
+    rows = [f" {i + 1} " + " ".join(f"{v:.10f}" for v in [*(1.8 * np.array(u)), *(2 * np.array(u))])
+            for i, u in enumerate(config["targets"])]
+    (dest / "OSZICAR").write_text(" DAV: 1 -1\n ion MW_int M_int\n" + "\n".join(rows) +
+        "\n 1 F= -1 E0= -1\n E_p = 0.0E+00 lambda = 0.0E+00\n")
+    references = tmp_path / "references.json"
+    manifest.save({"M_int": [2, 2], "MW_int": [1.8, 1.8]}, references)
+    state = tmp_path / "readback" / "state.json"
+    assert main(["step1-read", "--config", str(dest / "config.json"), "--run", str(dest),
+                 "--references", str(references), "--output", str(state)]) == 0
+    assert manifest.load(state)["gate"]["passed"]
 
 
 def synthetic_readback(tmp_path, config, moments, weighted, ep=0, lam=0, field=None,
@@ -352,6 +422,70 @@ def test_pair_rejects_mismatched_species_radii(tmp_path):
         states.append({"config": config, "readback": read, "gate": gate})
     with pytest.raises(ValueError, match="RWIGS"):
         step1.paired(*states, basis, -.0005, .0005)
+
+
+def test_check_run_returns_terminal_sphere_and_outcar_steps_without_config(tmp_path):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    m = 2 * np.asarray(config["targets"])
+    mw = .9 * m
+    run = tmp_path / "run"
+    synthetic_readback(run, config, m, mw)
+    outcar = run / "OUTCAR"
+    outcar.write_text(outcar.read_text().replace("aborting loop because EDIFF is reached",
+        "aborting loop because EDIFF is reached\nIteration 2( 1)\nIteration 2( 2)\naborting loop because EDIFF is reached"))
+    oszicar = run / "OSZICAR"
+    first = oszicar.read_text()
+    second = first.replace("DAV: 1  -1", "DAV: 1  -1\n DAV: 2 -1").replace(" 1 F=", " 2 F=")
+    oszicar.write_text(first + second)
+    (run / "config.json").unlink()
+    (run / "POSCAR").unlink()
+
+    checked = step1.check_run(run, 3)
+    assert set(checked) == {"sphere", "outcar"}
+    assert checked["outcar"] == {"final_step": [2, 2], "ionic_steps": [1, 2],
+                                 "build_banner": "vasp.test synthetic"}
+    sphere = checked["sphere"]
+    assert sphere["ionic_steps"] == [1, 2]
+    assert (sphere["ionic_step"], sphere["electronic_step"]) == (2, 2)
+    assert np.asarray(sphere["M_int"]) == pytest.approx(np.asarray([[2, 0, 0], [-1.414213562, -1.414213562, 0], [0, 0, 0]]))
+    assert np.asarray(sphere["MW_int"]) == pytest.approx(np.asarray([[1.8, 0, 0], [-1.272792206, -1.272792206, 0], [0, 0, 0]]))
+    assert sphere["source"] == "OSZICAR"
+    assert "provenance" not in sphere
+
+
+@pytest.mark.parametrize("failure, message", [
+    ("not_converged", "Final electronic loop did not reach EDIFF after its last iteration"),
+    ("stale_ediff", "Final electronic loop did not reach EDIFF after its last iteration"),
+    ("step_mismatch", "Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop"),
+    ("truncated_oszicar", "Terminal OSZICAR sphere block ion count mismatch"),
+    ("multiple_segments", "Missing or ambiguous completed OUTCAR run segment"),
+    ("echo_mismatch", "OUTCAR does not echo the requested RWIGS=1.3 0.8"),
+])
+def test_check_run_rejects_unassociated_or_incomplete_runs(tmp_path, failure, message):
+    config = step1.prepare(recipe("F0"), poscar(tmp_path / "POSCAR"))
+    targets = np.asarray(config["targets"])
+    run = tmp_path / "run"
+    synthetic_readback(run, config, 2 * targets, 1.8 * targets)
+    outcar, oszicar = run / "OUTCAR", run / "OSZICAR"
+    if failure == "not_converged":
+        outcar.write_text(outcar.read_text().replace("aborting loop because EDIFF is reached", "NELM exhausted"))
+    elif failure == "stale_ediff":
+        outcar.write_text(outcar.read_text().replace(
+            "aborting loop because EDIFF is reached\nGeneral timing and accounting",
+            "aborting loop because EDIFF is reached\nIteration 1( 2)\nGeneral timing and accounting"))
+    elif failure == "step_mismatch":
+        outcar.write_text(outcar.read_text().replace(
+            "General timing and accounting",
+            "Iteration 2( 1)\naborting loop because EDIFF is reached\nGeneral timing and accounting"))
+    elif failure == "truncated_oszicar":
+        oszicar.write_text(oszicar.read_text() + " DAV: 1 -1\n ion MW_int M_int\n 1 0 0 0 0 0 0\n")
+    elif failure == "multiple_segments":
+        outcar.write_text(outcar.read_text() + outcar.read_text())
+    elif failure == "echo_mismatch":
+        outcar.write_text(outcar.read_text().replace("RWIGS = 1.3 0.8", "RWIGS = 1.4 0.8"))
+    with pytest.raises(ValueError) as error:
+        step1.check_run(run, 3)
+    assert str(error.value) == message
 
 
 def test_final_loop_association_and_stale_evidence(tmp_path):

@@ -1,0 +1,36 @@
+{
+  "schema": "dmi-campaign-1",
+  "run_root": "/EDIT/absolute/path/to/new-fe-f0-run-root",
+  "material": "/EDIT/absolute/path/to/shared-fe-inputs",
+  "job_template": "/EDIT/absolute/path/to/working-job.sh",
+  "reference": {
+    "mode": "import",
+    "path": "/EDIT/absolute/path/to/verified-q0-reference"
+  },
+  "defaults": {
+    "family": "F0",
+    "axis": "z",
+    "magnetic_indices": [0, 1],
+    "signs": [1, 1],
+    "seed_magnitudes": [2.2, 2.2],
+    "rwigs": [1.5],
+    "lambda": 1.0,
+    "lzeroz": true
+  },
+  "cases": [
+    {
+      "id": "fe-f0-q025-plus",
+      "side": "+",
+      "q_frac": [0.25, 0, 0],
+      "purpose": "pair member",
+      "pair": "fe-f0-q025"
+    },
+    {
+      "id": "fe-f0-q025-minus",
+      "side": "-",
+      "q_frac": [0.25, 0, 0],
+      "purpose": "pair member",
+      "pair": "fe-f0-q025"
+    }
+  ]
+}

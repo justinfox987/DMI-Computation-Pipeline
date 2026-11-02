@@ -56,3 +56,17 @@ branch/worktree, and synchronize commits through a private remote.
 **Reason:** multiple tools and sessions need inspectable shared state; chat
 memory and uncommitted local files do not provide a reliable handoff.
 **Authority:** [repository setup](REPOSITORY_SETUP.md) and root AGENTS.md.
+
+## D-006 — Generate the actual pilot on the cluster with explicit paths
+
+**Status:** accepted; supersedes the 2026-10-19 current-directory job.sh default.
+Local pilot directories are generator tests. Transfer the tested code, then
+generate on Perlmutter from explicit recipe, material, launch-template and output
+paths. The working launch script owns executable configuration and resources;
+existing sbatch submission remains external. Readback receives explicit cluster
+paths and writes host-bound provenance there. Cluster assets need not exist on
+the development machine.
+
+**Reason:** the user clarified the deployment boundary on 2026-10-21; implicit
+working-directory discovery and local asset requirements obscure that boundary.
+**Authority:** [Perlmutter pilot sequence](PERLMUTTER_F0_PILOT.md).
