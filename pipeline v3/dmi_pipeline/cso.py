@@ -5,11 +5,12 @@ persisted against the source bytes, never enabled by a process-global flag.
 """
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 
 from . import manifest
-from .dumpio import MatrixDump
+from .dumpio import MatrixDump, load_cso
 
 EULER_CONVENTIONS = tuple(f"a{sa}b{sb}U{d}" for sa in ("+", "-")
                           for sb in ("+", "-") for d in ("", "d"))
@@ -59,6 +60,21 @@ def validate_rotation(z: MatrixDump, x: MatrixDump, y: MatrixDump, tol: float = 
             "detail": "All blocks and ions compared; one unique Euler convention required",
             "source_sha256": z.provenance.sha256,
             "files": {str(d.provenance.path.resolve()): d.provenance.sha256 for d in (z, x, y)}}
+
+
+def t3(z_path, x_path, y_path) -> dict:
+    """Validate genuine x/y dumps against the z operator from one build."""
+    paths = [Path(path) for path in (z_path, x_path, y_path)]
+    outcars = [path.parent / "OUTCAR" for path in paths]
+    banners = {outcar.read_text(encoding="utf-8", errors="replace").splitlines()[0].strip()
+               for outcar in outcars}
+    if len(banners) != 1:
+        raise ValueError("T3 dumps must come from one build")
+    result = validate_rotation(load_cso(paths[0]), load_cso(paths[1], expect_saxis=AXES["x"]),
+                               load_cso(paths[2], expect_saxis=AXES["y"]))
+    result["build_banner"] = banners.pop()
+    result["files"].update(manifest.fingerprints(outcars))
+    return result
 
 
 def rotate_saxis(z: MatrixDump, axis: str, validation: dict | None = None) -> MatrixDump:

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dmi-pipeline"
 version = "0.3.0"
-description = "Patch B validation for decorated spin spirals"
+description = "Magnetic tensors from VASP spin spirals"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 
