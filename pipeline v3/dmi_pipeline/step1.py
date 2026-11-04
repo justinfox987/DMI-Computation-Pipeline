@@ -1,7 +1,7 @@
 """Lab-vector Step 1 input, sphere readback and canonical-bond rows.
 
-No job submission or BFO symmetry generation occurs here. N0 keeps its historical
-OUTCAR diagnostic path; Step 1 records never inherit its frame convention.
+No job submission occurs here. The bond rows and constrained families are removed
+in TEN-03; `sphere` and `check_run` are the readers that carry forward.
 """
 
 from pathlib import Path
@@ -10,8 +10,7 @@ import re
 import numpy as np
 
 from . import manifest
-from .realized import incar, logical, numbers, poscar_species
-from .workflow import INCAR_TAGS, _echo_check
+from .realized import INCAR_TAGS, echo_check, incar, logical, numbers, poscar_species
 
 CONVENTION = "lab-oszicar-sphere-v1"
 DIRECTION_DEG = 1.0
@@ -353,7 +352,7 @@ def check_run(directory, nions) -> dict:
         count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
         if count != list(range(1, count[-1] + 1)):
             raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
-    _echo_check(directory)
+    echo_check(directory)
     result = sphere(directory / "OSZICAR", nions)
     ionic, electronic = (int(x) for x in iterations[-1].groups())
     if (result["ionic_steps"] != outcar_steps or

@@ -1,15 +1,21 @@
-"""Readback for the in-plane collinear N0 acceptance run only.
-
-The final-table parser is adapted from v2 realized.py. General F1/F2
-realization and frame generation stay deferred until N0 passes.
-"""
+"""INCAR and POSCAR helpers shared by the readers."""
 
 from pathlib import Path
 import re
 
 import numpy as np
 
-from . import conventions
+# Input-only registration still rejects unknown tags instead of treating the
+# verbatim INCAR echo as evidence VASP recognized a typo.
+INCAR_TAGS = set("""
+SYSTEM ENCUT ENINI ENAUG PREC NCORE NPAR KPAR NBANDS NEDOS ISTART ICHARG ISMEAR SIGMA
+IBRION POTIM ISIF NSW NELM NELMIN NELMDL ISYM SYMPREC LMAXMIX LMAXPAW ALGO IALGO
+ISEARCH EDIFF EDIFFG LREAL LORBIT GGA AMIX BMIX AMIX_MAG BMIX_MAG AMIN IMIX
+ISPIN GGA_COMPAT LASPH MAGMOM LDAU LDAUPRINT LDAUTYPE LDAUL LDAUU LDAUJ
+LNONCOLLINEAR LSORBIT LSPIRAL QSPIRAL SAXIS LZEROZ RWIGS I_CONSTRAINED_M LAMBDA
+M_CONSTR LWAVE LCHARG LDUMPCOCC LDUMPCPROJ LDUMPCSO LPLANE LSCALAPACK NSIM
+ADDGRID NELECT NWRITE LVTOT LVHAR LAECHG LELF LASPH LDAUTYPE
+""".split())
 
 
 def incar(path: str | Path) -> dict[str, str]:
@@ -54,86 +60,27 @@ def poscar_species(path: str | Path) -> list[str]:
     return [symbol for symbol, count in zip(symbols, counts) for _ in range(count)]
 
 
-def _parse_magnetization_block(lines: list[str], start: int, n_ions: int) -> tuple[np.ndarray, int]:
-    i = start + 1
-    while i < len(lines) and not lines[i].strip():
-        i += 1
-    if i >= len(lines) or not lines[i].strip().startswith("# of ion"):
-        raise ValueError("Missing magnetization table header")
-    i += 2  # header and separator
-    values = []
-    for ion in range(n_ions):
-        if i >= len(lines):
-            raise ValueError("Truncated final magnetization table")
-        parts = lines[i].split()
-        if len(parts) < 3 or parts[0] != str(ion + 1):
-            raise ValueError(f"Invalid final magnetization row for ion {ion + 1}")
-        values.append(float(parts[-1]))
-        i += 1
-    return np.asarray(values), i
-
-
-def read_outcar_moments(directory: str | Path, n_ions: int) -> np.ndarray:
-    lines = (Path(directory) / "OUTCAR").read_text(encoding="utf-8", errors="replace").splitlines()
-    starts = [i for i, line in enumerate(lines) if line.strip() == "magnetization (x)"]
-    if not starts:
-        raise ValueError("No final noncollinear magnetization tables")
-    position = starts[-1]
-    values = []
-    for axis in "xyz":
-        while position < len(lines) and lines[position].strip() != f"magnetization ({axis})":
-            position += 1
-        if position == len(lines):
-            raise ValueError(f"Missing final magnetization ({axis})")
-        component, position = _parse_magnetization_block(lines, position, n_ions)
-        values.append(component)
-    result = np.stack(values, axis=1)
-    if not np.all(np.isfinite(result)):
-        raise ValueError("Non-finite final magnetic moments")
-    return result
-
-
-def null_state(directory: str | Path, config: dict) -> dict:
-    """Gauge-invariant R0: q=0, collinear planar moments, recorded eps and magnitudes."""
-    directory = Path(directory)
+def echo_check(directory: Path) -> dict:
     tags = incar(directory / "INCAR")
-    if logical(tags, "LSORBIT") or not logical(tags, "LNONCOLLINEAR"):
-        raise ValueError("N0 needs a SOC-free noncollinear run")
-    q = numbers(tags.get("QSPIRAL", "0 0 0"))
-    if q.shape != (3,) or np.any(q != 0):
-        raise ValueError("N0 requires QSPIRAL=0")
-    if not np.array_equal(numbers(tags.get("SAXIS", "0 0 1")), [0, 0, 1]):
-        raise ValueError("N0 requires SAXIS=0 0 1")
-    if int(tags.get("I_CONSTRAINED_M", "0")) != 0:
-        raise ValueError("This N0 bootstrap supports the unconstrained F0 null only")
-    species = config["species"]
-    if poscar_species(directory / "POSCAR") != species:
-        raise ValueError("POSCAR species/order changed since registration")
-    indices = np.asarray(config["magnetic_indices"], dtype=int)
-    expected = np.asarray(config["moment_ref"], dtype=float)
-    eps = np.asarray(config["eps"], dtype=float)
-    all_moments = read_outcar_moments(directory, len(species))
-    m = all_moments[indices]
-    mag = np.linalg.norm(m, axis=1)
-    if np.any(mag <= 1e-12):
-        raise ValueError("Collapsed magnetic moment in N0 reference")
-    # Remove AFM signs, then measure relative azimuths; global phase is free.
-    alpha = np.angle((m[:, 0] + 1j * m[:, 1]) * eps)
-    phase = np.angle(np.mean(np.exp(1j * alpha)))
-    residual = np.angle(np.exp(1j * (alpha - phase)))
-    theta_error = np.abs(np.arcsin(np.clip(m[:, 2] / mag, -1, 1)))
-    relative_moment = np.abs(mag - expected) / expected
-    # Include induced nonmagnetic moments in the collinearity prerequisite.
-    axis = np.array([np.cos(phase), np.sin(phase), 0.0])
-    perpendicular = all_moments - np.outer(all_moments @ axis, axis)
-    transverse = float(np.max(np.linalg.norm(perpendicular, axis=1)))
-    passed = (np.max(np.abs(residual)) < np.deg2rad(conventions.TOL_PHI_DEG)
-              and np.max(theta_error) < np.deg2rad(conventions.TOL_THETA_DEG)
-              and np.max(relative_moment) < conventions.TOL_MOMENT_REL
-              and transverse < float(np.max(mag)) * np.sin(np.deg2rad(conventions.TOL_PHI_DEG)))
-    return {"name": "R0", "passed": bool(passed), "frame": conventions.FRAME_MINT,
-            "global_phase_deg": float(np.rad2deg(phase)),
-            "phase_error_deg": np.rad2deg(residual).tolist(),
-            "theta_error_deg": np.rad2deg(theta_error).tolist(),
-            "moment_relative_error": relative_moment.tolist(),
-            "transverse_max_muB": transverse, "moments_muB": all_moments.tolist()}
+    unknown = set(tags) - INCAR_TAGS
+    if unknown:
+        raise ValueError(f"Unreviewed INCAR tags: {sorted(unknown)}")
+    text = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
+    if "General timing and accounting" not in text:
+        raise ValueError("OUTCAR has no completed-job timing footer")
+    for key, expected in tags.items():
+        # VASP's initial INCAR block retains every supplied value, including
+        # vector tags and ALGO. Compare tokens, not substring matches.
+        matches = re.findall(r"^\s*" + re.escape(key) + r"\s*=\s*(.*)$", text, re.M)
+        def equal(actual):
+            a, b = actual.split(), expected.split()
+            if a[:len(b)] == b:
+                return True
+            try:
+                x, y = numbers(" ".join(a[:len(b)])), numbers(expected)
+                return x.shape == y.shape and np.allclose(x, y, atol=1e-12, rtol=1e-8)
+            except ValueError:
+                return " ".join(a[:len(b)]).strip(".").upper() == expected.strip(".").upper()
+        if not any(equal(actual) for actual in matches):
+            raise ValueError(f"OUTCAR does not echo the requested {key}={expected}")
+    return {"passed": True, "checked_tags": sorted(tags)}
