@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- TEN-01: removed `runner`, `campaign`, `reference` and `workflow` with their tests, about 3,300 lines. Moved `INCAR_TAGS` and `echo_check` to `realized`, gave T3 a small wrapper in `cso`, and ignored `vasp files/` and `pipeline v4/`. There is no N0 command until TEN-04. Cut the test suite from 210 cases to 13 (D-015). No VASP or cluster jobs. See the [TEN-01 handoff](docs/sessions/2026-11-04_1845Z-agent-ten01-remove-orchestration.md).
+
 - Pivoted the project from bond-resolved DMI vectors to the spiralization tensor, stiffness tensor and exchange classes. Added math Revision 3.0 with a Markdown agent edition, recorded D-007 to D-014, updated AGENTS, STATUS and README, and moved bond-era documents to `docs/archive/`. No code or VASP change; the pre-pivot state is at tag `archive/bond-dmi-v3`.
 
 - Fe pilot T4b-2: expose completed jobs waiting on reference verification in the status table and additive JSON fields/counts; consolidate scheduler-state reconciliation in one table. Synthetic local tests only; no VASP or cluster jobs. See the [T4b-2 handoff](docs/sessions/2026-10-30_HHMMZ-agent-pilot-runner-t4b2-waiting-and-states.md).

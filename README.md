@@ -77,9 +77,8 @@ python -m pip install -e ".[test]"
 python -m pytest -q
 ```
 
-At commit `490a4e1` this gives 183 passing tests. Those tests cover the pre-pivot
-code, and passing them says nothing about VASP results. `spglib` becomes a
-dependency when `symmetry.py` is added.
+This runs a deliberately small suite of 13 tests. Passing them says nothing about
+VASP results. `spglib` becomes a dependency when `symmetry.py` is added.
 
 The math source is standalone LaTeX. From `docs/math`:
 

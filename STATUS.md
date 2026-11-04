@@ -1,13 +1,14 @@
 # Current project status
 
-**Last reconciled:** 2026-11-04 UTC against `main` at `16c9388`.
+**Last reconciled:** 2026-11-04 UTC at the TEN-01 pull request, on `main` at `4f793c5`.
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
-pivot documents exist. The code has not changed, so `pipeline v3/` still
-implements the bond-era workflow.
+campaign orchestration is removed. `step1.py` still holds the bond rows and
+constrained families until TEN-03, and the new workflow does not exist yet.
+There is no N0 command until TEN-04.
 
-**Integration branch / base commit:** `main` at `16c9388`. Tag
+**Integration branch / base commit:** `main` at `4f793c5`. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. Pivot work is on
 `feat/spiral-tensors`.
 
@@ -20,7 +21,7 @@ implements the bond-era workflow.
 | Patch B frozen-state null holds on BFO | Recorded N0 PASS in `acceptance/`: total -5.19e-8 eV, imaginary 1.4e-19 eV, for the z operator at q = 0 | Historical record, not replayed. Builds are stamped Sep 14 2026 07:13 (ref, dump_C) and 08:43 (dump_P) |
 | Lab-frame MAGMOM and OSZICAR sphere readback | bcc Fe tests and supplied VASP source | Convention evidence for that setup, not production-build acceptance |
 | Revision 3.0 algebra | Spin models and repository fixtures: transformation law, normalization, fits, rank conditions, twist count, pitch, magnon sign | Algebra only. The PAW steps are not independently tested |
-| Local software | 210 tests pass at `16c9388` | Covers pre-pivot code only |
+| Local software | 13 tests pass on `feat/spiral-tensors`; 11 of 11 injected faults caught | Software behavior only, not VASP results |
 
 No VASP calculation has tested Revision 3.0. There is no finite-q trace evidence,
 and no parity (P0) measurement has been made with Patch B.
@@ -30,8 +31,8 @@ and no parity (P0) measurement has been made with Patch B.
 | ID | Work | Status | Owner / branch | Completion evidence |
 |---|---|---|---|---|
 | TEN-00 | Tag the pre-pivot state and commit the pivot documents | Done | `feat/spiral-tensors` | Tag on `490a4e1`; documents and math Revision 3.0 committed |
-| TEN-01 | Remove `runner`, `campaign`, `reference`, `workflow` and their tests; move `INCAR_TAGS`, `_echo_check`, T3 wrapper | Next | Unassigned | Own commit; surviving tests pass |
-| TEN-02 | `symmetry.py`: kept operations, bases, twist count, exchange classes | Not started | Unassigned | Regression table of math Section 7.4 reproduced |
+| TEN-01 | Remove `runner`, `campaign`, `reference`, `workflow` and their tests; move `INCAR_TAGS`, `echo_check`, T3 wrapper; cut the test suite | In review | `feat/spiral-tensors` | [Handoff](docs/sessions/2026-11-04_1845Z-agent-ten01-remove-orchestration.md); pull request pending merge |
+| TEN-02 | `symmetry.py`: kept operations, bases, twist count, exchange classes | Next | Unassigned | Regression table of math Section 7.4 reproduced |
 | TEN-03 | `spiral.py`: N-site F0 at lambda 0, q plan, `submit.sh`, readback, energy reader | Not started | Unassigned | Both rank conditions enforced; synthetic readback tests |
 | TEN-04 | Trace vector and COCC contraction; add P0 and E0; remove hard-coded Bi check | Not started | Unassigned | Agrees with the CPROJ trace on fixtures |
 | TEN-05 | `tensors.py`: fits, forbidden part, predictions, units | Not started | Unassigned | **Gate 1:** spin-model tensors recovered end to end |
@@ -46,8 +47,10 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-Begin TEN-01. Stop further work on `runner.py`; T4b-2 is in history and the module
-is removed by D-013.
+Merge the TEN-01 pull request, then begin TEN-02.
+
+Two cluster checks can run in parallel, because neither needs the new code: genuine
+x and y CSO dumps for T3, and one `dump_P` with `LDUMPCOCC` on and `LDUMPCPROJ` off.
 
 The prepared Fe F0 recipe uses lambda 1 and needs lambda 0 before it can serve
 TEN-06. Its q also needs revisiting against math Section 8.

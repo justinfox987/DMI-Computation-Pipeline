@@ -182,3 +182,15 @@ Code-to-code agreement is the validation target. Published calculations of this
 type give about 80 nm against 62 nm for BFO and about 140 nm against about 70 nm
 for FeGe, so a gap from experiment is a result, not automatically a bug.
 **Authority:** math Section 11.
+
+## D-015 — Keep the test suite small
+
+**Status:** accepted 2026-11-04.  
+Aim for under 30 tests in total, with one test per physics result or file-format
+contract. Do not write a test for each validation branch, input variant or fixed
+bug. The suite went from 210 cases to 13 at TEN-01.
+
+**Reason:** the user directed that the project does not need hundreds of tests.
+Most of the old cases guarded orchestration or individual validation branches,
+and they cost more to maintain than they protected. The 13 tests caught all 11
+faults injected at the cut, including a wrong transpose and swapped COCC blocks.

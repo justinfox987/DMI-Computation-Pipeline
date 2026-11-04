@@ -22,10 +22,10 @@ that runs over machinery no current material needs.
 
 The repository is mid-pivot, so older files can describe removed work:
 
-- Before deleting anything, tag the pre-pivot state as `archive/bond-dmi-v3`.
-- Remove `runner.py`, `campaign.py`, `reference.py` and `workflow.py` with their
-  tests. First move what survives: `INCAR_TAGS`, `_echo_check` and the T3 wrapper.
-  Keep deletions in their own commit, separate from new physics.
+- Tag `archive/bond-dmi-v3` marks the pre-pivot state at `490a4e1`.
+- The campaign orchestration is removed. The bond rows and constrained families
+  in `step1.py` go in TEN-03. Do not extend them.
+- Work only in `pipeline v3/`. Ignore `pipeline v4/`.
 - Add `symmetry.py`, `spiral.py` and `tensors.py`. `spglib` is the one approved
   new dependency, and it is for symmetry operations only.
 - Keep `acceptance/` and `evidence/` as historical records. Do not relabel them
@@ -85,6 +85,9 @@ not merely fewer lines or a smaller-looking diff.
 - Re-read the diff specifically for code that can be deleted, reused or combined.
   Ask whether a function already does the job, whether a new branch is necessary,
   and whether the change has introduced another source of truth.
+- Keep the test suite small: aim for under 30 tests in total. Write one test per
+  physics result or file-format contract, not one per validation branch, input
+  variant or bug fixed. To add a test, first look for one it can replace or extend.
 - Test meaningful behavior and the relevant failure modes. Reuse fixtures and
   independent reference checks; avoid tests that only repeat the implementation
   or mock away the integration being changed.
