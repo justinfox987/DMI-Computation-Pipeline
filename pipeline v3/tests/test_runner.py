@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from dmi_pipeline import campaign, manifest, runner
+from dmi_pipeline.__main__ import main
 from tests.test_campaign import synthetic_campaign
 from tests.test_step1 import run_cli
 
@@ -382,6 +383,51 @@ def test_reference_verified_mid_pass_releases_both_synthetic_gates(tmp_path):
     assert rows["minus"]["status"] == "rejected"
 
 
+@pytest.mark.parametrize("gate, expected", [(True, "accepted"), (False, "rejected")])
+def test_synthetic_campaign_status_waits_for_reference_in_table_and_json(tmp_path, monkeypatch, capsys, gate, expected):
+    root, _ = prepared(tmp_path, generated=True)
+    fake = FakeScheduler()
+    monkeypatch.setattr(runner, "Slurm", lambda: fake)
+    runner.submit(root, fake, max_concurrent=3, yes=True)
+    capsys.readouterr()
+    synthetic_finish(root, fake, "plus", gate=gate)
+
+    assert main(["campaign-status", "--root", str(root)]) == 0
+    table = capsys.readouterr().out
+    assert "plus | submitted (waiting: reference) |" in table
+    assert "minus | submitted |" in table
+    assert "reference-q0 | submitted |" in table
+    assert "SUMMARY: submitted: 2; waiting_reference: 1" in table
+
+    assert main(["campaign-status", "--root", str(root), "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["schema"] == "dmi-runner-status-1"
+    rows = {row["case_id"]: row for row in report["cases"]}
+    assert report["summary"] == {"submitted": 2, "waiting_reference": 1}
+    assert rows["plus"]["pending_reference"] is True
+    assert rows["plus"]["execution"] == {"state": "COMPLETED", "exit_code": "0:0"}
+    assert rows["minus"]["pending_reference"] is False
+    assert rows["minus"]["execution"]["state"] == "PENDING"
+    assert rows["reference-q0"]["pending_reference"] is False
+
+    synthetic_finish(root, fake, "reference-q0")
+    runner.resume(root, fake, yes=True)
+    capsys.readouterr()
+    assert main(["campaign-status", "--root", str(root), "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    rows = {row["case_id"]: row for row in report["cases"]}
+    assert rows["plus"]["status"] == expected
+    assert rows["plus"]["pending_reference"] is False
+    assert rows["plus"]["gate"]["passed"] is gate
+    expected_summary = {"submitted": 1, "waiting_reference": 0, "accepted": 1}
+    expected_summary[expected] = expected_summary.get(expected, 0) + 1
+    assert report["summary"] == expected_summary
+    assert not manifest.load(root / "runs" / "plus" / "result.json").get("pending_reference")
+    assert len(fake.calls) == 3
+    assert main(["campaign-status", "--root", str(root)]) == 0
+    assert "waiting: reference" not in capsys.readouterr().out
+
+
 def test_pending_reference_synthetic_resume_releases_without_duplicate_readback(tmp_path):
     root, _ = prepared(tmp_path, generated=True)
     fake = FakeScheduler()
@@ -626,16 +672,63 @@ def test_generated_reference_and_execution_parent_reconcile_in_one_pass(tmp_path
         assert not (root / "runs" / "minus" / "attempt-001" / "readback" / "state.json").exists()
 
 
-@pytest.mark.parametrize("state", ["FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL"])
-def test_scheduler_terminal_synthetic_execution_failure(tmp_path, state):
+@pytest.mark.parametrize("state, expected, live", [
+    ("COMPLETED", "readback_failed", False),
+    ("FAILED", "execution_failed", False),
+    ("CANCELLED", "execution_failed", False),
+    ("TIMEOUT", "execution_failed", False),
+    ("NODE_FAIL", "execution_failed", False),
+    ("OUT_OF_MEMORY", "execution_failed", False),
+    ("DEADLINE", "execution_failed", False),
+    ("BOOT_FAIL", "execution_failed", False),
+    ("PREEMPTED", "execution_failed", False),
+    ("PENDING", "submitted", True),
+    ("RUNNING", "running", True),
+    ("CONFIGURING", "submitted", True),
+    ("COMPLETING", "submitted", True),
+    ("REQUEUED", "submitted", True),
+    ("REQUEUE_HOLD", "submitted", True),
+    ("REQUEUE_FED", "submitted", True),
+    ("RESIZING", "submitted", True),
+    ("SIGNALING", "submitted", True),
+    ("STAGE_OUT", "submitted", True),
+    ("STOPPED", "submitted", True),
+    ("SUSPENDED", "submitted", True),
+    ("SPECIAL_EXIT", "submitted", True),
+    ("RESV_DEL_HOLD", "submitted", True),
+    ("REVOKED", "submitted", True),
+    ("CANCELLED by 1234", "execution_failed", False),
+    ("CANCELLED+", "execution_failed", False),
+    ("running", "running", True),
+    ("MYSTERY", "unresolved", False),
+    ("", "unresolved", False),
+    (None, "unresolved", False),
+])
+def test_synthetic_scheduler_state_reconciliation(tmp_path, monkeypatch, state, expected, live):
     root, _ = prepared(tmp_path)
     fake = FakeScheduler()
     runner.submit(root, fake, yes=True)
-    fake.jobs["10001"] = {"state": state, "exit_code": "1:0"}
-    runner.status(root, fake)
-    result = manifest.load(root / "runs" / "plus" / "result.json")
-    assert result["status"] == "execution_failed" and result["execution"]["state"] == state
-    assert result["readback"] is None
+    fake.jobs["10001"] = {"state": state, "exit_code": "0:0"}
+    readbacks = []
+    monkeypatch.setattr(runner.step1, "read_and_gate", lambda *args, **kwargs: readbacks.append(args))
+    runner.resume(root, fake, yes=True)
+    ledger = manifest.load(root / "submissions.json")
+    case = ledger["cases"]["plus"]
+    record = case["attempts"][-1]
+    result_path = root / "runs" / "plus" / "result.json"
+    assert case["status"] == expected
+    assert record["execution"] == {"state": state, "exit_code": "0:0"}
+    assert len(fake.calls) == 2 and len(case["attempts"]) == 1
+    assert readbacks == []
+    if live:
+        assert record["status"] == expected
+    elif expected in ("execution_failed", "readback_failed"):
+        assert record["status"] == expected
+    else:
+        assert record["status"] == "submitted"  # Unknown states cannot close an attempt.
+    assert result_path.exists() is (expected in ("execution_failed", "readback_failed"))
+    if result_path.exists():
+        assert manifest.load(result_path)["status"] == expected
 
 
 def test_completed_missing_outputs_is_readback_failed_and_nonzero_does_not_read(tmp_path):

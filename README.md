@@ -1,12 +1,40 @@
-# DMI extraction with VASP
+# Magnetic tensors from VASP spin spirals
 
-This project extracts bond Dzyaloshinskii–Moriya vectors from paired SOC-free
-spin spirals and first-order SOC traces.
+This project computes the spiralization tensor $\mathcal D$, the stiffness tensor
+$A$ and exchange classes from SOC-free spin spirals in VASP, then uses them to
+predict magnetic properties. It covers materials with one magnetic order
+parameter: ferromagnets and collinear patterns of site signs.
 
-**Starter-kit status:** this folder contains the project documents and
-coordination files. It does not contain the application code, an initialized
-Git repository, or a hosted remote. Merge it into the actual pipeline checkout
-using [the setup guide](docs/REPOSITORY_SETUP.md).
+**Status: mid-pivot.** The project has moved away from bond-resolved DMI vectors.
+The code in `pipeline v3/` still implements that earlier workflow. The new
+workflow below is specified but not yet implemented, and no VASP calculation has
+tested it. See [STATUS.md](STATUS.md) for the current state.
+
+## What it computes
+
+| Quantity | Source | Needs Patch B |
+|---|---|---|
+| Spiralization $\mathcal D$ | First-order SOC trace on paired spirals at small $q$ | Yes |
+| Stiffness $A$ | SOC-free total energies at small $q$ | No |
+| Exchange classes $J_c$ | SOC-free total energies on a coarse $q$ grid | No |
+| Anisotropy $K$ | Standard SOC static runs at $q=0$ | No |
+
+From these the code predicts the spiral period, spin plane and texture class,
+along with magnon stiffness, a mean-field ordering temperature and spiral
+stability. Results are harmonic and first order in SOC; the
+[math document](docs/math/heide_math_v3.tex) states the limits.
+
+## How it works
+
+1. Read a structure and a magnetic sign pattern, and find the symmetry operations
+   that apply.
+2. Count the allowed tensor components, then choose $q$ points that determine them.
+3. Run unconstrained flat spirals at $\pm q$ and capture the SOC-free state.
+4. Form the trace vector from the on-site density matrix and SOC operator.
+5. Fit the tensors, test them against symmetry, and evaluate the predictions.
+
+The planned commands are `plan`, `prepare`, `status`, `collect` and `fit`. None of
+them exists yet.
 
 ## Where to look
 
@@ -17,13 +45,16 @@ using [the setup guide](docs/REPOSITORY_SETUP.md).
 | [CHANGELOG.md](CHANGELOG.md) | Meaningful changes to code, interfaces and documents |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Durable choices and why they were made |
 | [docs/sessions/](docs/sessions/) | One factual handoff log per session |
-| [Step 1 spec](docs/dmi_step1_implementation_spec.md) | Current code-migration contract |
-| [Math source](docs/math/heide_math_v2.tex) | Revision 2.4; editable LaTeX foundation |
-| [docs/archive/](docs/archive/) | Older supporting documents, with authority limitations |
+| [Math source](docs/math/heide_math_v3.tex) | Revision 3.0; the authoritative foundation |
+| [Math for agents](docs/math/heide_math_v3.md) | Same numbering, plus module map and rules |
+| [pipeline v3/](pipeline%20v3/) | Python package `dmi_pipeline` and its tests |
+| [acceptance/](acceptance/) | Historical Patch B N0 record |
 | [evidence/](evidence/) | Small selected validation records and links to external run data |
+| [docs/archive/](docs/archive/) | Older supporting documents, with authority limitations |
 
-Keep the existing package, scripts and tests in place for the initial import.
-Directory cleanup should be a later change with its own verification.
+Revision 2.4, the Step 1 specification and the Perlmutter pilot documents remain
+for history and are superseded for current work. The bond-era code state is at
+tag `archive/bond-dmi-v3`.
 
 ## Daily workflow
 
@@ -32,22 +63,32 @@ log and relevant shared records → commit → synchronize the branch to the rem
 Another computer or agent must fetch/checkout that branch to see its commits.
 Git does not transfer uncommitted files or supply the private context of a chat.
 
-Use one private hosted repository as the shared integration point. Start with
-one active coding task. Introduce separate worktrees only when concurrent work
-is actually useful; do not require a worktree for every ordinary session.
+Use one hosted repository as the shared integration point. Start with one active
+coding task. Introduce separate worktrees only when concurrent work is actually
+useful; do not require a worktree for every ordinary session.
 
 ## Local setup and tests
 
-These commands are **not yet established from the current codebase**. During
-integration, replace this section with the verified environment, installation,
-test and CLI commands. Do not copy an old environment or historical PASS count
-as though it were current evidence.
-
-The math source is standalone LaTeX. From `docs/math`, a local build can use:
+This needs Python 3.11 or later. From the repository root:
 
 ```text
-latexmk -pdf -outdir=build heide_math_v2.tex
+cd "pipeline v3"
+python -m pip install -e ".[test]"
+python -m pytest -q
+```
+
+At commit `490a4e1` this gives 183 passing tests. Those tests cover the pre-pivot
+code, and passing them says nothing about VASP results. `spglib` becomes a
+dependency when `symmetry.py` is added.
+
+The math source is standalone LaTeX. From `docs/math`:
+
+```text
+latexmk -pdf -outdir=build heide_math_v3.tex
 ```
 
 Generated build products belong in the ignored build directory. Keep the source
 as the authoritative document; publish a compiled PDF deliberately when needed.
+
+VASP runs need the Patch B build for the trace, and licensed POTCAR files, which
+stay outside this repository.

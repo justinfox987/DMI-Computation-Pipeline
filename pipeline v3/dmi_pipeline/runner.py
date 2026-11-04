@@ -18,13 +18,49 @@ from . import campaign, manifest, reference, step1
 from .realized import incar
 
 RESTART_FILES = ("WAVECAR", "CHGCAR")
-LIVE = {"PENDING", "CONFIGURING", "RUNNING", "COMPLETING", "SUSPENDED", "RESIZING"}
+# Values are (reconcile action/case status, live); COMPLETED still needs exit/readback/gate.
+SCHEDULER_STATES = {
+    "COMPLETED": ("readback", False),
+    "FAILED": ("execution_failed", False),
+    "CANCELLED": ("execution_failed", False),
+    "TIMEOUT": ("execution_failed", False),
+    "NODE_FAIL": ("execution_failed", False),
+    "OUT_OF_MEMORY": ("execution_failed", False),
+    "DEADLINE": ("execution_failed", False),
+    "BOOT_FAIL": ("execution_failed", False),
+    "PREEMPTED": ("execution_failed", False),
+    "PENDING": ("submitted", True),
+    "RUNNING": ("running", True),
+    "CONFIGURING": ("submitted", True),
+    "COMPLETING": ("submitted", True),
+    "REQUEUED": ("submitted", True),
+    "REQUEUE_HOLD": ("submitted", True),
+    "REQUEUE_FED": ("submitted", True),
+    "RESIZING": ("submitted", True),
+    "SIGNALING": ("submitted", True),
+    "STAGE_OUT": ("submitted", True),
+    "STOPPED": ("submitted", True),
+    "SUSPENDED": ("submitted", True),
+    "SPECIAL_EXIT": ("submitted", True),
+    "RESV_DEL_HOLD": ("submitted", True),
+    "REVOKED": ("submitted", True),
+}
 FAILURES = {"execution_failed", "readback_failed", "rejected", "blocked"}
-# prepared -> submitting -> submitted -> running -> execution_failed/readback_failed/rejected/accepted.
-# Any case -> blocked on a failed prerequisite, with its reason recorded.
-# submitting/submitted/running -> unresolved ONLY if job identity/state cannot be reconciled;
-# unresolved -> the observed state on a later reconcile. Terminal attempts stay terminal
-# unless evidence changes; then the case needs an explicit retry in a NEW attempt.
+# A new attempt is submitting (case unresolved) until its job ID is saved, then
+# submitted/running while live. A completed job with an unverified reference stays
+# submitted with result.pending_reference=True and recorded execution until resume/status
+# can verify the reference; diagnostic completion is not physical acceptance.
+# A completed job with verified prerequisites becomes accepted/rejected via readback,
+# or execution_failed/readback_failed if the exit code/outputs/reader fail.
+# Failed prerequisites block cases. Recorded failure attempts and blocked live
+# attempts with a still-failed prerequisite skip the per-case scheduler lookup;
+# accepted/rejected attempts reuse verified cache and skip it too. The initial bulk
+# scheduler lookup still includes all recorded job IDs (T4b-3). A recovered
+# prerequisite can reconsider a blocked live attempt; a changed prerequisite can
+# block a terminal case without changing its attempt record. Unknown/missing
+# scheduler state or an unmatched interrupted submission is unresolved; later
+# reconciliation can resolve it, but never blindly resubmits it. Only explicit cache
+# invalidation marks a completed case prepared; retry creates a new attempt.
 LAUNCH = re.compile(r"(?:^|[;&|\s])(?:srun|mpirun|mpiexec|aprun|ibrun|vasp(?:_[A-Za-z0-9]+)?|\"\$VASP_EXECUTABLE\"|\$VASP_EXECUTABLE)(?=\s|$)")
 
 
@@ -75,6 +111,13 @@ class Slurm:
                 if len(parts) >= 3 and parts[1] == name and parts[2] == comment:
                     matches.add(parse_job_id(parts[0]))
         return sorted(matches)
+
+
+def _state_key(state):
+    """Strip, split on whitespace or '+', upper-case and use the first token."""
+    if state is None:
+        return ""
+    return re.split(r"[\s+]", str(state).strip(), maxsplit=1)[0].upper()
 
 
 def parse_job_id(text):
@@ -456,8 +499,15 @@ def _reconcile(root, plan, ordered, ledger, scheduler):
         state = evidence["state"] if isinstance(evidence, dict) else evidence
         exit_code = evidence.get("exit_code") if isinstance(evidence, dict) else None
         record["execution"] = {"state": state, "exit_code": exit_code}
-        if state in LIVE:
-            record["status"] = "running" if state == "RUNNING" else "submitted"
+        action = SCHEDULER_STATES.get(_state_key(state))
+        if action is None:
+            case["status"] = "unresolved"
+            case["blocked_reason"] = f"unknown scheduler job state: {state}"
+            manifest.save(ledger, root / "submissions.json")
+            continue
+        status, live = action
+        if live:
+            record["status"] = status
             blocked = next((parent for parent in campaign.case_parents(entry)
                             if ledger["cases"][parent]["status"] in FAILURES), None)
             if blocked is not None:
@@ -468,12 +518,7 @@ def _reconcile(root, plan, ordered, ledger, scheduler):
                 case["blocked_reason"] = None
             manifest.save(ledger, root / "submissions.json")
             continue
-        if state not in LIVE and state != "COMPLETED" and state not in {"FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY"}:
-            case["status"] = "unresolved"
-            case["blocked_reason"] = f"unknown scheduler job state: {state}"
-            manifest.save(ledger, root / "submissions.json")
-            continue
-        if state != "COMPLETED" or exit_code not in ("0:0", "0", 0):
+        if status == "execution_failed" or exit_code not in ("0:0", "0", 0):
             if entry["id"] == "reference-q0":
                 plan["reference"]["status"] = "failed-generate"
                 manifest.save(plan, root / "plan.json")
@@ -700,22 +745,36 @@ def status(root, scheduler=None, json_output=False, clear_stale_lock=False):
         if (root / "submissions.json").exists():
             _reconcile(root, plan, ordered, ledger, scheduler or Slurm())
         rows = []
+        summary = {"submitted": 0, "waiting_reference": 0}
         for entry in ordered:
             case = ledger["cases"][entry["id"]]
             latest = case["attempts"][-1] if case["attempts"] else {}
+            result_path = root / entry["run_dir"] / "result.json"
+            pending_reference = False
+            if (case["status"] == "submitted" and plan["reference"]["status"] not in
+                    ("verified-import", "verified-generate") and result_path.is_file()):
+                result = manifest.load(result_path)
+                pending_reference = (result.get("attempt") == latest.get("directory") and
+                                     result.get("pending_reference") is True)
             rows.append({"case_id": entry["id"], "pair": entry.get("pair"),
-                         "status": case["status"], "job_id": latest.get("job_id"),
-                         "attempt": latest.get("directory"), "execution": latest.get("execution"),
-                         "readback": latest.get("readback"), "gate": latest.get("gate"),
-                         "blocked_reason": case.get("blocked_reason")})
-        report = {"schema": "dmi-runner-status-1", "pairs": plan.get("pairs", []), "cases": rows}
+                         "status": case["status"], "pending_reference": pending_reference,
+                         "job_id": latest.get("job_id"), "attempt": latest.get("directory"),
+                         "execution": latest.get("execution"), "readback": latest.get("readback"),
+                         "gate": latest.get("gate"), "blocked_reason": case.get("blocked_reason")})
+            key = "waiting_reference" if pending_reference else case["status"]
+            summary[key] = summary.get(key, 0) + 1
+        report = {"schema": "dmi-runner-status-1", "pairs": plan.get("pairs", []),
+                  "cases": rows, "summary": summary}
         if json_output:
             print(json.dumps(report, indent=2))
         else:
             print("case id | status | job id | attempt | execution | readback | gate | blocked reason")
             for row in rows:
-                print(" | ".join(str(row[key] if row[key] is not None else "-") for key in
-                                 ("case_id", "status", "job_id", "attempt", "execution", "readback", "gate", "blocked_reason")))
+                status_label = "submitted (waiting: reference)" if row["pending_reference"] else row["status"]
+                print(" | ".join(str(value if value is not None else "-") for value in
+                                 (row["case_id"], status_label, row["job_id"], row["attempt"],
+                                  row["execution"], row["readback"], row["gate"], row["blocked_reason"])))
+            print("SUMMARY: " + "; ".join(f"{key}: {value}" for key, value in summary.items()))
             for pair in report["pairs"]:
                 print(f"pair {pair['id']}: {pair['plus']} / {pair['minus']} (individual states above; no parity/SOC claim)")
         return report
