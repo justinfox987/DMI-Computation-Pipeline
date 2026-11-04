@@ -15,7 +15,7 @@ generic winding/unwinding layer or an OUTCAR fallback for fitted directions.
 **Reason:** the Fe tests distinguish the sphere and projected readouts; supplied
 VASP source performs the MAGMOM counter-rotation internally.
 **Authority:** [math Revision 2.4](math/heide_math_v2.tex), Sections 3–4;
-[Step 1 spec](dmi_step1_implementation_spec.md).
+[Step 1 spec](archive/dmi_step1_implementation_spec.md).
 
 ## D-002 — Use measured vectors directly in paired rows
 
@@ -59,7 +59,7 @@ branch/worktree, and synchronize commits through a private remote.
 
 **Reason:** multiple tools and sessions need inspectable shared state; chat
 memory and uncommitted local files do not provide a reliable handoff.
-**Authority:** [repository setup](REPOSITORY_SETUP.md) and root AGENTS.md.
+**Authority:** [repository setup](archive/REPOSITORY_SETUP.md) and root AGENTS.md.
 
 ## D-006 — Generate the actual pilot on the cluster with explicit paths
 
@@ -73,7 +73,7 @@ the development machine.
 
 **Reason:** the user clarified the deployment boundary on 2026-10-21; implicit
 working-directory discovery and local asset requirements obscure that boundary.
-**Authority:** [Perlmutter pilot sequence](PERLMUTTER_F0_PILOT.md).
+**Authority:** [Perlmutter pilot sequence](archive/PERLMUTTER_F0_PILOT.md).
 
 ## D-007 — Compute magnetic tensors, not bond vectors
 
