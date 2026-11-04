@@ -230,39 +230,7 @@ def make_clean_cso(nions: int, lmdim: int) -> np.ndarray:
     return matrix
 
 
-def make_broken_cso(kind: str, nions: int = 2, lmdim: int = 3) -> np.ndarray:
-    matrix = make_clean_cso(nions, lmdim)
-    if kind == "dd_plus_uu":
-        matrix[3] = matrix[0]
-    elif kind == "has_real":
-        matrix[0, 0, 0, 1] += 0.25
-    elif kind == "symmetric":
-        matrix[0, 0, 1, 0] = matrix[0, 0, 0, 1]
-    elif kind == "nonzero_diag":
-        matrix[0, 0, 0, 0] = 1j
-    elif kind == "all_zero":
-        matrix[:] = 0.0
-    else:
-        raise ValueError(f"unknown broken CSO kind {kind!r}")
-    return matrix
-
-
 def write_cso(path: str | Path, matrix: np.ndarray, *, nelect: float = 8.0) -> Path:
     output = Path(path)
     _write_matrix(output, matrix, "cso", nelect=nelect)
     return output
-
-
-def corrupt(path: str | Path, **changes: object) -> None:
-    target = Path(path)
-    if changes.get("drop"):
-        target.unlink()
-        return
-    data = bytearray(target.read_bytes())
-    if "format_version" in changes:
-        data[32:36] = struct.pack("<i", int(changes["format_version"]))
-    if "dump_point" in changes:
-        data[68:84] = _fixed(str(changes["dump_point"]), 16)
-    if "build_id" in changes:
-        data[36:68] = _fixed(str(changes["build_id"]), 32)
-    target.write_bytes(data)

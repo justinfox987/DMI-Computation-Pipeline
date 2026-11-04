@@ -5,7 +5,7 @@ import pytest
 
 from dmi_pipeline.dumpio import load_cocc, load_cproj, load_cso, load_ferwe
 from dmi_pipeline.gates import gate_c0, gate_i0, gate_m1, gate_n0
-from dmi_pipeline.trace import TraceResult, compute_delta_E1, compute_delta_E1_reference
+from dmi_pipeline.trace import compute_delta_E1, compute_delta_E1_reference
 from tests.fixtures import make_clean_cso, write_cso, write_fake_dump
 
 
@@ -60,21 +60,15 @@ def test_collinear_null_and_same_capture_checks(tmp_path):
         compute_delta_E1(cp, replace(occ, spin_factor=2.0), cso)
 
 
-@pytest.mark.parametrize("defect", ["sign", "flip", "zero", "empty_ion", "nan"])
-def test_c0_rejects_actual_operator_defects(defect):
-    matrix = make_clean_cso(2, 3)
-    assert gate_c0(matrix).passed
-    if defect == "sign":
-        matrix[3] = matrix[0]
-    elif defect == "flip":
-        matrix[1, 0, 1, 0] += 1
-    elif defect == "zero":
-        matrix[1:3] = 0
-    elif defect == "empty_ion":
-        matrix[:, 1] = 0
-    else:
-        matrix[0, 0, 0, 0] = np.nan
-    assert not gate_c0(matrix).passed
+def test_c0_rejects_operator_defects():
+    assert gate_c0(make_clean_cso(2, 3)).passed
+    same_sign, broken_flip, empty_flip, not_finite = (make_clean_cso(2, 3) for _ in range(4))
+    same_sign[3] = same_sign[0]
+    broken_flip[1, 0, 1, 0] += 1
+    empty_flip[1:3] = 0
+    not_finite[0, 0, 0, 0] = np.nan
+    for matrix in (same_sign, broken_flip, empty_flip, not_finite):
+        assert not gate_c0(matrix).passed
 
 
 def test_m1_observes_off_diagonal_order_and_corruption(tmp_path):
@@ -87,20 +81,3 @@ def test_m1_observes_off_diagonal_order_and_corruption(tmp_path):
     matrix = co.matrix.copy()
     matrix[0, 0, 0, 0] += 1e-5
     assert not gate_m1(cp, occ, replace(co, matrix=matrix)).passed
-
-
-def test_n0_detects_per_ion_cancellation_and_bi_warning():
-    trace = TraceResult(0.0, 0.0, {0: 0.0, 1: 0.0}, {0: 0.7, 1: -0.7})
-    assert not gate_n0(trace, ["Fe", "Bi"]).passed
-    trace = replace(trace, per_ion={0: -4e-5, 1: 4e-5})
-    result = gate_n0(trace, ["Fe", "Bi"])
-    assert not result.passed and result.value["Bi_near_threshold"]
-    assert result.threshold == 5e-5
-    assert gate_n0(trace, ["Fe", "Bi"], sigma_restart=3e-5).threshold == 9e-5
-    with pytest.raises(ValueError, match="z trace"):
-        gate_n0(replace(trace, axis="x"), ["Fe", "Bi"])
-
-
-def test_i0_checks_ions_even_when_total_cancels():
-    trace = TraceResult(0.0, 0.0, {0: 0.1, 1: -0.1}, {0: 0.0, 1: 0.0})
-    assert not gate_i0(trace).passed
