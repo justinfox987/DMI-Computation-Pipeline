@@ -1,14 +1,35 @@
-# Working on this DMI project
+# Working on this spin-spiral tensor project
 
 ## Start every session
 
-1. Read `STATUS.md`, `docs/DECISIONS.md` and the applicable task spec.
+1. Read `STATUS.md`, `docs/DECISIONS.md` and the applicable task spec. For
+   physics or pipeline work, also read `docs/math/heide_math_v3.md`.
 2. Inspect `git status --short --branch`, the current branch and recent commits.
    Preserve existing edits. Read any more-specific repository instructions.
 3. Check the task owner/branch in STATUS and the latest relevant session log.
    Reconcile this with the actual checkout; a status sheet is not evidence of code.
 4. State the task scope and relevant files before editing. Use an existing task
    branch, or create a focused branch from the agreed integration base.
+
+## Current direction
+
+The project computes the spiralization tensor, stiffness tensor and exchange
+classes from flat spin spirals, then uses them to predict magnetic properties.
+It no longer fits bond-resolved DMI vectors. The code must work for any material
+with one magnetic order parameter; BFO is a test material, not a special case.
+The near-term goal is working calculations and a paper, so choose the simple path
+that runs over machinery no current material needs.
+
+The repository is mid-pivot, so older files can describe removed work:
+
+- Before deleting anything, tag the pre-pivot state as `archive/bond-dmi-v3`.
+- Remove `runner.py`, `campaign.py`, `reference.py` and `workflow.py` with their
+  tests. First move what survives: `INCAR_TAGS`, `_echo_check` and the T3 wrapper.
+  Keep deletions in their own commit, separate from new physics.
+- Add `symmetry.py`, `spiral.py` and `tensors.py`. `spglib` is the one approved
+  new dependency, and it is for symmetry operations only.
+- Keep `acceptance/` and `evidence/` as historical records. Do not relabel them
+  as evidence for the new pipeline.
 
 ## Code for sustainability and simplicity
 
@@ -73,16 +94,27 @@ not merely fewer lines or a smaller-looking diff.
 
 ## Scientific authority
 
-- Current foundation: `docs/math/heide_math_v2.tex`, **Revision 2.4**.
-- Current migration: `docs/dmi_step1_implementation_spec.md`.
-- `docs/archive/` contains historical snapshots, including superseded frame
-  assumptions. It must not silently override the current spec.
-- Implement physical lab-vector targets and OSZICAR sphere readback as specified.
-  Keep `M_int` geometry distinct from `MW_int` constraint checks.
-- Keep first-order SOC, full-operator axis selection, canonical bond counting
-  and two-sided measured rows. Do not add a second spin-axis rotation.
-- Mathematical equivalence, local test passes and production VASP validation
-  are separate claims. State which evidence supports each result.
+- Current foundation: `docs/math/heide_math_v3.tex`, **Revision 3.0**.
+- `docs/math/heide_math_v3.md` is the agent edition, with the same section and
+  equation numbers. Its opening notes give the module map and the rules that must
+  not drift. Change the two files together. If they disagree, the TeX wins and
+  the conflict must be reported.
+- Superseded for current work: `docs/math/heide_math_v2.tex`,
+  `docs/dmi_step1_implementation_spec.md`, `docs/next_steps.md`,
+  `docs/PERLMUTTER_F0_PILOT.md`, `docs/STEP1_LOCAL_USAGE.md`,
+  `plans/perlmutter-fe-pilot-runner.md` and `docs/archive/`. Use them for history
+  and retained Patch B detail. They must not silently override Revision 3.0.
+- Run unconstrained flat F0 spirals at `LAMBDA = 0`. Do not reintroduce F1, F2,
+  constraints, bond bases or bond rows without a recorded user decision.
+- Write physical lab-vector targets without pre-unwinding, and read directions
+  from OSZICAR `M_int`. Never substitute target directions for measured ones.
+- Keep first-order SOC, the frozen-state trace and computed pairs at both signs
+  of q. Do not add a second spin-axis rotation.
+- Report the free 9-component spiralization fit and its forbidden part, not only
+  the symmetry-constrained result. That check cannot see an overall sign, so the
+  sign needs an external anchor.
+- Mathematical equivalence, spin-model recovery, local test passes and production
+  VASP validation are separate claims. State which evidence supports each result.
 - Do not fabricate run metadata, hashes, convergence, uncertainties or gate passes.
 
 ## Coordinate changes
@@ -119,4 +151,4 @@ not merely fewer lines or a smaller-looking diff.
 Keep code, tests, specs, small deliberate evidence and logs in Git. Keep bulk
 calculation output, machine-local paths/credentials and VASP installation
 assets outside the tracked source tree. Use `evidence/README.md` for run records.
-Step 1 does not include submitting VASP jobs.
+Do not submit VASP jobs or contact the cluster unless the user asks for it.
