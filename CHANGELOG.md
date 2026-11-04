@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- Pivoted the project from bond-resolved DMI vectors to the spiralization tensor, stiffness tensor and exchange classes. Added math Revision 3.0 with a Markdown agent edition, recorded D-007 to D-014, updated AGENTS, STATUS and README, and moved bond-era documents to `docs/archive/`. No code or VASP change; the pre-pivot state is at tag `archive/bond-dmi-v3`.
+
 - Fe pilot T4b-2: expose completed jobs waiting on reference verification in the status table and additive JSON fields/counts; consolidate scheduler-state reconciliation in one table. Synthetic local tests only; no VASP or cluster jobs. See the [T4b-2 handoff](docs/sessions/2026-10-30_HHMMZ-agent-pilot-runner-t4b2-waiting-and-states.md).
 
 - Added the Fe pilot T4 runner baseline and hardened the submit path: prepared, hashed Slurm `jobsall.sh`, locked and explicitly confirmed fake-tested submission, private restart staging and exact scheduler options. Local 153 -> 160 tests and generated-script Bash syntax pass; reconcile/readback/resume are still being hardened in T4b. No VASP or cluster jobs. See the [T4a handoff](docs/sessions/2026-10-30_2124Z-agent-pilot-runner-t4a-submit-path.md).
@@ -21,7 +23,7 @@ commit reference when available. Do not use this as a command transcript.
 
 ### Explicit Perlmutter pilot interfaces (2026-10-21)
 
-- Removed current-directory job.sh discovery: include a launch script only through `--job-template`. Material/recipe/run/readback paths stay caller supplied, with executable configuration in the existing working launch script. Added ENINI to the shared input whitelist so cutoff settings can be supplied and echoed without selecting new values. Added the [Perlmutter sequence](docs/PERLMUTTER_F0_PILOT.md), portable installation instructions and regression coverage through synthetic shared-input preparation/readback. Local pilot directories are generator tests; no local cluster assets are required. No calculation submitted. See the [handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md).
+- Removed current-directory job.sh discovery: include a launch script only through `--job-template`. Material/recipe/run/readback paths stay caller supplied, with executable configuration in the existing working launch script. Added ENINI to the shared input whitelist so cutoff settings can be supplied and echoed without selecting new values. Added the [Perlmutter sequence](docs/archive/PERLMUTTER_F0_PILOT.md), portable installation instructions and regression coverage through synthetic shared-input preparation/readback. Local pilot directories are generator tests; no local cluster assets are required. No calculation submitted. See the [handoff](docs/sessions/2026-10-21_1815Z-agent-perlmutter-pilot-portability.md).
 
 ### Single-directory Step 1 pilot preparation (2026-10-19)
 
@@ -71,7 +73,7 @@ commit reference when available. Do not use this as a command transcript.
 - Added offline CLI input/readback/row/weighted-solve entry points and synthetic
   regression coverage while preserving the historical N0 manifest and trace.
   Missing BFO symmetry basis, production trace/parity and noise evidence are
-  explicit blockers, not new validation passes. See [local usage](docs/STEP1_LOCAL_USAGE.md)
+  explicit blockers, not new validation passes. See [local usage](docs/archive/STEP1_LOCAL_USAGE.md)
   and the [implementation handoff](docs/sessions/2026-09-29_2328Z-agent-dmi-step1-vectors.md).
 
 ### Local baseline handoff (2026-09-29)

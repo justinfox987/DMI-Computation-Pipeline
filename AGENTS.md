@@ -100,10 +100,10 @@ not merely fewer lines or a smaller-looking diff.
   not drift. Change the two files together. If they disagree, the TeX wins and
   the conflict must be reported.
 - Superseded for current work: `docs/math/heide_math_v2.tex`,
-  `docs/dmi_step1_implementation_spec.md`, `docs/next_steps.md`,
-  `docs/PERLMUTTER_F0_PILOT.md`, `docs/STEP1_LOCAL_USAGE.md`,
-  `plans/perlmutter-fe-pilot-runner.md` and `docs/archive/`. Use them for history
-  and retained Patch B detail. They must not silently override Revision 3.0.
+  `plans/perlmutter-fe-pilot-runner.md` and everything in `docs/archive/`,
+  including the Step 1 spec, the Perlmutter pilot guide and old project records.
+  Use them for history and retained Patch B detail. They must not silently
+  override Revision 3.0.
 - Run unconstrained flat F0 spirals at `LAMBDA = 0`. Do not reintroduce F1, F2,
   constraints, bond bases or bond rows without a recorded user decision.
 - Write physical lab-vector targets without pre-unwinding, and read directions
