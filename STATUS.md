@@ -1,13 +1,13 @@
 # Current project status
 
-**Last reconciled:** 2026-11-08 UTC, at the end of TEN-02 on branch `ten-02-symmetry` (base `main` at `c660cab`), pending review.
+**Last reconciled:** 2026-11-08 UTC, at the end of the TEN-02 follow-up on branch `ten-02-followup` (base `main` at `f46f0f1`), pending review.
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
 campaign orchestration is removed. `step1.py` still holds the bond rows and
 constrained families until TEN-03, and the new workflow does not exist yet.
 There is no N0 command until TEN-04. TEN-02 (`symmetry.py` and the single POSCAR
-reader) is implemented on `ten-02-symmetry` and awaits review and merge. The seed
+reader) is merged in PR #10; a test-only follow-up is on `ten-02-followup`. The seed
 file format is agreed ([D-016, D-017](docs/DECISIONS.md)).
 
 **Integration branch / base commit:** `main` at `a0ec0b8`. Tag
@@ -15,8 +15,8 @@ file format is agreed ([D-016, D-017](docs/DECISIONS.md)).
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** TEN-02 by Claude Code on `ten-02-symmetry`, complete
-pending review. One writer per branch.
+**Handoff owner / scope:** TEN-02 follow-up (two test assertions, spec notes) by
+Claude Code on `ten-02-followup`, complete pending review. One writer per branch.
 
 ## Established
 
@@ -26,7 +26,7 @@ pending review. One writer per branch.
 | Lab-frame MAGMOM and OSZICAR sphere readback | bcc Fe tests and supplied VASP source | Convention evidence for that setup, not production-build acceptance |
 | Revision 3.0 algebra | Spin models and repository fixtures: transformation law, normalization, fits, rank conditions, twist count, pitch, magnon sign | Algebra only. The PAW steps are not independently tested |
 | Local software | 13 tests pass on `main` at `c660cab`; 11 of 11 injected faults caught at TEN-01 | Software behavior only, not VASP results |
-| Symmetry module (TEN-02) | 16 tests pass on `ten-02-symmetry`; the spec's expected-results table and the Section 7.4 forms reproduced; 9 of 9 injected faults caught ([log](docs/sessions/2026-11-08_1735Z-agent-ten02-symmetry.md)) | Not yet merged. Symmetry algebra only; says nothing about VASP |
+| Symmetry module (TEN-02) | 16 tests pass; the spec's expected-results table and the Section 7.4 forms reproduced; 9 of 9 injected faults caught ([log](docs/sessions/2026-11-08_1735Z-agent-ten02-symmetry.md)). The follow-up also catches a dropped stiffness symmetrizer and a dropped `-orbit` ([log](docs/sessions/2026-11-08_1829Z-agent-ten02-followup.md)) | Follow-up not yet merged. Symmetry algebra only; says nothing about VASP |
 
 No VASP calculation has tested Revision 3.0. There is no finite-q trace evidence,
 and no parity (P0) measurement has been made with Patch B.
@@ -37,7 +37,7 @@ and no parity (P0) measurement has been made with Patch B.
 |---|---|---|---|---|
 | TEN-00 | Tag the pre-pivot state and commit the pivot documents | Done | `feat/spiral-tensors` | Tag on `490a4e1`; documents and math Revision 3.0 committed |
 | TEN-01 | Remove `runner`, `campaign`, `reference`, `workflow` and their tests; move `INCAR_TAGS`, `echo_check`, T3 wrapper; cut the test suite | Done | Merged in PR #7, `a0ec0b8` | [Handoff](docs/sessions/2026-11-04_1845Z-agent-ten01-remove-orchestration.md) |
-| TEN-02 | `symmetry.py`: kept operations, bases, twist count, exchange classes; one POSCAR reader | In review, [spec](plans/ten-02-symmetry.md) | Claude Code / `ten-02-symmetry` | Section 7.4 table and spec table reproduced ([log](docs/sessions/2026-11-08_1735Z-agent-ten02-symmetry.md)) |
+| TEN-02 | `symmetry.py`: kept operations, bases, twist count, exchange classes; one POSCAR reader | Done; test follow-up in review, [spec](plans/ten-02-symmetry.md) | Merged in PR #10, `f46f0f1`; follow-up on `ten-02-followup` | Section 7.4 table and spec table reproduced ([log](docs/sessions/2026-11-08_1735Z-agent-ten02-symmetry.md)) |
 | TEN-03 | `spiral.py`: seed loader, N-site F0 at lambda 0, q plan, `submit.sh`, readback, energy reader | Not started; needs a spec | Unassigned | Both rank conditions enforced; synthetic readback tests |
 | TEN-04 | Trace vector and COCC contraction; add P0 and E0; remove hard-coded Bi check | Not started | Unassigned | Agrees with the CPROJ trace on fixtures |
 | TEN-05 | `tensors.py`: fits, forbidden part, predictions, units | Not started | Unassigned | **Gate 1:** spin-model tensors recovered end to end |
@@ -52,7 +52,7 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-Review and merge the TEN-02 pull request from `ten-02-symmetry`. Then write the
+Review and merge the TEN-02 follow-up pull request from `ten-02-followup`. Then write the
 TEN-03 spec and get it approved before coding. TEN-03's `plan` must print the
 space group and kept/dropped counts first, as `symmetry.operations` returns them. TEN-03 must also carry two TEN-01 leftovers into
 TEN-04: `trace_config` needs a `provenance.json` that nothing writes yet, and
