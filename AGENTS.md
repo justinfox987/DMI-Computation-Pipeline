@@ -26,8 +26,8 @@ that runs over machinery no current material needs.
 The repository is mid-pivot, so older files can describe removed work:
 
 - Tag `archive/bond-dmi-v3` marks the pre-pivot state at `490a4e1`.
-- The campaign orchestration is removed. The bond rows and constrained families
-  in `step1.py` go in TEN-03. Do not extend them.
+- The campaign orchestration, the bond rows, the constrained families and
+  `step1.py` are removed. Do not reintroduce them.
 - Work only in `pipeline v3/`. Ignore `pipeline v4/`.
 - Add `symmetry.py`, `spiral.py` and `tensors.py`. `spglib` is the one approved
   new dependency, and it is for symmetry operations only.

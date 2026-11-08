@@ -234,3 +234,21 @@ def write_cso(path: str | Path, matrix: np.ndarray, *, nelect: float = 8.0) -> P
     output = Path(path)
     _write_matrix(output, matrix, "cso", nelect=nelect)
     return output
+
+
+def bfo():
+    """Rhombohedral R3c BFO with the threefold axis on z: (lattice, species, tau).
+
+    A test geometry, not a relaxed one. Positions are as a POSCAR may write them,
+    not wrapped into [0, 1): the second Fe sits at x - 1/2, so wrapping it would
+    change its spiral phase.
+    """
+    a, alpha = 5.54, np.radians(59.71)
+    r = np.sqrt(2 * (1 - np.cos(alpha)) / 3)
+    phi = 2 * np.pi * np.arange(3) / 3
+    lattice = a * np.column_stack([r * np.cos(phi), r * np.sin(phi), np.full(3, np.sqrt(1 - r * r))])
+    x, (o1, o2, o3) = .225, (.541, .939, .394)
+    oxygen = [(o1, o2, o3), (o3, o1, o2), (o2, o3, o1)]
+    oxygen += [(p + .5, q + .5, s + .5) for p, q, s in [(o2, o1, o3), (o3, o2, o1), (o1, o3, o2)]]
+    tau = np.array([(0, 0, 0), (.5, .5, .5), (x, x, x), (x - .5, x - .5, x - .5)] + oxygen)
+    return lattice, ["Bi"] * 2 + ["Fe"] * 2 + ["O"] * 6, tau

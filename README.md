@@ -6,10 +6,10 @@ predict magnetic properties. It covers materials with one magnetic order
 parameter: ferromagnets and collinear patterns of site signs.
 
 **Status: mid-pivot.** The project has moved away from bond-resolved DMI vectors.
-The old orchestration is removed. `pipeline v3/` keeps the readers, the Patch B
-dump reader and the trace, and the bond rows in `step1.py` go in TEN-03. The new
-workflow below is specified but not yet implemented, and no VASP calculation has
-tested it. See [STATUS.md](STATUS.md) for the current state.
+The old orchestration and the bond rows are removed. `pipeline v3/` has the
+symmetry module, the spiral inputs and readback (`plan`, `prepare`, `collect`),
+the Patch B dump reader and the trace. The trace step, the fits and `fit` are
+not implemented yet, and no VASP calculation has tested any of it. See [STATUS.md](STATUS.md) for the current state.
 
 ## What it computes
 
@@ -35,8 +35,9 @@ stability. Results are harmonic and first order in SOC; the
 5. Fit the tensors, test them against symmetry, and evaluate the predictions.
 
 Each material is one folder under `materials/` with a POSCAR and a `seed.toml`
-([format](docs/seed_file.md)). The planned commands are `plan`, `prepare`,
-`status`, `collect` and `fit`, each taking the seed path. None of them exists yet.
+([format](docs/seed_file.md)). The commands are `plan` and `prepare`, which
+take the seed path, and `collect`, which takes the run directory. `fit` comes in
+TEN-05.
 
 ## Where to look
 
