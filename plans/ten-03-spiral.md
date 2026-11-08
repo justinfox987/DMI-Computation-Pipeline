@@ -10,7 +10,7 @@ not committed. Work on a branch `ten-03-spiral` from `main`.
 
 ## Scope
 
-Add `pipeline v3/dmi_pipeline/spiral.py`, about 250 lines. It covers Section 12,
+Add `pipeline v3/dmi_pipeline/spiral.py`, about 500 lines including the 160 moved from `step1.py`. It covers Section 12,
 steps 1, 3, 4 (SCF inputs only) and 5:
 
 1. the seed loader;
@@ -21,7 +21,7 @@ steps 1, 3, 4 (SCF inputs only) and 5:
 Delete `step1.py` and `tests/test_step1.py`. Move the two readers that carry
 forward, `sphere` and `check_run` (with `printed_step` and the regexes they use),
 into `spiral.py` unchanged except for the deletions listed below. Remove the
-`step1-*` commands from `__main__.py`. Net change is about 400 lines removed.
+`step1-*` commands from `__main__.py`. The draft estimated about 400 lines removed; the implementation removes about 25 net, because `spiral.py` came to about 500 lines.
 
 Out of scope:
 
@@ -81,8 +81,10 @@ plan(seed) -> dict
   unit vector `s ∝ inv(lattice) @ d`, which is `L^{-T} d`. Using `inv(lattice.T)`
   instead is the easy mistake. In a cubic cell both give the same answer, but in
   rhombohedral BFO they do not.
-- The point for direction `s` and magnitude `t` is `q = t s` in 1/Å, so
-  `q_frac = lattice @ q / (2π)`, from Eq (8.1).
+- The point for direction `s` and magnitude `t` is `q = t s` in 1/Å. Eq (8.1)
+  makes `q_frac` parallel to `d`, so the code writes
+  `q_frac = t d / |2π inv(lattice) @ d|`. This keeps exact zeros where
+  `lattice @ q / (2π)` would leave `1e-18` noise in `QSPIRAL`.
 - Phases use the POSCAR positions exactly as written. They are never wrapped
   into `[0, 1)`: `phi_a = 2π q_frac · tau_a` with `tau_a` as `realized.poscar`
   returns it, which the reader does not wrap. Wrapping would change `phi_a` by
@@ -111,8 +113,9 @@ question 2.
 
 If the seed has no `directions`, take the 13 low-index candidates `q_frac` with
 components in `{-1, 0, 1}`, one per `±` pair. Choose the `max(3, p_A)`-element
-subset that maximizes `min(sigma_D, sigma_A)`, and break ties by the first
-subset in `itertools.combinations` order. This is at most 1716 subsets for
+subset that maximizes `min(sigma_D, sigma_A)` rounded to `1e-9`, and break
+ties by the first subset in `itertools.combinations` order. Symmetry-equivalent
+sets tie to about `1e-15`, so without the rounding, float noise would choose. This is at most 1716 subsets for
 `p_A = 6`. It applies Section 8.2's rule directly and adds no option.
 
 ### `dmi plan materials/x/seed.toml`
@@ -232,7 +235,7 @@ Guards. A failed guard marks that run as not `ok`; it does not stop the others:
 | Generated tags in the run `INCAR` equal `config.json` | An input edited after `prepare` |
 | Printed final `lambda` is 0 | A penalty in E |
 | `M_a >= 0.1 μB` on every magnetic site | A collapsed moment with an undefined direction |
-| `abs(delta_a) < 90°` on every magnetic site | An SCF that fell into a different sign pattern |
+| Every pair of magnetic sites has `abs(arg(z_a z_b*)) < 90°`, with `z_a = u_a* s_a` | An SCF that fell into a different sign pattern |
 
 Removed with `step1.py`, because they served `LAMBDA > 0` or the bond rows: the
 penalty and field reconstruction in `validate`, the `M_int` and `MW_int`
@@ -240,6 +243,13 @@ reference-magnitude drift check, the 1° direction gate, the F1/F2 targets,
 `coefficients`, `paired`, `fit` and `read_and_gate`. At `LAMBDA = 0` the measured
 directions are the result, so a small `delta_a` is reported, not rejected
 (Section 3.3).
+
+The pattern check uses relative site phases, not `delta_a`. `theta` takes up half
+of any flip, so in a 2-site cell a reversed site gives `delta_a = ±90°` on both
+sites, and noise decides whether a `delta_a` rule fires. The pair phase of the
+same state is 180°. If every pair is within 90°, the `z_a` lie in an arc narrower
+than 90° that contains `theta`, so every `abs(delta_a) < 90°` follows. A separate
+`delta_a` rule would be redundant. `theta` and `delta_a` are still reported.
 
 ## Removing the bond rows and constrained families
 
@@ -278,7 +288,7 @@ total of 15:
    pass. The default choice passes with `min(sigma_D, sigma_A) >= 0.9`. A seed
    with an unknown key, and one with 2 values of `t`, are both rejected.
 2. **`test_prepare_writes_paired_f0_inputs`.** Using the same folder, check that
-   `2 Nd Nt + 1` runs are written. At `±q` the targets are Eq (3.1) recomputed
+   `2 Nd Nt + 1` runs are written. In every run, `|q|` equals its `t` and the targets are Eq (3.1) recomputed
    from the written `QSPIRAL`, and the `-q` targets equal the `+q` ones with `y`
    negated. `q0` has `QSPIRAL = 0 0 0` and `LSPIRAL = T`. A material `INCAR` with
    `ISYM = 2` is rejected and named. `submit.sh` has `--array=1-N` with
@@ -286,11 +296,13 @@ total of 15:
 3. **`test_readback`.** Synthetic `OUTCAR` and `OSZICAR` in the prepared runs,
    reusing the old repeated-table and mixed-solver OSZICAR layout. The energy
    line has irregular spacing and two matches, and the last one is taken. Moments
-   rotated by a common 37° give `theta = 37` and `delta = 0`. A reversed site and
-   an unconverged OUTCAR are each reported as not `ok`, and `collect` exits 1.
+   rotated by a common 37° give `theta = 37` and `delta = 0`. A reversed site in
+   the 2-site cell (a 180° pair phase) and an unconverged OUTCAR are each
+   reported as not `ok`, and `collect` exits 1.
 
-Injected faults the tests must catch: `inv(lattice.T)` in place of `inv(lattice)`,
-phases computed from wrapped positions (`tau % 1`), phases computed from the
+Injected faults the tests must catch: `inv(lattice.T)` in place of `inv(lattice)`
+in the directions and in the length of q, a q magnitude that is not `t`,
+phases computed from wrapped positions (`tau % 1`), removal of the pair-phase rule, phases computed from the
 unrounded `q_frac`, a `-q` target equal to the `+q`
 target, the first instead of the last TOTEN match, `MW_int` in place of `M_int`,
 `theta` left out of `delta`, and removal of each `prepare` guard listed above
@@ -302,7 +314,7 @@ From a scratch script using the TEN-02 test geometries:
 
 | System | `p_A` | `(100),(010),(001)` | `(111),(1-10),(100)` | Default choice |
 |---|---:|---|---|---|
-| BFO `R3c` | 2 | `sigma_D .574`, `sigma_A 0` | `.344`, `.929` | `(01-1),(1-1-1),(111)`: `.909`, `.980` |
+| BFO `R3c` | 2 | `sigma_D .574`, `sigma_A 0` | `.344`, `.929` | `(01-1),(1-1-1),(111)`: `.909`, `.980`, tied with two equivalent sets |
 | FeGe | 1 | `1`, `1` | — | `(001),(010),(100)` |
 | bcc Fe 2-site | 1 | `1`, `1` | — | `(001),(010),(100)` |
 | Strained CrSb | 2 | `1`, `1` | — | `(001),(010),(100)` |
@@ -329,7 +341,10 @@ nothing about VASP. The first real runs are TEN-06.
 
 1. Delete `step1.py`. `sphere` and `check_run` move to `spiral.py`.
 2. `RANK_FLOOR = 0.1`.
-3. Keep both readback rules, `M_a >= 0.1 μB` and `abs(delta_a) < 90°`, until TEN-06.
+3. Keep the readback rules until TEN-06: `M_a >= 0.1 μB`, and every pair phase
+   `abs(arg(z_a z_b*)) < 90°`. The pair rule replaced the approved
+   `abs(delta_a) < 90°` during implementation, because that rule cannot see a
+   reversal in a 2-site cell.
 4. `submit.sh` is spliced into a copy of `job.sh`.
 5. Drop `dmi status`. Update `seed_file.md` and amend D-013 in one line.
 6. Leave the `Bi` check in `gate_n0` for TEN-04.

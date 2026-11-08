@@ -8,6 +8,7 @@ import pytest
 
 from dmi_pipeline import symmetry
 from dmi_pipeline.realized import poscar
+from tests.fixtures import bfo
 
 FCC = [(0, 0, 0), (0, .5, .5), (.5, 0, .5), (.5, .5, 0)]
 
@@ -27,19 +28,6 @@ def fege():
     def b20(x):
         return [(x, x, x), (.5 + x, .5 - x, -x), (-x, .5 + x, .5 - x), (.5 - x, -x, .5 + x)]
     return 4.70 * np.eye(3), ["Fe"] * 4 + ["Ge"] * 4, np.array(b20(.135) + b20(.842)) % 1
-
-
-def bfo():
-    """Rhombohedral R3c with the threefold axis on z."""
-    a, alpha = 5.54, np.radians(59.71)
-    r = np.sqrt(2 * (1 - np.cos(alpha)) / 3)
-    phi = 2 * np.pi * np.arange(3) / 3
-    lattice = a * np.column_stack([r * np.cos(phi), r * np.sin(phi), np.full(3, np.sqrt(1 - r * r))])
-    x, (o1, o2, o3) = .225, (.541, .939, .394)
-    oxygen = [(o1, o2, o3), (o3, o1, o2), (o2, o3, o1)]
-    oxygen += [(p + .5, q + .5, s + .5) for p, q, s in [(o2, o1, o3), (o3, o2, o1), (o1, o3, o2)]]
-    tau = np.array([(0, 0, 0), (.5, .5, .5), (x, x, x), (x + .5, x + .5, x + .5)] + oxygen) % 1
-    return lattice, ["Bi"] * 2 + ["Fe"] * 2 + ["O"] * 6, tau
 
 
 def zincblende(primitive, c=6.3):

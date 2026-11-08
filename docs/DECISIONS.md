@@ -164,6 +164,8 @@ wrapper. The new workflow is `plan`, `prepare`, `status`, `collect` and `fit`
 around one material file, with a generated Slurm array. D-006 still applies:
 inputs are generated on the cluster from explicit paths, and the user submits.
 
+**Amended 2026-11-08 (TEN-03):** there is no `status` command; `collect` prints one state per run.
+
 **Reason:** the ledger, locks, attempt tree and dependency graph served a campaign
 that no longer exists, and T4b was unfinished. A run directory can be its own
 state, so rerunning readback is always safe. This removes about 1,600 lines.

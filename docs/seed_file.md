@@ -20,13 +20,14 @@ to the public repo. The Slurm template is passed on the command line:
 
 ```bash
 dmi plan    materials/fe/seed.toml
-dmi prepare materials/fe/seed.toml --job job.sh
-dmi status  materials/fe/seed.toml
-dmi collect materials/fe/seed.toml
-dmi fit     materials/fe/seed.toml
+dmi prepare materials/fe/seed.toml --job job.sh --out RUNS
+cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires
+dmi collect RUNS                     # one state per run; safe to rerun
+dmi fit     ...                      # TEN-05
 ```
 
-The user submits the jobs, as D-006 requires.
+`--out` is required because the seed holds no paths. There is no `status`
+command: `collect` prints one line per run (D-013).
 
 ## Example
 
