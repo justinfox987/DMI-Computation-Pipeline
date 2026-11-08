@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- TEN-02 follow-up: `test_section_7_4_table` now requires the inversion group's stiffness basis to span all 6 symmetric matrices, and `test_exchange_classes` adds FeGe (5 classes of 12, each closed under the kept R and r -> -r). Both catch an injected fault (dropped symmetrizer; dropped `-orbit`). Corrected three background notes in `plans/ten-02-symmetry.md`. No code change; 16 tests. See the [follow-up log](docs/sessions/2026-11-08_1829Z-agent-ten02-followup.md).
+
 - TEN-02: added `dmi_pipeline/symmetry.py` (kept operations with the space-group, orthogonality and site-map guards; spiralization and stiffness bases; twist count; exchange classes) and the `spglib>=2.6` dependency. Replaced `step1.positions` and `realized.poscar_species` with one reader, `realized.poscar(path) -> (lattice, species, tau)`, which applies the scale factor and rejects Cartesian positions and negative or three-value scales. Added three tests (13 -> 16). Reproduced the spec's expected-results table; 9 of 9 injected faults caught. No VASP or cluster jobs. See the [TEN-02 handoff](docs/sessions/2026-11-08_1735Z-agent-ten02-symmetry.md).
 
 - Prepared the repository for coding in Claude Code: added `CLAUDE.md` importing `AGENTS.md`, the TEN-02 spec (`plans/ten-02-symmetry.md`), the seed file format (`docs/seed_file.md`, D-016) and the symmetry detection rules (D-017). Added `materials/fe/seed.toml`, removed the obsolete `examples/fe-f0-pilot/` campaign example, moved the old runner plan to `docs/archive/`, marked TEN-01 done and set one branch per task. No code change. See the [handoff log](docs/sessions/2026-11-08_1710Z-agent-claude-code-handoff.md).

@@ -87,6 +87,7 @@ def rot_z(n):
 Z = np.array([(0, -1, 0), (1, 0, 0), (0, 0, 0)])           # [z]_x
 PERP, PARA = np.diag([1, 1, 0]), np.diag([0, 0, 1])
 I3, ZERO = np.eye(3), np.zeros((0, 3, 3))
+SYMMETRIC = [np.outer(I3[i], I3[j]) + np.outer(I3[j], I3[i]) for i in range(3) for j in range(i, 3)]
 
 
 def test_section_7_4_table(tmp_path):
@@ -94,8 +95,8 @@ def test_section_7_4_table(tmp_path):
     mirror_x, c2x = np.diag([-1, 1, 1]), np.diag([1, -1, -1])
     s4z = np.array([(0, -1, 0), (1, 0, 0), (0, 0, -1)])
     t23 = [rot_z(2), c3]
-    table = [  # generators, D forms, A forms (None: not fixed by the table)
-        ([-I3], ZERO, None),
+    table = [  # generators, D forms, A forms
+        ([-I3], ZERO, SYMMETRIC),
         (t23, [I3], [I3]),
         (t23 + [np.array([(0, 1, 0), (1, 0, 0), (0, 0, 1)])], ZERO, [I3]),
         ([rot_z(3), mirror_x], [Z], [PERP, PARA]),
@@ -107,7 +108,7 @@ def test_section_7_4_table(tmp_path):
     for generators, d_form, a_form in table:
         group = closure(generators)
         assert same_span(symmetry.spiralization_basis(group), d_form)
-        assert a_form is None or same_span(symmetry.stiffness_basis(group), a_form)
+        assert same_span(symmetry.stiffness_basis(group), a_form)
 
     # Strained zincblende end to end from a POSCAR at scale 2: I-4m2, D diag(1, -1, 0).
     lattice, species, tau = zincblende(primitive=False)
@@ -168,3 +169,14 @@ def test_exchange_classes():
     assert multiplicity == [8, 6, 12]
     assert np.allclose(primitive, ferro, atol=1e-12)
     assert np.allclose(g_type, ferro * [-1, 1, 1], atol=1e-12)
+
+    # FeGe: five shells of 12, each closed under the kept R and r -> -r.
+    structure = fege()
+    rotations = symmetry.operations(*structure, range(4), [1] * 4)["rotations"]
+    classes = symmetry.exchange_classes(structure[0], structure[2][:4], [1] * 4,
+                                        rotations, rmax=6.0, tol=1e-6)
+    assert [len(c["vectors"]) for c in classes] == [12] * 5
+    for c in classes:
+        star = np.vstack([c["vectors"], -c["vectors"]])
+        for R in rotations:
+            assert all(np.linalg.norm(star - w, axis=1).min() < 1e-6 for w in star @ R.T)

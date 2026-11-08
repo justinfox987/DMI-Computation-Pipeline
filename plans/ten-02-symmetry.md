@@ -104,10 +104,13 @@ The cases that motivate the guards, all observed in the prototype:
   happens at `symprec = 0.1`.
 - BFO with fractional position noise `sigma = 2e-4` reads as `P1` at
   `symprec = 1e-3`, with `p_D = 9`, `p_A = 6`, `n_twist = 3`. It recovers `R3c` at
-  `1e-2`. With `sigma = 1e-3` it stays `P1` at `1e-2` and recovers at `3e-2`.
-- Marking only one BFO Fe as magnetic passes as `R3c` with 6 operations, and the
-  site distance is 6.8 Å. The largest site distance on any accepted noisy
-  structure was `0.99 * symprec`.
+  `1e-2`. With `sigma = 1e-3` it stays `P1` at `1e-2`. At `3e-2` the result
+  depends on the random seed: over seeds 0 to 9, two recover `R3c` and the rest
+  read as `P1`, `Cc` or `R3`.
+- Marking only one BFO Fe as magnetic still reads as `R3c` with 6 operations, and
+  the site-map guard rejects it at a 3.9 Å site distance. The prototype's largest
+  site distance on an accepted noisy structure, `0.99 * symprec`, depends on the
+  random seed; it is not a bound.
 
 A `symprec` sensitivity report was tried and dropped. It trips on correct settings
 and cannot say which answer is right.
@@ -146,8 +149,9 @@ These counts all came out of the prototype.
 | Strained zincblende | FM | `I-4m2` | see below | all | 1 | 2 | 0 |
 
 The conventional zincblende cell and the primitive cell both give
-`D diag(1, -1, 0)` up to sign. The primitive cell has 8 operations. Rotating the
-lattice by `Q` rotates the basis projector exactly, to `3e-16`.
+`D diag(1, -1, 0)` up to sign. The conventional cell has 32 operations and the
+primitive cell 8. Rotating the lattice by `Q` rotates the basis projector
+exactly, to `3e-16`.
 
 BFO keeps all 6 operations because the glide that swaps the Fe sublattices has
 `eta = -1`, which Eq (7.3) allows.
