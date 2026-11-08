@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- TEN-02: added `dmi_pipeline/symmetry.py` (kept operations with the space-group, orthogonality and site-map guards; spiralization and stiffness bases; twist count; exchange classes) and the `spglib>=2.6` dependency. Replaced `step1.positions` and `realized.poscar_species` with one reader, `realized.poscar(path) -> (lattice, species, tau)`, which applies the scale factor and rejects Cartesian positions and negative or three-value scales. Added three tests (13 -> 16). Reproduced the spec's expected-results table; 9 of 9 injected faults caught. No VASP or cluster jobs. See the [TEN-02 handoff](docs/sessions/2026-11-08_1735Z-agent-ten02-symmetry.md).
+
 - Prepared the repository for coding in Claude Code: added `CLAUDE.md` importing `AGENTS.md`, the TEN-02 spec (`plans/ten-02-symmetry.md`), the seed file format (`docs/seed_file.md`, D-016) and the symmetry detection rules (D-017). Added `materials/fe/seed.toml`, removed the obsolete `examples/fe-f0-pilot/` campaign example, moved the old runner plan to `docs/archive/`, marked TEN-01 done and set one branch per task. No code change. See the [handoff log](docs/sessions/2026-11-08_1710Z-agent-claude-code-handoff.md).
 
 - TEN-01: removed `runner`, `campaign`, `reference` and `workflow` with their tests, about 3,300 lines. Moved `INCAR_TAGS` and `echo_check` to `realized`, gave T3 a small wrapper in `cso`, and ignored `vasp files/` and `pipeline v4/`. There is no N0 command until TEN-04. Cut the test suite from 210 cases to 13 (D-015). No VASP or cluster jobs. See the [TEN-01 handoff](docs/sessions/2026-11-04_1845Z-agent-ten01-remove-orchestration.md).

@@ -89,8 +89,8 @@ python -m pytest -q
 If `venv` is missing, install it with `sudo apt install python3-venv`. Activate
 the environment in each new shell, and use `.venv/bin/python` from scripts.
 
-This runs a deliberately small suite of 13 tests. Passing them says nothing about
-VASP results. `spglib` becomes a dependency when `symmetry.py` is added.
+This runs a deliberately small suite of 16 tests. Passing them says nothing about
+VASP results. `spglib` is installed with the package, for `symmetry.py`.
 
 The math source is standalone LaTeX. From `docs/math`:
 

@@ -52,12 +52,32 @@ def logical(tags: dict, key: str, default: bool = False) -> bool:
     return value in {"T", "TRUE"}
 
 
-def poscar_species(path: str | Path) -> list[str]:
+def poscar(path: str | Path) -> tuple[np.ndarray, list[str], np.ndarray]:
+    """VASP 5/6 POSCAR: (lattice rows in Å, species per atom, Direct positions)."""
     lines = Path(path).read_text(encoding="utf-8").splitlines()
+    if len(lines) < 8:
+        raise ValueError("Incomplete POSCAR")
+    scale = lines[1].split()
+    if len(scale) != 1:
+        raise ValueError("POSCAR needs one scale factor; three-value scales are not supported")
+    # A negative scale means a target volume in VASP; refuse rather than guess.
+    if not float(scale[0]) > 0:
+        raise ValueError("POSCAR scale factor must be positive")
+    lattice = float(scale[0]) * np.array([line.split()[:3] for line in lines[2:5]], dtype=float)
     symbols, counts = lines[5].split(), [int(n) for n in lines[6].split()]
     if len(symbols) != len(counts) or any(n <= 0 for n in counts):
-        raise ValueError("N0 registration requires a VASP 5/6 POSCAR with species names")
-    return [symbol for symbol, count in zip(symbols, counts) for _ in range(count)]
+        raise ValueError("POSCAR needs VASP 5/6 species names and positive counts")
+    species = [symbol for symbol, count in zip(symbols, counts) for _ in range(count)]
+    start = 8 if lines[7].strip().lower().startswith("s") else 7
+    if start >= len(lines) or not lines[start].strip().lower().startswith("d"):
+        raise ValueError("POSCAR positions must be Direct, not Cartesian")
+    rows = [line.split()[:3] for line in lines[start + 1:start + 1 + len(species)]]
+    if len(rows) != len(species) or any(len(row) != 3 for row in rows):
+        raise ValueError("POSCAR position count mismatch")
+    tau = np.array(rows, dtype=float)
+    if not (np.all(np.isfinite(lattice)) and np.all(np.isfinite(tau))):
+        raise ValueError("Non-finite POSCAR value")
+    return lattice, species, tau
 
 
 def echo_check(directory: Path) -> dict:
