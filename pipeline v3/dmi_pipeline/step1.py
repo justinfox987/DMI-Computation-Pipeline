@@ -9,8 +9,8 @@ import re
 
 import numpy as np
 
-from . import manifest
-from .realized import INCAR_TAGS, echo_check, incar, logical, numbers, poscar_species
+from . import manifest, realized
+from .realized import INCAR_TAGS, echo_check, incar, logical, numbers
 
 CONVENTION = "lab-oszicar-sphere-v1"
 DIRECTION_DEG = 1.0
@@ -45,28 +45,9 @@ def rotate_z(value, angle):
                      x * np.sin(angle) + y * np.cos(angle), z))
 
 
-def positions(path):
-    """VASP 5/6 direct positions, with no Cartesian-coordinate ambiguity."""
-    lines = Path(path).read_text(encoding="utf-8").splitlines()
-    if len(lines) < 8:
-        raise ValueError("Incomplete POSCAR")
-    species = poscar_species(path)
-    start = 7
-    if lines[start].strip().lower().startswith("s"):
-        start += 1
-    if start >= len(lines) or lines[start].strip().lower() != "direct":
-        raise ValueError("Step 1 requires POSCAR Direct positions")
-    result = []
-    for line in lines[start + 1:start + 1 + len(species)]:
-        result.append(vector(line.split()[:3], "POSCAR position"))
-    if len(result) != len(species):
-        raise ValueError("POSCAR position count mismatch")
-    return species, np.asarray(result)
-
-
 def targets(poscar, magnetic_indices, signs, q_frac, family, angle_deg=None):
     """Return physical target vectors for the explicitly mapped two-site reference."""
-    species, tau = positions(poscar)
+    _, species, tau = realized.poscar(poscar)
     q = vector(q_frac, "q_frac")
     if family not in {"F0", "F1", "F2a", "F2b"}:
         raise ValueError("family must be F0, F1, F2a or F2b")
@@ -104,7 +85,7 @@ def prepare(recipe, poscar):
     """Make a versioned input record; caller must supply radii and F1 policy."""
     if "partner_q_frac" in recipe:
         raise ValueError("Prepare cannot regenerate a wrapped partner; use step1-wrap-partner on a prepared negative record")
-    species, _ = positions(poscar)
+    _, species, _ = realized.poscar(poscar)
     q = vector(recipe["q_frac"], "q_frac")
     if np.allclose(q, np.rint(q), atol=1e-12):
         raise ValueError("Generic-q model excludes reciprocal-lattice q")
@@ -395,7 +376,7 @@ def read_state(directory, record, config_path):
             raise ValueError(f"Run INCAR {key} differs from requested input")
     if not np.allclose(actual_q, stored_q, atol=1e-9, rtol=0):
         raise ValueError("Run QSPIRAL differs from stored model q_frac")
-    if poscar_species(directory / "POSCAR") != record["species"]:
+    if realized.poscar(directory / "POSCAR")[1] != record["species"]:
         raise ValueError("Run species/order mismatch")
     if not np.allclose(numbers(tags["M_CONSTR"]).reshape(-1, 3), record["targets"], atol=1e-9, rtol=0):
         raise ValueError("Requested M_CONSTR differs from versioned target vectors")
