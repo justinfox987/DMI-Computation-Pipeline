@@ -5,11 +5,13 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- Prepared the repository for coding in Claude Code: added `CLAUDE.md` importing `AGENTS.md`, the TEN-02 spec (`plans/ten-02-symmetry.md`), the seed file format (`docs/seed_file.md`, D-016) and the symmetry detection rules (D-017). Added `materials/fe/seed.toml`, removed the obsolete `examples/fe-f0-pilot/` campaign example, moved the old runner plan to `docs/archive/`, marked TEN-01 done and set one branch per task. No code change. See the [handoff log](docs/sessions/2026-11-08_1710Z-agent-claude-code-handoff.md).
+
 - TEN-01: removed `runner`, `campaign`, `reference` and `workflow` with their tests, about 3,300 lines. Moved `INCAR_TAGS` and `echo_check` to `realized`, gave T3 a small wrapper in `cso`, and ignored `vasp files/` and `pipeline v4/`. There is no N0 command until TEN-04. Cut the test suite from 210 cases to 13 (D-015). No VASP or cluster jobs. See the [TEN-01 handoff](docs/sessions/2026-11-04_1845Z-agent-ten01-remove-orchestration.md).
 
 - Pivoted the project from bond-resolved DMI vectors to the spiralization tensor, stiffness tensor and exchange classes. Added math Revision 3.0 with a Markdown agent edition, recorded D-007 to D-014, updated AGENTS, STATUS and README, and moved bond-era documents to `docs/archive/`. No code or VASP change; the pre-pivot state is at tag `archive/bond-dmi-v3`.
 
-- Fe pilot T4b-2: expose completed jobs waiting on reference verification in the status table and additive JSON fields/counts; consolidate scheduler-state reconciliation in one table. Synthetic local tests only; no VASP or cluster jobs. See the [T4b-2 handoff](docs/sessions/2026-10-30_HHMMZ-agent-pilot-runner-t4b2-waiting-and-states.md).
+- Fe pilot T4b-2: expose completed jobs waiting on reference verification in the status table and additive JSON fields/counts; consolidate scheduler-state reconciliation in one table. Synthetic local tests only; no VASP or cluster jobs. No handoff log was committed for T4b-2.
 
 - Added the Fe pilot T4 runner baseline and hardened the submit path: prepared, hashed Slurm `jobsall.sh`, locked and explicitly confirmed fake-tested submission, private restart staging and exact scheduler options. Local 153 -> 160 tests and generated-script Bash syntax pass; reconcile/readback/resume are still being hardened in T4b. No VASP or cluster jobs. See the [T4a handoff](docs/sessions/2026-10-30_2124Z-agent-pilot-runner-t4a-submit-path.md).
 

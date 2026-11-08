@@ -194,3 +194,31 @@ bug. The suite went from 210 cases to 13 at TEN-01.
 Most of the old cases guarded orchestration or individual validation branches,
 and they cost more to maintain than they protected. The 13 tests caught all 11
 faults injected at the cut, including a wrong transpose and swapped COCC blocks.
+
+## D-016 — Describe each material with one seed file
+
+**Status:** accepted 2026-11-04.  
+Each material is a folder under `materials/` holding a POSCAR, an `INCAR` with
+electronic settings only, a `KPOINTS` and a `seed.toml`. The seed is TOML, numbers
+magnetic sites from 1 in POSCAR order, and holds no machine paths; the Slurm
+template is passed on the command line. Unknown keys are rejected.
+**Reason:** POSCAR stays the main input, TOML allows comments and is read by the
+standard library, 1-based sites match how atoms are counted in a POSCAR, and a
+seed without paths works on any machine and is safe in the public repository.
+**Authority:** `docs/seed_file.md`.
+
+## D-017 — Detect symmetry from POSCAR, with an optional space-group check
+
+**Status:** accepted 2026-11-04.  
+spglib finds the space group from POSCAR at `symprec = 1e-3` Å, which a seed can
+change. An optional `spacegroup` in the seed stops the run if spglib finds another
+group; it is a check, not an override. Every operation must be orthogonal and map
+magnetic sites onto each other within `2 * symprec`. `plan` prints the group and
+the kept and dropped counts first. No `symprec` sensitivity report.
+**Reason:** a prototype showed both tolerance errors pass silently: strained
+zincblende reads as cubic with a loose tolerance, and noisy BFO reads as `P1` with
+a tight one. The orthogonality and site checks catch strain and wrong site lists.
+Only the space-group check catches the rest, so production seeds should set it.
+The sensitivity report tripped on correct settings and could not say which answer
+was right.
+**Authority:** `plans/ten-02-symmetry.md`, math Section 7.

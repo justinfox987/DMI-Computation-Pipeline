@@ -1,0 +1,11 @@
+# bcc Fe, 2-site conventional cell: the null test (TEN-06).
+# Format: docs/seed_file.md. POSCAR, INCAR and KPOINTS are added at TEN-06;
+# POTCAR is never committed. The t values are placeholders to be converged.
+
+sites = [1, 2]
+signs = [1, 1]
+moments = [2.2, 2.2]
+t = [0.03, 0.06, 0.09]
+
+spacegroup = 229
+symprec = 1e-3
