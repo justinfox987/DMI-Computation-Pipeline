@@ -2,14 +2,17 @@
 
 ## Start every session
 
-1. Read `STATUS.md`, `docs/DECISIONS.md` and the applicable task spec. For
-   physics or pipeline work, also read `docs/math/heide_math_v3.md`.
+1. Read `STATUS.md`, `docs/DECISIONS.md` and the task spec in `plans/`
+   (`plans/ten-NN-*.md`). For physics or pipeline work, also read
+   `docs/math/heide_math_v3.md`. If the task has no spec yet, write one in
+   `plans/` and get the user's approval before writing code.
 2. Inspect `git status --short --branch`, the current branch and recent commits.
    Preserve existing edits. Read any more-specific repository instructions.
 3. Check the task owner/branch in STATUS and the latest relevant session log.
    Reconcile this with the actual checkout; a status sheet is not evidence of code.
-4. State the task scope and relevant files before editing. Use an existing task
-   branch, or create a focused branch from the agreed integration base.
+4. State the task scope and relevant files before editing. Create one branch
+   per task from `main`, such as `ten-02-symmetry`. Never push to `main`: the
+   user reviews and merges every pull request.
 
 ## Current direction
 
@@ -28,6 +31,9 @@ The repository is mid-pivot, so older files can describe removed work:
 - Work only in `pipeline v3/`. Ignore `pipeline v4/`.
 - Add `symmetry.py`, `spiral.py` and `tensors.py`. `spglib` is the one approved
   new dependency, and it is for symmetry operations only.
+- Each material is one folder under `materials/` with a `seed.toml`
+  (`docs/seed_file.md`). POSCAR is the main input, and the seed holds no machine
+  paths.
 - Keep `acceptance/` and `evidence/` as historical records. Do not relabel them
   as evidence for the new pipeline.
 
@@ -102,9 +108,9 @@ not merely fewer lines or a smaller-looking diff.
   equation numbers. Its opening notes give the module map and the rules that must
   not drift. Change the two files together. If they disagree, the TeX wins and
   the conflict must be reported.
-- Superseded for current work: `docs/math/heide_math_v2.tex`,
-  `plans/perlmutter-fe-pilot-runner.md` and everything in `docs/archive/`,
-  including the Step 1 spec, the Perlmutter pilot guide and old project records.
+- Superseded for current work: `docs/math/heide_math_v2.tex` and everything in
+  `docs/archive/`, including the Step 1 spec, the Perlmutter pilot guide, the old
+  Perlmutter runner plan and old project records.
   Use them for history and retained Patch B detail. They must not silently
   override Revision 3.0.
 - Run unconstrained flat F0 spirals at `LAMBDA = 0`. Do not reintroduce F1, F2,

@@ -3,8 +3,9 @@
 Physics authority: `docs/math/heide_math_v3.md`, Section 7. This file fixes the
 interfaces, the guards and the tests. It does not restate the equations.
 
-Status: design agreed with the user on 2026-11-04. Nothing here is implemented
-yet. The results below came from a scratch prototype that was not committed.
+Status: design agreed with the user on 2026-11-04 (D-017). Nothing here is
+implemented yet. The results below came from a scratch prototype that was not
+committed. Work on a branch `ten-02-symmetry` from `main`.
 
 ## Scope
 

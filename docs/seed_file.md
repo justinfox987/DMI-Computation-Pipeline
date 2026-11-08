@@ -1,7 +1,8 @@
 # Seed file format
 
 One seed file describes one material and drives the whole workflow from D-013.
-The format was agreed with the user on 2026-11-04. The loader is built in TEN-03.
+The format was agreed with the user on 2026-11-04 (D-016). The loader is built in
+TEN-03. A real example is `materials/fe/seed.toml`.
 
 ## Folder layout
 

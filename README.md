@@ -6,7 +6,8 @@ predict magnetic properties. It covers materials with one magnetic order
 parameter: ferromagnets and collinear patterns of site signs.
 
 **Status: mid-pivot.** The project has moved away from bond-resolved DMI vectors.
-The code in `pipeline v3/` still implements that earlier workflow. The new
+The old orchestration is removed. `pipeline v3/` keeps the readers, the Patch B
+dump reader and the trace, and the bond rows in `step1.py` go in TEN-03. The new
 workflow below is specified but not yet implemented, and no VASP calculation has
 tested it. See [STATUS.md](STATUS.md) for the current state.
 
@@ -33,18 +34,22 @@ stability. Results are harmonic and first order in SOC; the
 4. Form the trace vector from the on-site density matrix and SOC operator.
 5. Fit the tensors, test them against symmetry, and evaluate the predictions.
 
-The planned commands are `plan`, `prepare`, `status`, `collect` and `fit`. None of
-them exists yet.
+Each material is one folder under `materials/` with a POSCAR and a `seed.toml`
+([format](docs/seed_file.md)). The planned commands are `plan`, `prepare`,
+`status`, `collect` and `fit`, each taking the seed path. None of them exists yet.
 
 ## Where to look
 
 | File or folder | Purpose |
 |---|---|
-| [AGENTS.md](AGENTS.md) | Instructions agents read at the start of work |
+| [AGENTS.md](AGENTS.md) | Instructions agents read at the start of work; `CLAUDE.md` imports it |
 | [STATUS.md](STATUS.md) | Current state, task ownership, blockers and next actions |
 | [CHANGELOG.md](CHANGELOG.md) | Meaningful changes to code, interfaces and documents |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Durable choices and why they were made |
 | [docs/sessions/](docs/sessions/) | One factual handoff log per session |
+| [plans/](plans/) | One spec per task, written and approved before coding |
+| [docs/seed_file.md](docs/seed_file.md) | Format of the per-material seed file |
+| [materials/](materials/) | One folder per material, with its seed and inputs |
 | [Math source](docs/math/heide_math_v3.tex) | Revision 3.0; the authoritative foundation |
 | [Math for agents](docs/math/heide_math_v3.md) | Same numbering, plus module map and rules |
 | [pipeline v3/](pipeline%20v3/) | Python package `dmi_pipeline` and its tests |
