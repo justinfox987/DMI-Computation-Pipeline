@@ -23,6 +23,9 @@ dmi plan    materials/fe/seed.toml
 dmi prepare materials/fe/seed.toml --job job.sh --out RUNS
 cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires
 dmi collect RUNS                     # one state per run; safe to rerun
+dmi dumps   RUNS --job patchb.sh     # dump_C, dump_C_x, dump_C_y and each ok run's dump_P
+cd RUNS && sbatch submit_dumps.sh    # the user submits
+dmi trace   RUNS                     # provenance, trace vector, N0 I0 P0 E0 T3
 dmi fit     ...                      # TEN-05
 ```
 

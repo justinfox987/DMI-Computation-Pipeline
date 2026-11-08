@@ -31,7 +31,8 @@ def _fixed(value: str, width: int) -> bytes:
     return encoded.ljust(width, b" ")
 
 
-def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float) -> None:
+def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float,
+                  saxis: tuple[float, float, float] = (0.0, 0.0, 1.0)) -> None:
     ncdij, nions, lmdim, second_lmdim = matrix.shape
     if lmdim != second_lmdim:
         raise ValueError("matrix orbital dimensions must be square")
@@ -44,7 +45,7 @@ def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float) -
                 f"# LMDIM NIONS NCDIJ{lmdim:10d}{nions:10d}{ncdij:10d}",
                 "# LSORBIT= T LNONCOLLINEAR= T LSPIRAL= F",
                 "# QSPIRAL  0.0000000000000000E+00  0.0000000000000000E+00  0.0000000000000000E+00",
-                "# SAXIS  0.0000000000000000E+00  0.0000000000000000E+00  1.0000000000000000E+00",
+                "# SAXIS " + "".join(f"{x:24.16E}" for x in saxis),
                 f"# NELECT {nelect:24.16E}",
             ]
         )
@@ -230,9 +231,17 @@ def make_clean_cso(nions: int, lmdim: int) -> np.ndarray:
     return matrix
 
 
-def write_cso(path: str | Path, matrix: np.ndarray, *, nelect: float = 8.0) -> Path:
+def write_cso(path: str | Path, matrix: np.ndarray, *, nelect: float = 8.0,
+              saxis: tuple[float, float, float] = (0.0, 0.0, 1.0)) -> Path:
     output = Path(path)
-    _write_matrix(output, matrix, "cso", nelect=nelect)
+    _write_matrix(output, matrix, "cso", nelect=nelect, saxis=saxis)
+    return output
+
+
+def write_cocc(path: str | Path, matrix: np.ndarray, *, nelect: float) -> Path:
+    """A COCC.dat alone, as a production dump_P writes it without CPROJ."""
+    output = Path(path)
+    _write_matrix(output, matrix, "cocc", nelect=nelect)
     return output
 
 

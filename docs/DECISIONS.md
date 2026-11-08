@@ -111,6 +111,7 @@ production. Fixture-level evidence only.
 Split the SOC operator into orbital matrices and form the trace vector directly.
 No U matrices or Euler search are needed. Keep all four CSO blocks when reading.
 T3 still compares the result with genuine x and y dumps.
+**Amended 2026-11-08 (TEN-04):** the Euler search is deleted. T3 now checks that C_uu of a genuine SAXIS = x or y dump equals Lambda_x or Lambda_y from the z dump (math Section 11).
 
 **Reason:** the surviving operator is linear in the rotation axis, so one state
 supplies a whole vector. This matched the rotated-operator trace to 10^-14 on

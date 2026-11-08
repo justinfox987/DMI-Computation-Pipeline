@@ -1,23 +1,21 @@
-"""Patch B first-order SOC trace contraction.
+"""First-order SOC trace (math Section 4).
 
-Production tracing consumes only the self-indexed ``dump_P`` artifacts emitted
-for one configuration and a material-level, axis-specific ``CSO_<axis>.dat``.
-The production contraction uses einsum per ion to bound temporary memory;
-the copied v2 loops remain an independent numerical reference.
+Production uses the trace vector of Eq (4.8): the run's COCC from dump_P and
+the material's z-axis CSO from dump_C. The CPROJ contraction and its copied v2
+loops stay as the independent reference route, and M1 compares the two inputs.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from . import conventions, manifest
-from .cso import rotate_saxis
-from .dumpio import CprojData, MatrixDump, Occupations, assert_header, load_cproj, load_cso, load_ferwe
+from .dumpio import CprojData, MatrixDump, Occupations, load_cocc, load_cso
+from .realized import poscar
 
 
 @dataclass(frozen=True)
@@ -173,99 +171,39 @@ def compute_delta_E1_reference(cproj: CprojData, ferwe: Occupations, cso: Matrix
     )
 
 
-def _load_config_q_frac(cfg_dir: Path) -> tuple[float, float, float]:
-    """Read the declared configuration q vector from its self-description."""
+def split_operator(cso: MatrixDump) -> np.ndarray:
+    """(Lambda_x, Lambda_y, Lambda_z) per ion from the four CSO blocks, Eq (4.4).
 
-    config_path = cfg_dir / "config.json"
-    if not config_path.is_file():
-        raise FileNotFoundError(f"Patch B trace requires configuration metadata at {config_path}")
-    try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        raise ValueError(f"Configuration metadata is not valid JSON: {config_path}") from error
-    q_frac = payload.get("q_frac")
-    if not isinstance(q_frac, list) or len(q_frac) != 3:
-        raise ValueError(f"Configuration metadata has no three-component q_frac: {config_path}")
-    try:
-        q = tuple(float(value) for value in q_frac)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"Configuration q_frac is not numeric: {config_path}") from error
-    if not np.all(np.isfinite(q)):
-        raise ValueError(f"Configuration q_frac contains a non-finite value: {config_path}")
-    return q
-
-
-def _assert_done_marker(directory: Path, label: str) -> None:
-    """Enforce the completed-artifact boundary required by Patch B readers."""
-
-    manifest.require_done(directory, label)
-
-
-def _trace_provenance(cproj: CprojData, ferwe: Occupations, cso: MatrixDump, axis: str, q_frac: tuple[float, float, float]) -> dict[str, Any]:
-    """Return JSON-safe immutable identities for every input artifact."""
-
-    return {
-        "axis": axis,
-        "q_frac": list(q_frac),
-        "build_id": cproj.header.build_id,
-        "cproj": [
-            {"path": str(file.path), "sha256": file.sha256}
-            for file in cproj.files
-        ],
-        "ferwe": {"path": str(ferwe.provenance.path), "sha256": ferwe.provenance.sha256},
-        "cso": {"path": str(cso.provenance.path), "sha256": cso.provenance.sha256},
-    }
-
-
-def trace_config(cfg_dir: Path, cso_dir: Path, axis: str) -> TraceResult:
-    """Trace one completed Patch B configuration against one material CSO axis.
-
-    ``cfg_dir`` must be the configuration directory containing ``config.json``
-    and its completed ``dump_P`` child. ``cso_dir`` contains the material-level
-    ``CSO_x.dat``, ``CSO_y.dat``, or ``CSO_z.dat`` artifact. Gate execution is
-    intentionally outside this reader; this function enforces only the input
-    contracts that make its result meaningful.
+    Block order uu, ud, du, dd as gate_c0 reads it. Lambda_y depends on the
+    ud/du order, which T3 checks against a genuine SAXIS = y dump.
     """
+    uu, ud, du, dd = cso.matrix
+    return np.array([(ud + du) / 2, (du - ud) / 2j, (uu - dd) / 2])
 
-    config_directory = Path(cfg_dir)
-    material_cso_directory = Path(cso_dir)
-    if axis not in {"x", "y", "z"}:
-        raise ValueError("axis must be x, y, or z")
-    config = manifest.load(config_directory / "config.json")
-    dump_directory = Path(config.get("dirs", {}).get("dump_P", config_directory / "dump_P"))
-    _assert_done_marker(dump_directory, "dump_P")
-    q_frac = _load_config_q_frac(config_directory)
 
-    cproj = load_cproj(dump_directory)
-    ferwe = load_ferwe(dump_directory)
-    cso = load_cso(material_cso_directory / "CSO_z.dat")
-    evidence = manifest.load(material_cso_directory / "provenance.json")
-    if evidence.get("passed") is not True or not evidence["checks"]["C0"]["passed"]:
-        raise ValueError("CSO has no passing C0 evidence")
-    manifest.check_files(evidence["files"])
-    rotation_path = material_cso_directory / "rotation.json"
-    rotation = manifest.load(rotation_path) if axis != "z" and rotation_path.exists() else None
-    cso = rotate_saxis(cso, axis, rotation)
-    assert_header(cproj.header, expect_lsorbit=False,
-                  expect_lspiral=True if any(q_frac) else None, q_frac=q_frac)
-    if conventions.VASP_BUILD_ID is not conventions.UNDETERMINED:
-        if cproj.header.build_id != conventions.VASP_BUILD_ID:
-            raise ValueError(
-                f"CPROJ build id is {cproj.header.build_id!r}, expected pinned "
-                f"{conventions.VASP_BUILD_ID!r}"
-            )
+def trace_vector(cocc: MatrixDump, lam: np.ndarray) -> np.ndarray:
+    """Per-ion T_alpha of Eq (4.8), shape (nions, 3), complex.
 
-    result = compute_delta_E1(cproj, ferwe, cso)
-    provenance = _trace_provenance(cproj, ferwe, cso, axis, q_frac)
-    if rotation is not None:
-        provenance["rotation"] = rotation
-    return TraceResult(
-        delta_E1=result.delta_E1,
-        imag_total=result.imag_total,
-        imag_per_ion=result.imag_per_ion,
-        per_ion=result.per_ion,
-        sigma_eV=result.sigma_eV,
-        per_k=result.per_k,
-        provenance=provenance,
-        axis=axis,
-    )
+    COCC[i, j] = rho[j, i], so Tr[Lambda rho] is the elementwise sum of
+    Lambda * COCC; a matrix trace would insert the wrong transpose.
+    """
+    magnetization = cocc.matrix[conventions.UU_IDX] - cocc.matrix[conventions.DD_IDX]
+    return np.einsum("anij,nij->na", lam, magnetization)
+
+
+def trace_run(run: Path, out: Path) -> dict:
+    """Trace vector of one collected run from its dump_P and the material dump_C."""
+    run, out = Path(run), Path(out)
+    manifest.require_done(out / "dump_C", "dump_C", out)
+    manifest.require_done(run / "dump_P", "dump_P", out)
+    cso, cocc = load_cso(out / "dump_C" / "CSO.dat"), load_cocc(run / "dump_P" / "COCC.dat")
+    nions = len(poscar(run / "POSCAR")[1])
+    shapes = {(m.nions, m.lmdim, m.ncdij) for m in (cso.metadata, cocc.metadata)}
+    if len(shapes) != 1 or cso.metadata.nions != nions:
+        raise ValueError(f"{run.name}: CSO and COCC dimensions differ or do not match the {nions} POSCAR ions")
+    if cocc.metadata.nelect is None or not np.isclose(cso.metadata.nelect, cocc.metadata.nelect, atol=1e-6, rtol=0):
+        raise ValueError(f"{run.name}: CSO and COCC NELECT differ")
+    t = trace_vector(cocc, split_operator(cso))
+    return {"q_frac": manifest.load(run / "config.json")["q_frac"], "T_eV": t.real.sum(axis=0).tolist(),
+            "per_ion_eV": t.real.tolist(), "imag_eV": t.imag.tolist(),
+            "sha256": {"COCC": cocc.provenance.sha256, "CSO": cso.provenance.sha256}}

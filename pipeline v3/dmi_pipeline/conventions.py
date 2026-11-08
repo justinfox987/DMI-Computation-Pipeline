@@ -1,6 +1,7 @@
 """Conventions shared by the dump readers and gates; no process-local gate pins.
 
-CSO's off-diagonal packing must still be measured by T3 before rotation.
+The CSO flip-block order (1 = ud, 2 = du) is checked by T3 (gates.gate_t3);
+only Lambda_y depends on it.
 """
 
 UNDETERMINED = object()
