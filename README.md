@@ -74,13 +74,20 @@ useful; do not require a worktree for every ordinary session.
 
 ## Local setup and tests
 
-This needs Python 3.11 or later. From the repository root:
+This needs Python 3.11 or later. Install into a virtual environment at the
+repository root; system Python on Ubuntu and WSL refuses `pip install`. From the
+repository root:
 
 ```text
+python3 -m venv .venv
+source .venv/bin/activate
 cd "pipeline v3"
 python -m pip install -e ".[test]"
 python -m pytest -q
 ```
+
+If `venv` is missing, install it with `sudo apt install python3-venv`. Activate
+the environment in each new shell, and use `.venv/bin/python` from scripts.
 
 This runs a deliberately small suite of 13 tests. Passing them says nothing about
 VASP results. `spglib` becomes a dependency when `symmetry.py` is added.
