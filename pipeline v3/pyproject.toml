@@ -20,3 +20,6 @@ include = ["dmi_pipeline*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# spglib 2.7+ asks callers to opt in to new error handling; symmetry.py
+# already checks for a None dataset, and the opt-in does not exist in 2.6.
+filterwarnings = ["ignore:Set OLD_ERROR_HANDLING:DeprecationWarning"]

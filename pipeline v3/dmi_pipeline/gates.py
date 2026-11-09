@@ -164,21 +164,6 @@ def gate_t3(z: MatrixDump, dump: MatrixDump, axis: str, tol: float = 1e-10) -> G
     return GateResult("T3", error <= tol, {"axis": axis, "error": error}, tol, detail)
 
 
-def t3(z_path, x_path, y_path) -> dict:
-    """Validate genuine x/y dumps against the z operator from one build (dmi t3)."""
-    paths = [Path(path) for path in (z_path, x_path, y_path)]
-    outcars = [path.parent / "OUTCAR" for path in paths]
-    banners = {outcar.read_text(encoding="utf-8", errors="replace").splitlines()[0].strip()
-               for outcar in outcars}
-    if len(banners) != 1:
-        raise ValueError("T3 dumps must come from one build")
-    z = load_cso(paths[0])
-    checks = {axis: gate_t3(z, load_cso(path, expect_saxis=AXES[axis]), axis).to_dict()
-              for axis, path in (("x", paths[1]), ("y", paths[2]))}
-    return {"name": "T3", "passed": all(c["passed"] for c in checks.values()), "checks": checks,
-            "build_banner": banners.pop(), "files": manifest.fingerprints(paths + outcars)}
-
-
 # ---- dump provenance and the run tree -------------------------------------
 
 def completed(directory: Path) -> bool:
@@ -228,7 +213,7 @@ def finish(dump_dir, kind: str, out) -> dict:
 def check_tree(out) -> dict:
     """dmi trace: finish new dumps, trace every ok run, then N0, I0, P0, E0 and T3."""
     out = Path(out)
-    names = (out / "runs.txt").read_text(encoding="utf-8").split()
+    names = spiral.run_names(out)
     collected = manifest.load(out / "collected.json")
     lines, failures = [], []
 

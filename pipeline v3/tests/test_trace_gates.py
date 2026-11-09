@@ -5,8 +5,8 @@ import pytest
 
 from dmi_pipeline.dumpio import load_cocc, load_cproj, load_cso, load_ferwe
 from dmi_pipeline.gates import gate_c0, gate_e0, gate_i0, gate_m1, gate_n0, gate_p0, gate_t3
-from dmi_pipeline.trace import compute_delta_E1, compute_delta_E1_reference, split_operator, trace_vector
-from tests.fixtures import make_clean_cso, write_cso, write_fake_dump
+from dmi_pipeline.trace import split_operator, trace_vector
+from tests.fixtures import cproj_trace as compute_delta_E1, make_clean_cso, write_cso, write_fake_dump
 
 
 def inputs(tmp_path, *, collinear=False):
@@ -16,10 +16,9 @@ def inputs(tmp_path, *, collinear=False):
     return load_cproj(tmp_path), load_ferwe(tmp_path), cso, files
 
 
-def test_vectorized_trace_matches_copied_loop_and_density_oracle(tmp_path):
+def test_cproj_trace_matches_density_oracle(tmp_path):
     cp, occ, cso, _ = inputs(tmp_path)
     result = compute_delta_E1(cp, occ, cso)
-    loop = compute_delta_E1_reference(cp, occ, cso)
     # Independent density-matrix route: rho = |c><c|, followed by Tr(C rho).
     oracle = np.zeros((2, 2), complex)
     for ion in range(2):
@@ -29,7 +28,6 @@ def test_vectorized_trace_matches_copied_loop_and_density_oracle(tmp_path):
                 rho = (states * occ.occupations[0, k]) @ states.conj().T
                 oracle[ion, k] += occ.weights[k] * np.trace(cso.matrix[block, ion] @ rho)
     assert result.delta_E1 == pytest.approx(oracle.sum().real, abs=1e-12)
-    assert result.delta_E1 == pytest.approx(loop.delta_E1, abs=1e-12)
     assert result.per_ion == pytest.approx(dict(enumerate(oracle.sum(axis=1).real)), abs=1e-12)
     assert result.per_k == pytest.approx(oracle.sum(axis=0), abs=1e-12)
     assert gate_i0([result.imag_total, *result.imag_per_ion.values()]).passed

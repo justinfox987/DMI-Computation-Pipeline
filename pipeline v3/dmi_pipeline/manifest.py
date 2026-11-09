@@ -39,10 +39,6 @@ def file_hash(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def fingerprints(paths) -> dict[str, str]:
-    return {str(Path(path).resolve()): file_hash(path) for path in paths}
-
-
 def check_files(files: dict[str, str], root: str | Path | None = None) -> None:
     """Raise unless every file still has its recorded hash; relative paths resolve against root."""
     if not files:

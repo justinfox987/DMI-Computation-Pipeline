@@ -616,22 +616,6 @@ def _parse_text_metadata(path: Path, kind: str) -> tuple[TextMetadata, list[str]
     return TextMetadata(kind=kind, label=label, raw_lines=raw_lines, **values), data_lines
 
 
-def read_header(path: str | Path) -> CprojHeader | TextMetadata:
-    """Read metadata without pretending actual text files share CPROJ's header."""
-
-    input_path = Path(path)
-    if input_path.suffix == ".bin":
-        return read_cproj_file(input_path).header
-    name = input_path.name.upper()
-    if name.startswith("FERWE"):
-        return _parse_text_metadata(input_path, "ferwe")[0]
-    if name.startswith("CSO"):
-        return _parse_text_metadata(input_path, "cso")[0]
-    if name.startswith("COCC"):
-        return _parse_text_metadata(input_path, "cocc")[0]
-    raise ValueError(f"Cannot determine Patch B dump format for {input_path}")
-
-
 def assert_header(
     header: CprojHeader | TextMetadata,
     *,
