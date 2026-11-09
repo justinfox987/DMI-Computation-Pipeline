@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 
-from . import manifest, spiral
+from . import manifest, spiral, tensors
 from .dumpio import load_cocc, load_cproj, load_cso, load_ferwe
 from .gates import check_tree, gate_c0, gate_m1, t3
 
@@ -40,7 +40,8 @@ def main(argv=None) -> int:
                        ("prepare", "Write every F0 run, runs.txt and submit.sh; submits nothing"),
                        ("collect", "Read E and M_int from every finished run into collected.json"),
                        ("dumps", "Write dump_C, dump_C_x, dump_C_y and every ok run's dump_P; submits nothing"),
-                       ("trace", "Finish the dumps, trace every ok run and apply N0, I0, P0, E0 and T3")):
+                       ("trace", "Finish the dumps, trace every ok run and apply N0, I0, P0, E0 and T3"),
+                       ("fit", "Fit D and A, check the forbidden part, predict the spiral; writes tensors.json")):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("seed" if name in ("plan", "prepare") else "out", type=Path)
         if name == "dumps":
@@ -72,6 +73,10 @@ def main(argv=None) -> int:
             return 0
         if args.command == "trace":
             report = check_tree(args.out)
+            print("\n".join(report["lines"]))
+            return 0 if report["passed"] else 1
+        if args.command == "fit":
+            report = tensors.fit(args.out)
             print("\n".join(report["lines"]))
             return 0 if report["passed"] else 1
         if args.command == "t3":
