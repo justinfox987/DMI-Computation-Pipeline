@@ -111,6 +111,7 @@ production. Fixture-level evidence only.
 Split the SOC operator into orbital matrices and form the trace vector directly.
 No U matrices or Euler search are needed. Keep all four CSO blocks when reading.
 T3 still compares the result with genuine x and y dumps.
+**Amended 2026-11-08 (TEN-04):** the Euler search is deleted. T3 now checks that C_uu of a genuine SAXIS = x or y dump equals Lambda_x or Lambda_y from the z dump (math Section 11).
 
 **Reason:** the surviving operator is linear in the rotation axis, so one state
 supplies a whole vector. This matched the rotated-operator trace to 10^-14 on
@@ -224,3 +225,17 @@ Only the space-group check catches the rest, so production seeds should set it.
 The sensitivity report tripped on correct settings and could not say which answer
 was right.
 **Authority:** `plans/ten-02-symmetry.md`, math Section 7.
+
+## D-018 — Use finite smearing and the free energy
+
+**Status:** accepted 2026-11-09.  
+Every material INCAR sets `ISMEAR` and `SIGMA`. `ISMEAR` must be `-1`, `0` or
+`1` (Fermi-Dirac, Gaussian, Methfessel-Paxton order 1), with `SIGMA` about
+0.05 eV. `prepare` and `plan` reject any other `ISMEAR`, and a `SIGMA` below
+0.05 eV unless the seed sets a lower `min_sigma` for a convergence series.
+Energies come from the OUTCAR `free energy TOTEN`.
+**Reason:** the force theorem needs a variational energy. `free energy TOTEN` is
+the Mermin free energy, which is variational at finite smearing. Tetrahedron
+modes are not variational, so their first-order SOC energy is not the trace of
+the frozen state.
+**Authority:** [math Revision 3.1](math/heide_math_v3.tex), Sections 3.2 and 3.3.

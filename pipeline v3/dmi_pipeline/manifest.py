@@ -1,4 +1,4 @@
-"""Small JSON evidence store for the N0 milestone; atomic writes and byte hashes."""
+"""Small JSON evidence store: atomic writes, byte hashes and dump provenance."""
 
 from hashlib import sha256
 import json
@@ -43,25 +43,25 @@ def fingerprints(paths) -> dict[str, str]:
     return {str(Path(path).resolve()): file_hash(path) for path in paths}
 
 
-def check_files(files: dict[str, str]) -> None:
+def check_files(files: dict[str, str], root: str | Path | None = None) -> None:
+    """Raise unless every file still has its recorded hash; relative paths resolve against root."""
     if not files:
         raise ValueError("Completion evidence has no input hashes")
     for name, expected in files.items():
-        if file_hash(name) != expected:
+        path = Path(root) / name if root is not None else Path(name)
+        if file_hash(path) != expected:
             raise ValueError(f"Input changed since validation: {name}")
 
 
-def require_done(directory: str | Path, kind: str) -> dict:
-    directory = Path(directory)
-    if (directory / "FAILED").exists():
-        raise ValueError(f"{directory} has a FAILED marker; rerun finish after fixing the cause")
-    record = load(directory / "DONE")
+def require_done(directory: str | Path, kind: str, root: str | Path) -> dict:
+    """The passing provenance.json of one dump directory, with its hashes rechecked."""
+    directory, root = Path(directory), Path(root)
+    record = load(directory / "provenance.json")
     if record.get("kind") != kind or record.get("passed") is not True:
-        raise ValueError(f"{directory}/DONE has no passing {kind} evidence")
-    check_files(record.get("files", {}))
-    if kind == "dump_P":
-        actual = {str(p.resolve()) for p in directory.glob("CPROJ.*.bin")}
-        recorded = {p for p in record["files"] if Path(p).name.startswith("CPROJ.")}
-        if actual != recorded:
-            raise ValueError("CPROJ rank-file set changed since W0")
+        raise ValueError(f"{directory}/provenance.json has no passing {kind} evidence: {record.get('error')}")
+    check_files(record.get("files", {}), root)
+    actual = {str(p.relative_to(root)) for p in directory.glob("CPROJ.*.bin")}
+    recorded = {p for p in record["files"] if Path(p).name.startswith("CPROJ.")}
+    if actual != recorded:
+        raise ValueError("CPROJ rank-file set changed since finish")
     return record

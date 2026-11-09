@@ -10,7 +10,7 @@ TEN-03. A real example is `materials/fe/seed.toml`.
 materials/fe/
   seed.toml   what the pipeline needs to know
   POSCAR      structure, the main input
-  INCAR       electronic settings only (ENCUT, smearing, RWIGS, U)
+  INCAR       electronic settings only (ENCUT, ENINI, ISMEAR, SIGMA, RWIGS, U)
   KPOINTS     one mesh for every q
   POTCAR      never committed
 ```
@@ -23,6 +23,9 @@ dmi plan    materials/fe/seed.toml
 dmi prepare materials/fe/seed.toml --job job.sh --out RUNS
 cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires
 dmi collect RUNS                     # one state per run; safe to rerun
+dmi dumps   RUNS --job patchb.sh     # dump_C, dump_C_x, dump_C_y and each ok run's dump_P
+cd RUNS && sbatch submit_dumps.sh    # the user submits
+dmi trace   RUNS                     # provenance, trace vector, N0 I0 P0 E0 T3
 dmi fit     ...                      # TEN-05
 ```
 
@@ -47,6 +50,7 @@ symprec = 1e-3           # symmetry tolerance in Å
 directions = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]   # q_frac; default: code chooses
 exchange_grid = [4, 4, 4]                        # default: no exchange runs
 rmax = 6.0               # exchange bond cutoff in Å
+min_sigma = 0.05         # lowest SIGMA accepted, eV; lower only for a convergence series
 ```
 
 ## Fields
@@ -56,12 +60,17 @@ rmax = 6.0               # exchange bond cutoff in Å
 | `sites` | Yes | Magnetic atoms, numbered from 1 in POSCAR order |
 | `signs` | Yes | $\varepsilon_a=\pm1$, one per site |
 | `moments` | Yes | Seed magnitude $m_a>0$ in $\mu_B$, one per site |
-| `t` | Yes | Magnitudes in Å$^{-1}$; Section 8.3 asks for three per direction |
+| `t` | Yes | Magnitudes in Å$^{-1}$; Section 8.3 asks for three per direction. The loader sorts them ascending, so run `d{i}_t1` is always the smallest `t`, where P0 and E0 gate |
 | `spacegroup` | No | Check on spglib's result, not an override |
 | `symprec` | No | spglib tolerance in Å, default `1e-3` |
 | `directions` | No | $\boldsymbol q_{\rm frac}$ directions; both rank conditions of Section 8.2 still apply |
 | `exchange_grid` | No | Coarse $\Gamma$-centered grid of Section 8.4 |
 | `rmax` | With `exchange_grid` | Bond cutoff in Å for Section 7.6 |
+| `min_sigma` | No | Lowest `SIGMA` in eV that `plan` accepts, default `0.05`; lower it only for a smearing convergence series (D-018) |
+
+The material `INCAR` must set `ISMEAR` to `-1`, `0` or `1` (Fermi-Dirac, Gaussian,
+Methfessel-Paxton order 1) and `SIGMA` explicitly; `plan` prints both (D-018,
+math Section 3.2).
 
 ## Rules
 

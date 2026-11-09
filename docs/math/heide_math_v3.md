@@ -2,12 +2,13 @@
 
 Computing spiralization, stiffness and exchange from paired, SOC-free spin spirals.
 
-**Revision 3.0, 2 November 2026.** Markdown edition for coding agents.
+**Revision 3.1, 9 November 2026.** Markdown edition for coding agents.
 
 ## Agent notes
 
 - This file carries the same content and numbering as `heide_math_v3.tex`, so a reference such as Eq. (1.3) means the same thing in both. If they ever disagree, the TeX source wins; report the conflict rather than choosing silently.
 - This revision replaces the bond-vector target of Revision 2.4. It keeps the generalized-Bloch states, Patch B frozen-state trace and lab-frame moment readback. It removes the constrained families F1 and F2, the bond basis and the paired bond rows.
+- Revision 3.1 adds the smearing row to the Section 3.2 input table and states in Section 3.3 why the free energy is the energy to read. Nothing else changes, and every equation keeps its number.
 - Evidence: the new equations were checked numerically on spin models and repository fixtures. No VASP calculation has yet tested this revision. Do not describe any result as physically validated on that basis.
 
 ### Where each part lands in the code
@@ -149,6 +150,7 @@ This single formula covers every site count. The partner is the same formula at 
 | `I_CONSTRAINED_M`, `LAMBDA` | $1$ and $0$. This gives sphere moments with no penalty. |
 | `RWIGS` | One explicit radius per species. |
 | `ENCUT`, `ENINI` | `ENCUT` about 100 eV above `ENINI`, as the wiki advises. |
+| `ISMEAR`, `SIGMA` | Set explicitly: `ISMEAR` $-1$, $0$ or $1$ (Fermi–Dirac, Gaussian or first-order Methfessel–Paxton) and `SIGMA` about 0.05 eV, identical across all $q$ of one material. Tetrahedron modes are not variational. |
 | `MAGMOM` | $m_a\hat{\boldsymbol{S}}_a^0$, with seed magnitude $m_a$. |
 | `M_CONSTR` | $\hat{\boldsymbol{S}}_a^0$. It has no effect at `LAMBDA = 0`. |
 
@@ -172,7 +174,7 @@ $$
 
 $\delta_a$ is the realized phase relaxation of site $a$. It keeps the sign of the moment: a reversed site gives $\delta_a\simeq180^\circ$. In the historical $\lambda=0$ bcc Fe run, sites seeded along $+x$ reached a $45.34^\circ$ difference against the $45^\circ$ F0 value [9]. This shows that unconstrained phases do move, and sets a first estimate of their convergence error.
 
-The total energy is the final OUTCAR `free  energy   TOTEN`, which prints more digits than OSZICAR. With $\lambda=0$ it contains no penalty energy.
+The total energy is the final OUTCAR `free  energy   TOTEN`, which prints more digits than OSZICAR. With $\lambda=0$ it contains no penalty energy. It is the Mermin free energy $F=E-TS$ (for `ISMEAR` $0$ or $1$, with that scheme's generalized entropy in place of $S$), which is variational at finite smearing, and that is why the force theorem and the trace use it.
 
 ## 4. From the PAW expression to the trace vector
 

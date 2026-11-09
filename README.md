@@ -51,7 +51,7 @@ TEN-05.
 | [plans/](plans/) | One spec per task, written and approved before coding |
 | [docs/seed_file.md](docs/seed_file.md) | Format of the per-material seed file |
 | [materials/](materials/) | One folder per material, with its seed and inputs |
-| [Math source](docs/math/heide_math_v3.tex) | Revision 3.0; the authoritative foundation |
+| [Math source](docs/math/heide_math_v3.tex) | Revision 3.1; the authoritative foundation |
 | [Math for agents](docs/math/heide_math_v3.md) | Same numbering, plus module map and rules |
 | [pipeline v3/](pipeline%20v3/) | Python package `dmi_pipeline` and its tests |
 | [acceptance/](acceptance/) | Historical Patch B N0 record |

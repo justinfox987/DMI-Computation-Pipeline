@@ -6,6 +6,7 @@ in seed.toml. No job is submitted here.
 """
 
 from itertools import combinations, groupby, product
+import os
 from pathlib import Path
 import re
 import tomllib
@@ -18,8 +19,16 @@ from .realized import INCAR_TAGS, echo_check, incar, logical, numbers, poscar
 RANK_FLOOR = 0.1       # smallest singular value accepted in either rank condition
 COLLAPSED = 0.1        # μB; a shorter M_int has no usable direction
 PAIR_DEG = 90.0        # a relative site phase at or above this means another sign pattern
+# Section 11 SCF-and-state checks, applied by collect.
+TWIST_FREE_DEG = 1.0   # |delta_a| bound when n_twist = 0
+MOMENT_DRIFT = 0.05    # |M_a / M_a(q0) - 1| bound
+MZ_MAX = 0.05          # μB; |M_int z| bound for a flat spiral
 REQUIRED = ("sites", "signs", "moments", "t")
-OPTIONAL = ("spacegroup", "symprec", "directions", "exchange_grid", "rmax")
+OPTIONAL = ("spacegroup", "symprec", "directions", "exchange_grid", "rmax", "min_sigma")
+# D-018 and math Section 3.2: finite smearing, so free energy TOTEN is variational
+# and the force theorem holds. Fermi-Dirac, Gaussian, Methfessel-Paxton order 1.
+SMEARING = {-1: "Fermi-Dirac", 0: "Gaussian", 1: "Methfessel-Paxton 1"}
+MIN_SIGMA = 0.05       # eV; a seed may lower it for a convergence series
 # Section 3.2 tags with one value for every run, and the tags set per run.
 FIXED = {"LNONCOLLINEAR": "T", "LSPIRAL": "T", "LSORBIT": "F", "LZEROZ": "T",
          "SAXIS": "0 0 1", "ISYM": "-1", "I_CONSTRAINED_M": "1", "LAMBDA": "0"}
@@ -27,6 +36,15 @@ PER_RUN = ("QSPIRAL", "MAGMOM", "M_CONSTR")
 LOGICAL = {"LNONCOLLINEAR", "LSPIRAL", "LSORBIT", "LZEROZ"}
 TOTEN = re.compile(r"free\s+energy\s+TOTEN\s*=\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?)")
 CD = re.compile(r"(?:^|[;&|])\s*cd(?:\s|$)")
+# Section 5 dump decks. A dump writes no WAVECAR or CHGCAR, so the linked parent
+# files stay untouched.
+DUMP_P = {"ISTART": "1", "ICHARG": "11", "ALGO": "Normal", "NELM": "1",
+          "LDUMPCOCC": "T", "LWAVE": "F", "LCHARG": "F"}
+# CSO depends only on the potential: read q0's CHGCAR (ICHARG = 11) and no WAVECAR.
+DUMP_C = {"LNONCOLLINEAR": "T", "LSORBIT": "T", "ISYM": "-1", "ISTART": "0", "ICHARG": "11",
+          "ALGO": "Normal", "NELM": "1", "LDUMPCSO": "T", "LWAVE": "F", "LCHARG": "F"}
+CSO_DUMPS = {"dump_C": "0 0 1", "dump_C_x": "1 0 0", "dump_C_y": "0 1 0"}
+SPIRAL_ONLY = ("LSPIRAL", "QSPIRAL", "LZEROZ", "I_CONSTRAINED_M", "LAMBDA", "M_CONSTR")
 
 FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
 PENALTY = re.compile(r"\bE_p\s*=\s*(" + FLOAT + r")\s+lambda\s*=\s*(" + FLOAT + r")", re.I)
@@ -228,13 +246,18 @@ def load_seed(path):
         raise ValueError("Seed t needs at least 3 distinct positive magnitudes (Section 8.3)")
     seed = {"folder": path.parent, "text": path.read_text(encoding="utf-8"),
             "lattice": lattice, "species": species, "tau": tau,
-            "sites": sites - 1, "signs": signs, "moments": moments, "t": t,
-            "spacegroup": None, "symprec": 1e-3, "directions": None,
+            # Ascending t, so run d{i}_t1 is the smallest t, where P0 and E0 gate.
+            "sites": sites - 1, "signs": signs, "moments": moments, "t": np.sort(t),
+            "spacegroup": None, "symprec": 1e-3, "directions": None, "min_sigma": MIN_SIGMA,
             "exchange_grid": None, "rmax": None}
     if "spacegroup" in raw:
         if type(raw["spacegroup"]) is not int:
             raise ValueError("Seed spacegroup must be an integer")
         seed["spacegroup"] = raw["spacegroup"]
+    if "min_sigma" in raw:
+        seed["min_sigma"] = float(_list(raw, "min_sigma", float, [raw["min_sigma"]])[0])
+        if seed["min_sigma"] <= 0:
+            raise ValueError("Seed min_sigma must be positive")
     if "symprec" in raw:
         seed["symprec"] = float(_list(raw, "symprec", float, [raw["symprec"]])[0])
         if seed["symprec"] <= 0:
@@ -291,9 +314,18 @@ def material_incar(seed):
     rwigs = numbers(tags["RWIGS"]) if "RWIGS" in tags else np.array([])
     if len(rwigs) != len(types) or not np.all(rwigs > 0):
         raise ValueError(f"Material INCAR needs RWIGS with one positive radius per species type {types}")
-    for key in ("ENCUT", "ENINI"):
+    for key in ("ENCUT", "ENINI", "ISMEAR", "SIGMA"):
         if key not in tags:
             raise ValueError(f"Material INCAR needs {key}")
+    ismear, sigma = numbers(tags["ISMEAR"]), numbers(tags["SIGMA"])
+    if ismear.shape != (1,) or sigma.shape != (1,):
+        raise ValueError("Material INCAR ISMEAR and SIGMA need one value each")
+    if ismear[0] not in SMEARING:
+        allowed = ", ".join(f"{k} ({v})" for k, v in SMEARING.items())
+        raise ValueError(f"ISMEAR = {ismear[0]:g} is not allowed; use {allowed} (D-018)")
+    if sigma[0] < seed["min_sigma"]:
+        raise ValueError(f"SIGMA = {sigma[0]:g} eV is below {seed['min_sigma']:g}; set min_sigma in the seed "
+                         "for a convergence series (D-018)")
     return tags
 
 
@@ -405,10 +437,31 @@ def split_job(text):
     return shebang, header, body
 
 
+def read_job(job):
+    """Validated (shebang, header, body) of a launch script."""
+    job = Path(job)
+    text = job.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError(f"{job} is empty")
+    return (*split_job(text), manifest.file_hash(job))
+
+
+def write_array(out, list_name, script_name, names, job_parts, command):
+    """List file plus a Slurm array that enters one listed directory per task."""
+    shebang, header, body, digest = job_parts
+    (out / list_name).write_text("".join(n + "\n" for n in names), encoding="utf-8")
+    lines = [shebang, *header, f"#SBATCH --array=1-{len(names)}",
+             f"# Generated by {command} from a job script (sha256 {digest}).",
+             f"# Submit from this directory with: sbatch {script_name}",
+             f'cd "$SLURM_SUBMIT_DIR/$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" "$SLURM_SUBMIT_DIR/{list_name}")" || exit 1',
+             *body]
+    (out / script_name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def prepare(seed, out, job):
     """Write every F0 run, runs.txt, submit.sh and plan.json under out."""
     summary = plan(seed)
-    out, job, folder = Path(out), Path(job), seed["folder"]
+    out, folder = Path(out), seed["folder"]
     if out.exists() and any(out.iterdir()):
         raise ValueError(f"{out} is not empty; do not overwrite a VASP run")
     shared = {}
@@ -419,10 +472,7 @@ def prepare(seed, out, job):
     potcar = re.findall(r"VRHFIN\s*=\s*([A-Za-z]+)\s*:", shared["POTCAR"].decode("utf-8", "replace"))
     if potcar != species_types(seed["species"]):
         raise ValueError(f"POTCAR elements {potcar} differ from POSCAR species {species_types(seed['species'])}")
-    job_text = job.read_text(encoding="utf-8")
-    if not job_text.strip():
-        raise ValueError(f"{job} is empty")
-    shebang, header, body = split_job(job_text)
+    job_parts = read_job(job)
 
     nions, sites = len(seed["species"]), seed["sites"]
     moments = np.zeros(nions)
@@ -444,13 +494,7 @@ def prepare(seed, out, job):
         manifest.save({"q_frac": point["q_frac"], "sites": sites.tolist(), "signs": seed["signs"].tolist(),
                        "targets": u.tolist(), "tags": tags}, run / "config.json")
         names.append(point["name"])
-    (out / "runs.txt").write_text("".join(n + "\n" for n in names), encoding="utf-8")
-    submit = [shebang, *header, f"#SBATCH --array=1-{len(names)}",
-              f"# Generated by dmi prepare from job.sh (sha256 {manifest.file_hash(job)}).",
-              "# Submit from this directory with: sbatch submit.sh",
-              'cd "$SLURM_SUBMIT_DIR/$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$SLURM_SUBMIT_DIR/runs.txt")" || exit 1',
-              *body]
-    (out / "submit.sh").write_text("\n".join(submit) + "\n", encoding="utf-8")
+    write_array(out, "runs.txt", "submit.sh", names, job_parts, "dmi prepare")
     hashes = {name: manifest.file_hash(folder / name) for name in ("seed.toml", "POSCAR", "INCAR", "KPOINTS", "POTCAR")}
     manifest.save({"seed": seed["text"], "sha256": hashes, "symbol": summary["ops"]["symbol"],
                    "number": summary["ops"]["number"], "total": summary["ops"]["total"],
@@ -499,11 +543,28 @@ def read_run(run):
             "sha256": {name: manifest.file_hash(run / name) for name in ("OUTCAR", "OSZICAR")}}
 
 
+def state_error(name, result, q0, twist_free):
+    """Section 11 SCF-and-state checks against q0, or None when the run passes."""
+    if np.abs(np.asarray(result["M_int"])[:, 2]).max() >= MZ_MAX:
+        return f"|M_z| >= {MZ_MAX} μB: not a flat spiral"
+    if name == "q0":
+        return None
+    if q0 is None:
+        return "q0 not ok"
+    drift = np.abs(np.asarray(result["M"]) / np.asarray(q0["M"]) - 1).max()
+    if drift >= MOMENT_DRIFT:
+        return f"|M_a / M_a(q0) - 1| = {drift:.3f} >= {MOMENT_DRIFT}"
+    if twist_free and np.abs(result["delta_deg"]).max() >= TWIST_FREE_DEG:
+        return f"|delta| = {np.abs(result['delta_deg']).max():.2f} deg >= {TWIST_FREE_DEG} with n_twist = 0"
+    return None
+
+
 def collect(out):
     """Read every run in runs.txt and write collected.json; rerunning is safe."""
     out = Path(out)
+    twist_free = manifest.load(out / "plan.json")["n_twist"] == 0
     results = {}
-    for name in (out / "runs.txt").read_text(encoding="utf-8").split():
+    for name in (out / "runs.txt").read_text(encoding="utf-8").split():   # q0 first
         if not (out / name / "OUTCAR").exists():
             results[name] = {"error": "missing"}
             continue
@@ -511,5 +572,84 @@ def collect(out):
             results[name] = read_run(out / name)
         except (OSError, ValueError, KeyError) as error:
             results[name] = {"error": str(error)}
+            continue
+        q0 = results.get("q0")
+        error = state_error(name, results[name], None if q0 is None or "error" in q0 else q0, twist_free)
+        if error:
+            results[name] = {"error": error}
     manifest.save(results, out / "collected.json")
     return results
+
+
+# ---- dump inputs ---------------------------------------------------------
+
+def _stat(path):
+    info = os.stat(path)
+    return {"size": info.st_size, "mtime_ns": info.st_mtime_ns}
+
+
+def parent_unchanged(dump_dir):
+    """Raise unless the parent recorded by prepare_dumps is byte- and stat-identical."""
+    dump_dir = Path(dump_dir)
+    record = manifest.load(dump_dir / "parent.json")
+    parent = dump_dir.parent / "q0" if dump_dir.name in CSO_DUMPS else dump_dir.parent
+    for name, digest in record["sha256"].items():
+        if manifest.file_hash(parent / name) != digest:
+            raise ValueError(f"{dump_dir}: parent {name} changed since dmi dumps")
+    for name, recorded in record["links"].items():
+        if _stat(dump_dir / name) != recorded:
+            raise ValueError(f"{dump_dir}: linked parent {name} changed size or mtime since dmi dumps")
+
+
+def prepare_dumps(out, job):
+    """Write dump_C, dump_C_x, dump_C_y and every ok run's dump_P (Section 5).
+
+    Returns (dump directories in submit order, names of runs skipped as not ok).
+    """
+    out = Path(out)
+    job_parts = read_job(job)
+    collected = manifest.load(out / "collected.json")
+    names = (out / "runs.txt").read_text(encoding="utf-8").split()
+    if "error" in collected.get("q0", {"error": "missing"}):
+        raise ValueError("q0 is not ok in collected.json; the CSO dumps need its CHGCAR")
+    q0_tags = incar(out / "q0" / "INCAR")
+    cso_base = {k: v for k, v in q0_tags.items() if k not in SPIRAL_ONLY}   # keeps q0's MAGMOM
+    decks, skipped = [], []
+    for name in names:
+        result = collected.get(name, {"error": "missing"})
+        if "error" in result:
+            skipped.append(name)
+            continue
+        parent = out / name
+        for file, digest in result["sha256"].items():
+            if manifest.file_hash(parent / file) != digest:
+                raise ValueError(f"{name}: {file} changed since dmi collect; rerun collect")
+        tags = dict(incar(parent / "INCAR"), **DUMP_P)
+        if name == "q0":
+            tags["LDUMPCPROJ"] = "T"                       # M1 on the first state (D-011)
+            for dump, saxis in CSO_DUMPS.items():
+                decks.append((out / dump, name, "../q0/", ("CHGCAR",),
+                              dict(cso_base, **DUMP_C, SAXIS=saxis), result["sha256"]))
+        decks.append((parent / "dump_P", name, "../", ("CHGCAR", "WAVECAR"), tags, result["sha256"]))
+    for directory, name, link, files, tags, _ in decks:
+        if directory.exists():
+            raise ValueError(f"{directory} exists; do not overwrite a dump")
+        for file in files:
+            source = out / name / file
+            if not source.is_file() or source.stat().st_size == 0:
+                raise ValueError(f"{name}: no {file}; the parent INCAR must not set LWAVE or LCHARG to F")
+        if logical(tags, "LSORBIT") and any(key in tags for key in SPIRAL_ONLY):
+            raise ValueError(f"{directory}: an LSORBIT = T deck must not contain spiral tags")
+    for directory, name, link, files, tags, digests in decks:
+        directory.mkdir()
+        (directory / "INCAR").write_text("".join(f"{k} = {v}\n" for k, v in tags.items()), encoding="utf-8")
+        for file in ("POSCAR", "KPOINTS", "POTCAR"):
+            (directory / file).write_bytes((out / name / file).read_bytes())
+        for file in files:
+            os.symlink(link + file, directory / file)
+        manifest.save({"parent": name, "sha256": digests,
+                       "links": {file: _stat(directory / file) for file in files}}, directory / "parent.json")
+    dirs = [d for d, *_ in decks]
+    write_array(out, "dumps.txt", "submit_dumps.sh", [str(d.relative_to(out)) for d in dirs],
+                job_parts, "dmi dumps")
+    return dirs, skipped
