@@ -581,6 +581,14 @@ def collect(out):
     return results
 
 
+def unchanged(directory, sha256, since):
+    """Raise unless every named file in directory still has its recorded hash."""
+    directory = Path(directory)
+    for file, digest in sha256.items():
+        if manifest.file_hash(directory / file) != digest:
+            raise ValueError(f"{directory.name}/{file} changed since {since}; rerun it")
+
+
 # ---- dump inputs ---------------------------------------------------------
 
 def _stat(path):
@@ -621,9 +629,7 @@ def prepare_dumps(out, job):
             skipped.append(name)
             continue
         parent = out / name
-        for file, digest in result["sha256"].items():
-            if manifest.file_hash(parent / file) != digest:
-                raise ValueError(f"{name}: {file} changed since dmi collect; rerun collect")
+        unchanged(parent, result["sha256"], "dmi collect")
         tags = dict(incar(parent / "INCAR"), **DUMP_P)
         if name == "q0":
             tags["LDUMPCPROJ"] = "T"                       # M1 on the first state (D-011)

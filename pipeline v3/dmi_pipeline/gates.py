@@ -139,6 +139,18 @@ def gate_e0(e_plus: float, e_minus: float, e_zero: float, tol: float = 0.1) -> G
                       "|E(q) - E(-q)| <= tol |E(q) + E(-q) - 2 E(0)|")
 
 
+def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
+    """Section 11: the forbidden part of D_free vanishes within 3 sigma, element by element.
+
+    A relative floor of 1e-9 of D_free absorbs roundoff where sigma is exactly zero.
+    """
+    forbidden, sigma = np.asarray(forbidden, float), np.asarray(sigma, float)
+    bound = sigmas * sigma + 1e-9 * float(np.max(np.abs(d_free)))
+    return GateResult("Forbidden", bool(np.all(np.abs(forbidden) <= bound)),
+                      {"norm": float(np.linalg.norm(forbidden)), "worst_ratio": float(np.max(np.abs(forbidden) / np.maximum(bound, 1e-300)))},
+                      sigmas, "|F_ij| <= 3 sigma(F_ij) for every element")
+
+
 def gate_t3(z: MatrixDump, dump: MatrixDump, axis: str, tol: float = 1e-10) -> GateResult:
     """Section 11 T3: C_uu of a genuine SAXIS = axis dump equals Lambda_axis from the z dump."""
     lam = split_operator(z)["xyz".index(axis)]
@@ -243,9 +255,7 @@ def check_tree(out) -> dict:
             lines.append(f"{name:24} skipped: not ok in collect")
             continue
         try:
-            for file, digest in result["sha256"].items():
-                if manifest.file_hash(out / name / file) != digest:
-                    raise ValueError(f"{file} changed since dmi collect")
+            spiral.unchanged(out / name, result["sha256"], "dmi collect")
             energies[name] = result["E_eV"]            # E0 needs no dump
             runs[name] = trace_run(out / name, out)
             runs[name]["I0"] = gate_i0(runs[name]["imag_eV"]).to_dict()

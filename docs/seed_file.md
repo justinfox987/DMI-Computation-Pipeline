@@ -26,7 +26,7 @@ dmi collect RUNS                     # one state per run; safe to rerun
 dmi dumps   RUNS --job patchb.sh     # dump_C, dump_C_x, dump_C_y and each ok run's dump_P
 cd RUNS && sbatch submit_dumps.sh    # the user submits
 dmi trace   RUNS                     # provenance, trace vector, N0 I0 P0 E0 T3
-dmi fit     ...                      # TEN-05
+dmi fit     RUNS                     # D, F, A, the pitch and units; writes tensors.json
 ```
 
 `--out` is required because the seed holds no paths. There is no `status`
