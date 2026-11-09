@@ -41,6 +41,11 @@ def test_seed_and_plan(tmp_path, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "space group 161 (R3c) at symprec 0.001: 6 operations, 6 kept, 0 dropped"
     assert lines[2] == "ENCUT 600  ENINI 500  ISMEAR 0  SIGMA 0.05"
+    assert not any(line.startswith("WARNING") for line in lines)
+    # D-019: a tag the code has not seen is the user's; plan warns and keeps it.
+    assert main(["plan", str(material(tmp_path, incar_text=INCAR + "NBLOCK = 1\n"))]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == \
+        "WARNING: INCAR tags not seen before, kept as given (D-019): NBLOCK"
 
     # Section 8.2: the threefold relates BFO's three axes, so A has rank 1 of 2.
     def with_directions(rows):
@@ -101,7 +106,7 @@ def test_prepare_writes_paired_f0_inputs(tmp_path):
     rejected("not empty", target=out)
     rejected("ISYM = 2", INCAR + "ISYM = 2\n")
     rejected("sets MAGMOM", INCAR + "MAGMOM = 10*0\n")
-    rejected("Unreviewed INCAR tags", INCAR + "LSORBT = F\n")
+    rejected("KSPACING is not allowed", INCAR + "KSPACING = 0.2\n")
     rejected("RWIGS", INCAR.replace("RWIGS = 1.6 1.2 0.8", "RWIGS = 1.6 1.6 1.2 1.2 .8 .8 .8 .8 .8 .8"))
     rejected("needs ENINI", INCAR.replace("ENINI = 500\n", ""))
     rejected("needs SIGMA", INCAR.replace("SIGMA = 0.05\n", ""))
@@ -142,7 +147,8 @@ def finish(run, energy=-12.25, rotate_deg=37.0, reversed_site=False, twist_deg=0
 
 
 def test_readback(tmp_path, capsys):
-    path, out = material(tmp_path), tmp_path / "runs"
+    # An unseen user tag must reach collect and pass the OUTCAR echo check (D-019).
+    path, out = material(tmp_path, incar_text=INCAR + "NBLOCK = 1\n"), tmp_path / "runs"
     spiral.prepare(spiral.load_seed(path), out, tmp_path / "job.sh")
     names = (out / "runs.txt").read_text().split()
     for name in names:

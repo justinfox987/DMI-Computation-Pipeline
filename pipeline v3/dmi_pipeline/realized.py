@@ -5,8 +5,8 @@ import re
 
 import numpy as np
 
-# Input-only registration still rejects unknown tags instead of treating the
-# verbatim INCAR echo as evidence VASP recognized a typo.
+# Tags this code has seen before. plan warns about any other tag but keeps it
+# (D-019); the OUTCAR echo below proves VASP received it, not that VASP knows it.
 INCAR_TAGS = set("""
 SYSTEM ENCUT ENINI ENAUG PREC NCORE NPAR KPAR NBANDS NEDOS ISTART ICHARG ISMEAR SIGMA
 IBRION POTIM ISIF NSW NELM NELMIN NELMDL ISYM SYMPREC LMAXMIX LMAXPAW ALGO IALGO
@@ -82,9 +82,6 @@ def poscar(path: str | Path) -> tuple[np.ndarray, list[str], np.ndarray]:
 
 def echo_check(directory: Path) -> dict:
     tags = incar(directory / "INCAR")
-    unknown = set(tags) - INCAR_TAGS
-    if unknown:
-        raise ValueError(f"Unreviewed INCAR tags: {sorted(unknown)}")
     text = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
     if "General timing and accounting" not in text:
         raise ValueError("OUTCAR has no completed-job timing footer")
