@@ -281,11 +281,14 @@ def species_types(species):
 
 
 def material_incar(seed):
-    """Electronic settings from the material INCAR, checked against Section 3.2."""
+    """Electronic settings from the material INCAR, checked against Section 3.2.
+
+    The user owns every other setting (D-019): tags outside INCAR_TAGS are kept
+    as given, and plan warns about them instead of rejecting them.
+    """
     tags = incar(seed["folder"] / "INCAR")
-    unknown = sorted(set(tags) - INCAR_TAGS)
-    if unknown:
-        raise ValueError(f"Unreviewed INCAR tags: {unknown}")
+    if "KSPACING" in tags:
+        raise ValueError("KSPACING is not allowed: the KPOINTS file sets the one mesh for every q (Section 8.4)")
     for key in PER_RUN:
         if key in tags:
             raise ValueError(f"Material INCAR sets {key}; the code writes it per run")
@@ -396,7 +399,8 @@ def plan(seed):
     return {"ops": ops, "p_D": len(symmetry.spiralization_basis(rotations)), "p_A": len(stiffness),
             "n_twist": symmetry.twist_count(rotations, ops["permutations"]),
             "directions": directions, "sigma_D": sigma_d, "sigma_A": sigma_a,
-            "points": points, "classes": classes, "incar": tags, "symprec": seed["symprec"]}
+            "points": points, "classes": classes, "incar": tags, "symprec": seed["symprec"],
+            "unseen_tags": sorted(set(tags) - INCAR_TAGS)}
 
 
 # ---- inputs --------------------------------------------------------------

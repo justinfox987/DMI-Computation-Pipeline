@@ -30,6 +30,8 @@ def plan_lines(summary) -> list[str]:
     lines.append(f"{len(summary['points'])} runs including q0")
     if summary["classes"] is not None:
         lines.append(f"exchange classes: {summary['classes']}")
+    if summary["unseen_tags"]:
+        lines.append(f"WARNING: INCAR tags not seen before, kept as given (D-019): {', '.join(summary['unseen_tags'])}")
     return lines
 
 

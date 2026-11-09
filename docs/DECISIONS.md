@@ -239,3 +239,28 @@ the Mermin free energy, which is variational at finite smearing. Tetrahedron
 modes are not variational, so their first-order SOC energy is not the trace of
 the frozen state.
 **Authority:** [math Revision 3.1](math/heide_math_v3.tex), Sections 3.2 and 3.3.
+
+## D-019 — The user owns the electronic settings and inputs
+
+**Status:** accepted 2026-11-09; supersedes the TEN-03 rejection of unreviewed
+INCAR tags.  
+The user supplies each material's `POSCAR`, `INCAR`, `KPOINTS` and `POTCAR`,
+and they are committed as given. The `POTCAR` is never committed; a
+`POTCAR.spec` with its name, TITEL and SHA-256 is committed instead. Agents and
+specs do not choose structures, potentials, functionals, cutoffs, smearing,
+spheres, SCF or parallel settings. Specs give factual notes only. The code:
+
+- writes the Section 3.2 spiral tags and rejects a contradiction;
+- requires `RWIGS` (one per species type), `ENCUT`, `ENINI`, `ISMEAR` and
+  `SIGMA`, and applies D-018;
+- rejects `KSPACING`, because the `KPOINTS` file sets the one mesh for every
+  `q`.
+
+Any other tag the code has not seen is kept as given: `plan` prints a warning,
+and the OUTCAR echo check accepts it.
+
+**Reason:** the electronic settings are the user's physics decisions. The
+whitelist turned every new tag into a code change and an agent judgment. The
+rules that protect the method stay: the spiral tags, the force-theorem smearing
+rule, the single mesh, and the echo check that VASP received each tag.
+**Authority:** user decision, 2026-11-09; math Section 3.2.

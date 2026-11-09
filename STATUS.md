@@ -56,11 +56,12 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-Review and merge the cleanup pull request from `cleanup-1`. Then TEN-06, the
-bcc Fe pilot at lambda 0. It is the first time `collect`, `dumps`, `trace` and
-`fit` read VASP output, and it settles the four VASP facts listed below. It
-needs `materials/fe` POSCAR, INCAR (with `ISMEAR`, `SIGMA`, `ENINI`) and KPOINTS
-and a spec. The user submits the jobs.
+Review and merge `incar-user-settings` (D-019: the user owns the electronic
+settings, and unseen INCAR tags give a warning, not an error). Then TEN-06, the
+bcc Fe pilot at lambda 0. Its spec, `plans/ten-06-fe-pilot.md`, is drafted and
+awaits approval. The run waits for the user's `POSCAR`, `INCAR`, `KPOINTS` and
+`POTCAR` in `materials/fe/`. It is the first time `collect`, `dumps`, `trace`
+and `fit` read VASP output. The user submits the jobs.
 
 Two cluster checks can run in parallel, because neither needs the new code: genuine
 x and y CSO dumps for T3, and one `dump_P` with `LDUMPCOCC` on and `LDUMPCPROJ` off.

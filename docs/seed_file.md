@@ -84,5 +84,7 @@ math Section 3.2).
   operation counts. This is the only protection from a wrong group when
   `spacegroup` is left out, so set `spacegroup` for production runs.
 - The code writes the run tags of math Section 3.2 itself. If the `INCAR` in the
-  material folder contradicts one, stop and report the tag.
+  material folder contradicts one, stop and report the tag. `KSPACING` is
+  rejected, because `KPOINTS` sets the mesh. Every other tag is the user's
+  (D-019): `plan` warns about tags it has not seen before and keeps them.
 - Check the rank conditions on `directions` before writing any input.
