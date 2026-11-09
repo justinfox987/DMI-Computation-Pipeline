@@ -246,7 +246,8 @@ def load_seed(path):
         raise ValueError("Seed t needs at least 3 distinct positive magnitudes (Section 8.3)")
     seed = {"folder": path.parent, "text": path.read_text(encoding="utf-8"),
             "lattice": lattice, "species": species, "tau": tau,
-            "sites": sites - 1, "signs": signs, "moments": moments, "t": t,
+            # Ascending t, so run d{i}_t1 is the smallest t, where P0 and E0 gate.
+            "sites": sites - 1, "signs": signs, "moments": moments, "t": np.sort(t),
             "spacegroup": None, "symprec": 1e-3, "directions": None, "min_sigma": MIN_SIGMA,
             "exchange_grid": None, "rmax": None}
     if "spacegroup" in raw:

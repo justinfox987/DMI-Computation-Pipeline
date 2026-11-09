@@ -51,6 +51,10 @@ def test_seed_and_plan(tmp_path, capsys):
     assert (good["sigma_D"], good["sigma_A"]) == pytest.approx((.344, .929), abs=1e-3)
     chosen = spiral.plan(spiral.load_seed(material(tmp_path)))
     assert min(chosen["sigma_D"], chosen["sigma_A"]) >= .9 and len(chosen["points"]) == 19
+    # An unsorted t list still names the smallest magnitude t1, where P0 and E0 gate.
+    shuffled = spiral.plan(spiral.load_seed(material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.09, 0.03, 0.06"))))
+    lengths = {p["name"]: np.linalg.norm(2 * np.pi * np.linalg.solve(bfo()[0], p["q_frac"])) for p in shuffled["points"]}
+    assert [lengths[f"d1_t{j}_plus"] for j in (1, 2, 3)] == pytest.approx([.03, .06, .09], rel=1e-10)
 
     for bad, message in [(SEED + "spacegroups = 161\n", "Unknown seed keys"),
                          (SEED.replace("0.03, ", ""), "at least 3 distinct")]:

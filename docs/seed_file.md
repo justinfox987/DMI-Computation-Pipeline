@@ -60,7 +60,7 @@ min_sigma = 0.05         # lowest SIGMA accepted, eV; lower only for a convergen
 | `sites` | Yes | Magnetic atoms, numbered from 1 in POSCAR order |
 | `signs` | Yes | $\varepsilon_a=\pm1$, one per site |
 | `moments` | Yes | Seed magnitude $m_a>0$ in $\mu_B$, one per site |
-| `t` | Yes | Magnitudes in Å$^{-1}$; Section 8.3 asks for three per direction |
+| `t` | Yes | Magnitudes in Å$^{-1}$; Section 8.3 asks for three per direction. The loader sorts them ascending, so run `d{i}_t1` is always the smallest `t`, where P0 and E0 gate |
 | `spacegroup` | No | Check on spglib's result, not an override |
 | `symprec` | No | spglib tolerance in Å, default `1e-3` |
 | `directions` | No | $\boldsymbol q_{\rm frac}$ directions; both rank conditions of Section 8.2 still apply |
