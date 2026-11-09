@@ -25,9 +25,10 @@ MOMENT_DRIFT = 0.05    # |M_a / M_a(q0) - 1| bound
 MZ_MAX = 0.05          # μB; |M_int z| bound for a flat spiral
 REQUIRED = ("sites", "signs", "moments", "t")
 OPTIONAL = ("spacegroup", "symprec", "directions", "exchange_grid", "rmax", "min_sigma")
-# D-018: finite smearing, so free energy TOTEN is variational and the force theorem holds.
+# D-018 and math Section 3.2: finite smearing, so free energy TOTEN is variational
+# and the force theorem holds. Fermi-Dirac, Gaussian, Methfessel-Paxton order 1.
+SMEARING = {-1: "Fermi-Dirac", 0: "Gaussian", 1: "Methfessel-Paxton 1"}
 MIN_SIGMA = 0.05       # eV; a seed may lower it for a convergence series
-TETRAHEDRON = -5       # ISMEAR = -5 is not variational
 # Section 3.2 tags with one value for every run, and the tags set per run.
 FIXED = {"LNONCOLLINEAR": "T", "LSPIRAL": "T", "LSORBIT": "F", "LZEROZ": "T",
          "SAXIS": "0 0 1", "ISYM": "-1", "I_CONSTRAINED_M": "1", "LAMBDA": "0"}
@@ -318,8 +319,9 @@ def material_incar(seed):
     ismear, sigma = numbers(tags["ISMEAR"]), numbers(tags["SIGMA"])
     if ismear.shape != (1,) or sigma.shape != (1,):
         raise ValueError("Material INCAR ISMEAR and SIGMA need one value each")
-    if ismear[0] == TETRAHEDRON:
-        raise ValueError("ISMEAR = -5 is not variational, so the force theorem fails; use ISMEAR 0 or 1 (D-018)")
+    if ismear[0] not in SMEARING:
+        allowed = ", ".join(f"{k} ({v})" for k, v in SMEARING.items())
+        raise ValueError(f"ISMEAR = {ismear[0]:g} is not allowed; use {allowed} (D-018)")
     if sigma[0] < seed["min_sigma"]:
         raise ValueError(f"SIGMA = {sigma[0]:g} eV is below {seed['min_sigma']:g}; set min_sigma in the seed "
                          "for a convergence series (D-018)")

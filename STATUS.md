@@ -29,7 +29,7 @@ pending review. One writer per branch.
 | Spiral inputs and readback (TEN-03) | Merged in PR #12; BFO's three rhombohedral axes fail the A rank condition as in math Section 8.2; 19 of 19 injected faults caught ([log](docs/sessions/2026-11-08_2010Z-agent-ten03-spiral.md)) | Synthetic files only; no VASP output has been read by `collect` |
 | Dumps, trace vector and Section 11 checks (TEN-04) | COCC trace equals the independent CPROJ route to 1e-12 on all three axes; `dmi trace` passes N0, P0, E0 and T3 on a synthetic tree ([log](docs/sessions/2026-11-08_2245Z-agent-ten04-trace.md)) | Not yet merged. Synthetic dumps only; no real `COCC.dat` or `CSO.dat` has been read |
 
-No VASP calculation has tested Revision 3.0. There is no finite-q trace evidence,
+No VASP calculation has tested Revision 3.1. There is no finite-q trace evidence,
 and no parity (P0) measurement has been made with Patch B.
 
 ## Work queue

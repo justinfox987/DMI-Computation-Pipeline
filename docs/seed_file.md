@@ -68,6 +68,10 @@ min_sigma = 0.05         # lowest SIGMA accepted, eV; lower only for a convergen
 | `rmax` | With `exchange_grid` | Bond cutoff in Å for Section 7.6 |
 | `min_sigma` | No | Lowest `SIGMA` in eV that `plan` accepts, default `0.05`; lower it only for a smearing convergence series (D-018) |
 
+The material `INCAR` must set `ISMEAR` to `-1`, `0` or `1` (Fermi-Dirac, Gaussian,
+Methfessel-Paxton order 1) and `SIGMA` explicitly; `plan` prints both (D-018,
+math Section 3.2).
+
 ## Rules
 
 - Parse with `tomllib` from the standard library; `pyproject.toml` requires

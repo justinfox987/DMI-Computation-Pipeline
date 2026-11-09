@@ -229,11 +229,13 @@ was right.
 ## D-018 — Use finite smearing and the free energy
 
 **Status:** accepted 2026-11-09.  
-Every material INCAR sets `ISMEAR` and `SIGMA`. Use `ISMEAR = 0` or `1` with
-`SIGMA` about 0.05 eV. `prepare` and `plan` reject `ISMEAR = -5` and a `SIGMA`
-below 0.05 eV, unless the seed sets a lower `min_sigma` for a convergence
-series. Energies come from the OUTCAR `free energy TOTEN`.
-**Reason:** the force theorem needs a variational energy. The free energy is
-variational at finite smearing, but the tetrahedron method (`ISMEAR = -5`) is
-not, so its first-order SOC energy is not the trace of the frozen state.
-**Authority:** user decision, 2026-11-09. Math Section 3.3 fixes the energy line; Revision 3.0 does not yet state the smearing requirement.
+Every material INCAR sets `ISMEAR` and `SIGMA`. `ISMEAR` must be `-1`, `0` or
+`1` (Fermi-Dirac, Gaussian, Methfessel-Paxton order 1), with `SIGMA` about
+0.05 eV. `prepare` and `plan` reject any other `ISMEAR`, and a `SIGMA` below
+0.05 eV unless the seed sets a lower `min_sigma` for a convergence series.
+Energies come from the OUTCAR `free energy TOTEN`.
+**Reason:** the force theorem needs a variational energy. `free energy TOTEN` is
+the Mermin free energy, which is variational at finite smearing. Tetrahedron
+modes are not variational, so their first-order SOC energy is not the trace of
+the frozen state.
+**Authority:** [math Revision 3.1](math/heide_math_v3.tex), Sections 3.2 and 3.3.

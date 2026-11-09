@@ -101,7 +101,9 @@ def test_prepare_writes_paired_f0_inputs(tmp_path):
     rejected("RWIGS", INCAR.replace("RWIGS = 1.6 1.2 0.8", "RWIGS = 1.6 1.6 1.2 1.2 .8 .8 .8 .8 .8 .8"))
     rejected("needs ENINI", INCAR.replace("ENINI = 500\n", ""))
     rejected("needs SIGMA", INCAR.replace("SIGMA = 0.05\n", ""))
-    rejected("ISMEAR = -5 is not variational", INCAR.replace("ISMEAR = 0", "ISMEAR = -5"))
+    for ismear in (-5, 2):                                   # tetrahedron; Methfessel-Paxton order 2
+        rejected(rf"ISMEAR = {ismear} is not allowed; use -1 \(Fermi-Dirac\), 0 \(Gaussian\), "
+                 r"1 \(Methfessel-Paxton 1\)", INCAR.replace("ISMEAR = 0", f"ISMEAR = {ismear}"))
     rejected("SIGMA = 0.02 eV is below 0.05", INCAR.replace("SIGMA = 0.05", "SIGMA = 0.02"))
     series = material(tmp_path, SEED + "min_sigma = 0.01\n", INCAR.replace("SIGMA = 0.05", "SIGMA = 0.02"))
     assert spiral.plan(spiral.load_seed(series))["incar"]["SIGMA"] == "0.02"

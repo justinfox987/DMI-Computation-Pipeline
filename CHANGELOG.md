@@ -5,7 +5,7 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
-- D-018: the material INCAR must set `ISMEAR` and `SIGMA`; `plan` prints both and rejects `ISMEAR = -5` and `SIGMA` below 0.05 eV unless the seed sets a lower `min_sigma`. New optional seed key `min_sigma`. Same 18 tests, extended. No VASP or cluster jobs.
+- Math Revision 3.1 (TeX and Markdown together): an `ISMEAR`/`SIGMA` row in Section 3.2 and the Mermin free-energy statement in Section 3.3. D-018: the material INCAR must set `ISMEAR` (allowlist `-1`, `0`, `1`) and `SIGMA`; `plan` prints both and rejects other `ISMEAR` values and `SIGMA` below 0.05 eV unless the seed sets a lower `min_sigma`. AGENTS and README point at Revision 3.1. New optional seed key `min_sigma`. Same 18 tests, extended. No VASP or cluster jobs.
 
 - TEN-04: added `dmi dumps` (Section 5 decks: `dump_P` under each ok run, `dump_C`/`dump_C_x`/`dump_C_y` from `q0`'s `CHGCAR` with `ISTART = 0`, `ICHARG = 11` and no `LSPIRAL` in any SOC deck; `parent.json` records parent hashes and linked-file size/mtime) and `dmi trace` (`gates.finish` writes each dump's `provenance.json` with C0, M1 or T3; `trace.split_operator`/`trace_vector` give the Eq (4.4)/(4.8) trace vector from COCC; N0 on all axes and ions, I0, P0 and E0 at 10%; `traces.json`). `collect` now applies the Section 11 SCF-and-state checks (`|delta_a| < 1°` when `n_twist = 0`, `M_a` within 5% of `q0`, `|M_z| < 0.05 μB`). T3 rewritten to the Section 11 form; deleted the Euler search, `rotate_saxis`, `cso.py`, `trace_config`, the `DONE`/`FAILED` markers and the `Bi` check in `gate_n0` (D-009 amended). Tests 15 -> 18. No VASP or cluster jobs. See the [TEN-04 handoff](docs/sessions/2026-11-08_2245Z-agent-ten04-trace.md).
 

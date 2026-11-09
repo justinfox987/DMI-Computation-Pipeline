@@ -103,7 +103,7 @@ not merely fewer lines or a smaller-looking diff.
 
 ## Scientific authority
 
-- Current foundation: `docs/math/heide_math_v3.tex`, **Revision 3.0**.
+- Current foundation: `docs/math/heide_math_v3.tex`, **Revision 3.1**.
 - `docs/math/heide_math_v3.md` is the agent edition, with the same section and
   equation numbers. Its opening notes give the module map and the rules that must
   not drift. Change the two files together. If they disagree, the TeX wins and
@@ -112,7 +112,7 @@ not merely fewer lines or a smaller-looking diff.
   `docs/archive/`, including the Step 1 spec, the Perlmutter pilot guide, the old
   Perlmutter runner plan and old project records.
   Use them for history and retained Patch B detail. They must not silently
-  override Revision 3.0.
+  override Revision 3.1.
 - Run unconstrained flat F0 spirals at `LAMBDA = 0`. Do not reintroduce F1, F2,
   constraints, bond bases or bond rows without a recorded user decision.
 - Write physical lab-vector targets without pre-unwinding, and read directions

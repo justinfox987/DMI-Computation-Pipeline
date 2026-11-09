@@ -24,7 +24,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small Spin-spiral tensors from DFT}
-\fancyhead[R]{\small Revision 3.0}
+\fancyhead[R]{\small Revision 3.1}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.3pt}
 \newcommand{\vct}[1]{\bm{#1}}
@@ -50,7 +50,7 @@
 {\large Computing spiralization, stiffness and exchange\\
 from paired, SOC-free spin spirals\par}
 \vspace{10mm}
-{\large Revision 3.0 \quad | \quad 2 November 2026\par}
+{\large Revision 3.1 \quad | \quad 9 November 2026\par}
 \vspace{13mm}
 \begin{abstract}
 \noindent
@@ -74,6 +74,11 @@ trace and lab-frame moment readback. It removes the constrained families F1 and
 F2, the bond basis and the paired bond rows. The new equations were checked
 numerically on spin models and repository fixtures. No VASP calculation has
 yet tested this revision.
+
+\textbf{Revision 3.1} (9 November 2026) adds the smearing row to the
+Section~\ref{sec:frames} input table and states in the same section why the
+free energy is the energy to read. Nothing else changes, and every equation
+keeps its number.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -217,6 +222,7 @@ at $-\qh$, and the $q=0$ reference is the same formula at $\qh=0$.
 \code{I_CONSTRAINED_M}, \code{LAMBDA} & $1$ and $0$. This gives sphere moments with no penalty.\\
 \code{RWIGS} & One explicit radius per species.\\
 \code{ENCUT}, \code{ENINI} & \code{ENCUT} about 100 eV above \code{ENINI}, as the wiki advises.\\
+\code{ISMEAR}, \code{SIGMA} & Set explicitly: \code{ISMEAR} $-1$, $0$ or $1$ (Fermi--Dirac, Gaussian or first-order Methfessel--Paxton) and \code{SIGMA} about 0.05 eV, identical across all $q$ of one material. Tetrahedron modes are not variational.\\
 \code{MAGMOM} & $m_a\hat{\vct S}_a^0$, with seed magnitude $m_a$.\\
 \code{M_CONSTR} & $\hat{\vct S}_a^0$. It has no effect at \code{LAMBDA = 0}.\\
 \bottomrule
@@ -251,6 +257,9 @@ error.
 
 The total energy is the final OUTCAR \code{free  energy   TOTEN}, which prints
 more digits than OSZICAR. With $\lambda=0$ it contains no penalty energy.
+It is the Mermin free energy $F=E-TS$ (for \code{ISMEAR} $0$ or $1$, with that
+scheme's generalized entropy in place of $S$), which is variational at finite
+smearing, and that is why the force theorem and the trace use it.
 
 \section{From the PAW expression to the trace vector}\label{sec:paw}
 
