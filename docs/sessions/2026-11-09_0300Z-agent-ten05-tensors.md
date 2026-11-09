@@ -67,3 +67,16 @@ No VASP or cluster jobs.
 - Files another session should read: `plans/ten-05-tensors.md`, `dmi_pipeline/tensors.py`, `STATUS.md`.
 - Last tested commit, if available: the `ten-05-tensors` commit containing this log.
 - Uncommitted/unpushed work and where it exists: none after push.
+
+## Addendum: the Forbidden check must still detect a real forbidden part
+
+`test_fits_recover_spin_model_tensors` now also:
+
+- asserts that the Forbidden check passes on every noise-free spin model;
+- adds a forbidden component of 1e-3 |D| (`diag(1, 0, 0)`, which is entirely
+  outside the 3m form) to noise-free BFO slopes, recovers it as `F`, and asserts
+  that the check fails.
+
+Loosening the floor in `gate_forbidden` from `1e-9` to `1e-2 * max|D_free|`
+makes that assertion fail (`assert not True`). With the floor restored, the
+suite passes (21 passed).

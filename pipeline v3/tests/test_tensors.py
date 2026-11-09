@@ -9,6 +9,7 @@ import pytest
 
 from dmi_pipeline import manifest, spiral, symmetry, tensors
 from dmi_pipeline.__main__ import main
+from dmi_pipeline.gates import gate_forbidden
 from tests.fixtures import bfo
 from tests.test_spiral import SEED, material
 from tests.test_symmetry import closure, fege, rot_z
@@ -61,13 +62,14 @@ def model_fit(name, t, noise=0.0, rng=None):
     slopes = tensors.fit_directions(data)
     part = tensors.spiralization(s, slopes["v"], slopes["cov_v"], d_basis)
     stiff = tensors.stiffness(s, slopes["kappa"], slopes["cov_kappa"], a_basis)
-    return big_d, big_a, slopes, part, stiff, tensors.by_species(slopes, data, species, part["linear"])
+    return (big_d, big_a, slopes, part, stiff, tensors.by_species(slopes, data, species, part["linear"]),
+            s, d_basis)
 
 
 def test_fits_recover_spin_model_tensors():
     """Gate 1: Eq (6.3) tensors come back through Eqs (1.3), (1.4) and Section 9."""
     for name in MODELS:
-        big_d, big_a, _, part, stiff, species = model_fit(name, [0.005, 0.01, 0.015])
+        big_d, big_a, slopes, part, stiff, species, s, d_basis = model_fit(name, [0.005, 0.01, 0.015])
         assert np.abs(big_d).max() > 1e-5 and np.abs(big_a).max() > 1e-3
         assert part["D_free"] == pytest.approx(big_d, abs=1e-6 * np.abs(big_d).max())
         assert part["D"] == pytest.approx(big_d, abs=1e-6 * np.abs(big_d).max())
@@ -75,10 +77,19 @@ def test_fits_recover_spin_model_tensors():
         assert np.abs(part["F"]).max() < 1e-6 * np.abs(big_d).max()
         assert sum(v["D"] for v in species.values()) == pytest.approx(part["D"], abs=1e-15)
         assert sum(v["D_free"] for v in species.values()) == pytest.approx(part["D_free"], abs=1e-15)
+        assert gate_forbidden(part["F"], np.sqrt(np.diag(part["cov_F"])).reshape(3, 3), part["D_free"]).passed
+
+    # Noise-free BFO (3m) with a forbidden 1e-3 |D| component added to D_free: the check must fail.
+    # diag(1, 0, 0) has no projection on the 3m form D [z]x, so all of it is forbidden.
+    extra = 1e-3 * np.abs(big_d).max() * np.diag([1.0, 0, 0])
+    tainted = tensors.spiralization(s, slopes["v"] + 2 * s @ extra.T, slopes["cov_v"], d_basis)
+    assert tainted["F"] == pytest.approx(extra, abs=1e-6 * np.abs(big_d).max())
+    assert not gate_forbidden(tainted["F"], np.sqrt(np.diag(tainted["cov_F"])).reshape(3, 3),
+                              tainted["D_free"]).passed
 
     # Real magnitudes with noise of known sigma: pooled sigma2 and coverage (Eq 9.9).
     noise, n_m = 2e-6, 2
-    big_d, big_a, slopes, part, stiff, _ = model_fit("BFO", [0.03, 0.06, 0.09], noise, np.random.default_rng(5))
+    big_d, big_a, slopes, part, stiff, *_ = model_fit("BFO", [0.03, 0.06, 0.09], noise, np.random.default_rng(5))
     # 9 degrees of freedom for y, so the factor-two band depends on the fixed seed. g has
     # only 3 (one per direction), too few for a band; its sigma is checked by A's coverage.
     assert 0.5 < slopes["sigma2"]["y"] / (2 * noise ** 2 / n_m ** 2) < 2
