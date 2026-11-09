@@ -10,7 +10,7 @@ TEN-03. A real example is `materials/fe/seed.toml`.
 materials/fe/
   seed.toml   what the pipeline needs to know
   POSCAR      structure, the main input
-  INCAR       electronic settings only (ENCUT, smearing, RWIGS, U)
+  INCAR       electronic settings only (ENCUT, ENINI, ISMEAR, SIGMA, RWIGS, U)
   KPOINTS     one mesh for every q
   POTCAR      never committed
 ```
@@ -50,6 +50,7 @@ symprec = 1e-3           # symmetry tolerance in Å
 directions = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]   # q_frac; default: code chooses
 exchange_grid = [4, 4, 4]                        # default: no exchange runs
 rmax = 6.0               # exchange bond cutoff in Å
+min_sigma = 0.05         # lowest SIGMA accepted, eV; lower only for a convergence series
 ```
 
 ## Fields
@@ -65,6 +66,7 @@ rmax = 6.0               # exchange bond cutoff in Å
 | `directions` | No | $\boldsymbol q_{\rm frac}$ directions; both rank conditions of Section 8.2 still apply |
 | `exchange_grid` | No | Coarse $\Gamma$-centered grid of Section 8.4 |
 | `rmax` | With `exchange_grid` | Bond cutoff in Å for Section 7.6 |
+| `min_sigma` | No | Lowest `SIGMA` in eV that `plan` accepts, default `0.05`; lower it only for a smearing convergence series (D-018) |
 
 ## Rules
 

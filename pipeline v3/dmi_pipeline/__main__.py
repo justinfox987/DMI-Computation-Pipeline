@@ -17,7 +17,7 @@ def plan_lines(summary) -> list[str]:
              f"{ops['total']} operations, "
              f"{ops['total'] - ops['dropped']} kept, {ops['dropped']} dropped",
              f"p_D {summary['p_D']}  p_A {summary['p_A']}  n_twist {summary['n_twist']}",
-             f"ENCUT {tags['ENCUT']}  ENINI {tags['ENINI']}",
+             f"ENCUT {tags['ENCUT']}  ENINI {tags['ENINI']}  ISMEAR {tags['ISMEAR']}  SIGMA {tags['SIGMA']}",
              f"directions (q_frac)  sigma_D {summary['sigma_D']:.3f}  sigma_A {summary['sigma_A']:.3f}"]
     lines += [f"  d{i}  " + " ".join(f"{x:g}" for x in d) for i, d in enumerate(summary["directions"], 1)]
     lines.append(f"{len(summary['points'])} runs including q0")

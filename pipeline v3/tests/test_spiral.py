@@ -40,7 +40,7 @@ def test_seed_and_plan(tmp_path, capsys):
     assert main(["plan", str(path)]) == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "space group 161 (R3c) at symprec 0.001: 6 operations, 6 kept, 0 dropped"
-    assert lines[2] == "ENCUT 600  ENINI 500"
+    assert lines[2] == "ENCUT 600  ENINI 500  ISMEAR 0  SIGMA 0.05"
 
     # Section 8.2: the threefold relates BFO's three axes, so A has rank 1 of 2.
     def with_directions(rows):
@@ -100,6 +100,11 @@ def test_prepare_writes_paired_f0_inputs(tmp_path):
     rejected("Unreviewed INCAR tags", INCAR + "LSORBT = F\n")
     rejected("RWIGS", INCAR.replace("RWIGS = 1.6 1.2 0.8", "RWIGS = 1.6 1.6 1.2 1.2 .8 .8 .8 .8 .8 .8"))
     rejected("needs ENINI", INCAR.replace("ENINI = 500\n", ""))
+    rejected("needs SIGMA", INCAR.replace("SIGMA = 0.05\n", ""))
+    rejected("ISMEAR = -5 is not variational", INCAR.replace("ISMEAR = 0", "ISMEAR = -5"))
+    rejected("SIGMA = 0.02 eV is below 0.05", INCAR.replace("SIGMA = 0.05", "SIGMA = 0.02"))
+    series = material(tmp_path, SEED + "min_sigma = 0.01\n", INCAR.replace("SIGMA = 0.05", "SIGMA = 0.02"))
+    assert spiral.plan(spiral.load_seed(series))["incar"]["SIGMA"] == "0.02"
     rejected("POTCAR elements", potcar=" VRHFIN =Fe:\n VRHFIN =Bi:\n VRHFIN =O:\n")
     rejected("must not cd", job=JOB + "cd scratch && srun vasp_ncl\n")
     rejected("already sets --array", job=JOB.replace("#SBATCH -N 1", "#SBATCH --array=1-4"))
