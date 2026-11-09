@@ -1,84 +1,19 @@
 """First-order SOC trace (math Section 4).
 
 Production uses the trace vector of Eq (4.8): the run's COCC from dump_P and
-the material's z-axis CSO from dump_C. The CPROJ contraction and its copied v2
-loops stay as the independent reference route, and M1 compares the two inputs.
+the material's z-axis CSO from dump_C. The CPROJ contraction of Eq (4.7) is the
+test oracle (tests/fixtures.py), and M1 compares the two inputs.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 from . import conventions, manifest
 from .dumpio import CprojData, MatrixDump, Occupations, load_cocc, load_cso
 from .realized import poscar
-
-
-@dataclass(frozen=True)
-class TraceResult:
-    """One raw per-configuration Patch B trace; pairing occurs elsewhere."""
-
-    delta_E1: float
-    imag_total: float
-    imag_per_ion: dict[int, float]
-    per_ion: dict[int, float]
-    sigma_eV: float | None = None
-    provenance: dict[str, Any] | None = None
-    per_k: np.ndarray | None = None
-    axis: str = "z"
-
-
-def _assert_trace_inputs(cproj: CprojData, ferwe: Occupations, cso: MatrixDump) -> None:
-    """Reject data outside the unambiguous Patch B noncollinear trace contract."""
-
-    header = cproj.header
-    assert_state_inputs(cproj, ferwe)
-    if header.ispin != 1:
-        raise ValueError(
-            f"Patch B trace requires ISPIN=1 with spinors in CPROJ, got ISPIN={header.ispin}"
-        )
-    if header.nrspinors != 2:
-        raise ValueError(f"Patch B trace requires NRSPINORS=2, got {header.nrspinors}")
-    if header.ncdij <= max(int(conventions.UU_IDX), int(conventions.DD_IDX)):
-        raise ValueError(
-            f"CSO/CPROJ NCDIJ={header.ncdij} does not contain UU/DD blocks "
-            f"{conventions.UU_IDX}/{conventions.DD_IDX}"
-        )
-    if ferwe.metadata.nkpts != header.nkpts_global:
-        raise ValueError(
-            f"FERWE NKPTS={ferwe.metadata.nkpts} disagrees with CPROJ NKPTS={header.nkpts_global}"
-        )
-    if ferwe.metadata.nbands != header.nbands_global:
-        raise ValueError(
-            f"FERWE NBANDS={ferwe.metadata.nbands} disagrees with CPROJ NBANDS={header.nbands_global}"
-        )
-    if ferwe.metadata.ispin != header.ispin:
-        raise ValueError(f"FERWE ISPIN={ferwe.metadata.ispin} disagrees with CPROJ ISPIN={header.ispin}")
-    if cso.metadata.nions != header.nions or cso.metadata.lmdim != header.lmdim:
-        raise ValueError(
-            "CSO dimensions disagree with CPROJ: "
-            f"CSO NIONS/LMDIM={cso.metadata.nions}/{cso.metadata.lmdim}, "
-            f"CPROJ NIONS/LMDIM={header.nions}/{header.lmdim}"
-        )
-    if cso.metadata.ncdij != header.ncdij:
-        raise ValueError(f"CSO NCDIJ={cso.metadata.ncdij} disagrees with CPROJ NCDIJ={header.ncdij}")
-    if ferwe.metadata.nelect is None or not np.isclose(ferwe.metadata.nelect, header.nelect, atol=1.0e-6, rtol=0.0):
-        raise ValueError(f"FERWE NELECT={ferwe.metadata.nelect} disagrees with CPROJ NELECT={header.nelect}")
-    if cso.metadata.nelect is not None and not np.isclose(cso.metadata.nelect, header.nelect, atol=1.0e-6, rtol=0.0):
-        raise ValueError(f"CSO NELECT={cso.metadata.nelect} disagrees with CPROJ NELECT={header.nelect}")
-    if ferwe.occupations.shape != (1, header.nkpts_global, header.nbands_global):
-        raise ValueError(
-            f"FERWE occupations have shape {ferwe.occupations.shape}, expected "
-            f"{(1, header.nkpts_global, header.nbands_global)}"
-        )
-    if ferwe.weights.shape != (header.nkpts_global,):
-        raise ValueError(
-            f"FERWE weights have shape {ferwe.weights.shape}, expected {(header.nkpts_global,)}"
-        )
 
 
 def assert_state_inputs(cproj: CprojData, ferwe: Occupations) -> None:
@@ -99,76 +34,6 @@ def assert_state_inputs(cproj: CprojData, ferwe: Occupations) -> None:
             raise ValueError(f"FERWE {name} disagree with CPROJ from the same capture")
     if not np.all(np.isfinite(cproj.c)):
         raise ValueError("Non-finite CPROJ coefficients")
-
-
-def compute_delta_E1(cproj: CprojData, ferwe: Occupations, cso: MatrixDump) -> TraceResult:
-    """Diagonal-block contraction, retaining real and imaginary decompositions."""
-    _assert_trace_inputs(cproj, ferwe, cso)
-    if not np.all(np.isfinite(cso.matrix)):
-        raise ValueError("Non-finite CSO matrix")
-    weights = ferwe.weights[:, None] * ferwe.occupations[0]
-    by_ion_k = np.zeros((cproj.header.nions, cproj.header.nkpts_global), complex)
-    for ion, lmmax in enumerate(cproj.header.lmmax_ion):
-        for spin, block in ((0, conventions.UU_IDX), (1, conventions.DD_IDX)):
-            c = cproj.c[0, :, ion, spin, :lmmax, :]
-            by_ion_k[ion] += np.einsum(
-                "kib,ij,kjb,kb->k", c.conj(), cso.matrix[block, ion, :lmmax, :lmmax],
-                c, weights, optimize=True,
-            )
-    ion_totals = by_ion_k.sum(axis=1)
-    total = ion_totals.sum()
-    return TraceResult(float(total.real), float(total.imag),
-                       dict(enumerate(ion_totals.imag.tolist())),
-                       dict(enumerate(ion_totals.real.tolist())),
-                       per_k=by_ion_k.sum(axis=0))
-
-
-def compute_delta_E1_reference(cproj: CprojData, ferwe: Occupations, cso: MatrixDump) -> TraceResult:
-    """Contract Patch B CPROJ, FERWE, and diagonal CSO blocks exactly.
-
-    Only the spin-diagonal ``uu`` and ``dd`` blocks contribute.  The explicit
-    loops are intentional: they expose the writer-aligned indices and preserve
-    per-ion/per-k accumulators needed by trace diagnostics.
-    """
-
-    _assert_trace_inputs(cproj, ferwe, cso)
-    header = cproj.header
-    total = np.complex128(0.0)
-    per_k = np.zeros(header.nkpts_global, dtype=np.complex128)
-    imag_per_ion: dict[int, float] = {}
-    per_ion: dict[int, float] = {}
-    spin_blocks = ((0, int(conventions.UU_IDX)), (1, int(conventions.DD_IDX)))
-
-    for ion in range(header.nions):
-        lmmax = header.lmmax_ion[ion]
-        trace_ion = np.complex128(0.0)
-        for kpoint in range(header.nkpts_global):
-            trace_k_ion = np.complex128(0.0)
-            for band in range(header.nbands_global):
-                weight = np.float64(ferwe.weights[kpoint] * ferwe.occupations[0, kpoint, band])
-                if weight == 0.0:
-                    continue
-                for spinor, matrix_block in spin_blocks:
-                    contribution = np.complex128(0.0)
-                    for bra_lm in range(lmmax):
-                        bra = np.conj(cproj.c[0, kpoint, ion, spinor, bra_lm, band])
-                        for ket_lm in range(lmmax):
-                            ket = cproj.c[0, kpoint, ion, spinor, ket_lm, band]
-                            contribution += bra * cso.matrix[matrix_block, ion, bra_lm, ket_lm] * ket
-                    trace_k_ion += contribution * weight
-            trace_ion += trace_k_ion
-            per_k[kpoint] += trace_k_ion
-        imag_per_ion[ion] = float(trace_ion.imag)
-        per_ion[ion] = float(trace_ion.real)
-        total += trace_ion
-
-    return TraceResult(
-        delta_E1=float(total.real),
-        imag_total=float(total.imag),
-        imag_per_ion=imag_per_ion,
-        per_ion=per_ion,
-        per_k=per_k,
-    )
 
 
 def split_operator(cso: MatrixDump) -> np.ndarray:

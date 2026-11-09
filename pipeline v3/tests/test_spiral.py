@@ -164,6 +164,10 @@ def test_readback(tmp_path, capsys):
     finish(out / names[7], twist_deg=4.0)            # delta = +-2 deg with n_twist = 0
     finish(out / names[8], scale=1.1)                # M 10% above q0
     finish(out / names[9], mz=0.1)
+    oszicar = out / names[10] / "OSZICAR"                 # a penalty run must not enter E
+    text = oszicar.read_text()
+    cut = text.rindex("lambda = 0.0E+00")
+    oszicar.write_text(text[:cut] + "lambda = 1.0E+00" + text[cut + len("lambda = 0.0E+00"):])
     capsys.readouterr()
     assert main(["collect", str(out)]) == 1
     report = dict(line.split(None, 1) for line in capsys.readouterr().out.splitlines())
@@ -173,6 +177,7 @@ def test_readback(tmp_path, capsys):
     assert report[names[6]] == "missing" and report[names[0]] == "ok"
     assert "|delta| = 2.00 deg >= 1.0 with n_twist = 0" in report[names[7]]
     assert "|M_a / M_a(q0) - 1| = 0.100" in report[names[8]] and "|M_z|" in report[names[9]]
+    assert "Printed final lambda is 1.0, not 0" in report[names[10]]
 
 
 def test_dumps_provenance_and_trace(tmp_path, capsys):

@@ -54,13 +54,6 @@ ITERATION = re.compile(r"Iteration\s+(\d+)\(\s*(\d+)\)")
 BANNER = re.compile(r"^[ \t]*vasp\.\S+", re.I | re.M)
 
 
-def printed_step(token):
-    """Unit of the last printed decimal place, including Fortran exponents."""
-    mantissa, *exponent = re.split(r"[EeDd]", token)
-    decimals = len(mantissa.split(".")[1]) if "." in mantissa else 0
-    return 10.0 ** (int(exponent[0]) - decimals if exponent else -decimals)
-
-
 
 def sphere(path, nions):
     """Parse terminal OSZICAR ionic record; segment convergence is checked by check_run.
@@ -75,7 +68,7 @@ def sphere(path, nions):
     if any(re.match(r"^\s*ion\s+MW_int\b", line, re.I) and i not in headers for i, line in enumerate(lines)):
         raise ValueError("Malformed OSZICAR sphere header")
     start = headers[-1]
-    mw, m, mw_step, seen = [], [], [], set()
+    m, seen = [], set()
     end = start + 1
     for i in range(start + 1, len(lines)):
         parts = lines[i].split()
@@ -94,9 +87,7 @@ def sphere(path, nions):
             raise ValueError("Invalid OSZICAR sphere number") from error
         if not np.all(np.isfinite(values)):
             raise ValueError("Nonfinite OSZICAR sphere moment")
-        mw.append(values[:3].tolist())
-        mw_step.append([printed_step(x) for x in parts[1:4]])
-        m.append(values[3:].tolist())
+        m.append(values[3:].tolist())       # M_int; MW_int (values[:3]) is not used
         end = i + 1
     if len(seen) != nions:
         raise ValueError("Terminal OSZICAR sphere block ion count mismatch")
@@ -113,21 +104,18 @@ def sphere(path, nions):
         raise ValueError("Terminal OSZICAR record needs one printed E_p and lambda")
     p, match = penalties[0]
     ep, lam = (float(x.replace("D", "E").replace("d", "e")) for x in match.groups())
-    ep_step, lam_step = (printed_step(x) for x in match.groups())
     if not np.all(np.isfinite([ep, lam])) or lam < 0 or ep < 0:
         raise ValueError("Invalid OSZICAR penalty or lambda")
-    field, field_step = None, None
     field_headers = [i for i in range(p + 1, len(lines)) if re.match(r"^\s*ion\s+lambda\*MW_perp\s*$", lines[i], re.I)]
     if len(field_headers) > 1:
         raise ValueError("Ambiguous terminal OSZICAR field blocks")
     if field_headers:
-        field, field_step = [], []
+        field = []
         for ion in range(nions):
             row = lines[field_headers[0] + 1 + ion].split() if field_headers[0] + 1 + ion < len(lines) else []
             if len(row) != 4 or row[0] != str(ion + 1):
                 raise ValueError("Incomplete/duplicate terminal OSZICAR field")
             field.append([float(x.replace("D", "E").replace("d", "e")) for x in row[1:]])
-            field_step.append([printed_step(x) for x in row[1:]])
         if not np.all(np.isfinite(field)):
             raise ValueError("Nonfinite OSZICAR field")
     # A preceding complete ionic step is allowed; no later electronic work is.
@@ -166,17 +154,12 @@ def sphere(path, nions):
     steps = [int(SUMMARY.match(lines[i]).group(1)) for i in previous + [f]]
     if steps != list(range(1, steps[-1] + 1)):
         raise ValueError("OSZICAR ionic summaries contain a restart or missing step")
-    return {"MW_int": mw, "M_int": m, "MW_norm": np.linalg.norm(mw, axis=1).tolist(),
-            "M_norm": np.linalg.norm(m, axis=1).tolist(), "E_p_eV": ep, "lambda": lam,
-            "printed_field": field, "precision": {"MW_int": mw_step, "E_p_eV": ep_step,
-            "lambda": lam_step, "printed_field": field_step},
-            "source": "OSZICAR", "ionic_step": steps[-1], "ionic_steps": steps,
-            "electronic_step": electronic[-1],
-            "lines": [start + 1, max(p + 1, (field_headers[0] + 1 + nions) if field_headers else p + 1)]}
+    return {"M_int": m, "lambda": lam, "ionic_step": steps[-1], "ionic_steps": steps,
+            "electronic_step": electronic[-1]}
 
 
 def check_run(directory, nions) -> dict:
-    """Check one converged OUTCAR segment against the terminal OSZICAR sphere."""
+    """Check one converged OUTCAR segment against the terminal OSZICAR sphere; return the sphere record."""
     directory = Path(directory)
     outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
     # Count actual run banners, not compatibility prose mentioning vasp.4.x.
@@ -202,8 +185,7 @@ def check_run(directory, nions) -> dict:
     if (result["ionic_steps"] != outcar_steps or
             (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
         raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
-    return {"sphere": result, "outcar": {"final_step": [ionic, electronic],
-            "build_banner": outcar.splitlines()[0].strip(), "ionic_steps": outcar_steps}}
+    return result
 
 
 
@@ -515,8 +497,7 @@ def read_run(run):
     for key, value in config["tags"].items():
         if key not in tags or not _same(key, tags[key], value):
             raise ValueError(f"Run INCAR {key} differs from config.json")
-    checked = check_run(run, len(poscar(run / "POSCAR")[1]))
-    state = checked["sphere"]
+    state = check_run(run, len(poscar(run / "POSCAR")[1]))
     if state["lambda"] != 0:
         raise ValueError(f"Printed final lambda is {state['lambda']}, not 0")
     energies = TOTEN.findall((run / "OUTCAR").read_text(encoding="utf-8", errors="replace"))
@@ -564,7 +545,7 @@ def collect(out):
     out = Path(out)
     twist_free = manifest.load(out / "plan.json")["n_twist"] == 0
     results = {}
-    for name in (out / "runs.txt").read_text(encoding="utf-8").split():   # q0 first
+    for name in run_names(out):   # q0 first
         if not (out / name / "OUTCAR").exists():
             results[name] = {"error": "missing"}
             continue
@@ -579,6 +560,11 @@ def collect(out):
             results[name] = {"error": error}
     manifest.save(results, out / "collected.json")
     return results
+
+
+def run_names(out):
+    """Run directory names in submit order, q0 first (runs.txt written by prepare)."""
+    return (Path(out) / "runs.txt").read_text(encoding="utf-8").split()
 
 
 def unchanged(directory, sha256, since):
@@ -617,7 +603,7 @@ def prepare_dumps(out, job):
     out = Path(out)
     job_parts = read_job(job)
     collected = manifest.load(out / "collected.json")
-    names = (out / "runs.txt").read_text(encoding="utf-8").split()
+    names = run_names(out)
     if "error" in collected.get("q0", {"error": "missing"}):
         raise ValueError("q0 is not ok in collected.json; the CSO dumps need its CHGCAR")
     q0_tags = incar(out / "q0" / "INCAR")

@@ -36,8 +36,8 @@ stability. Results are harmonic and first order in SOC; the
 
 Each material is one folder under `materials/` with a POSCAR and a `seed.toml`
 ([format](docs/seed_file.md)). The commands are `plan` and `prepare`, which
-take the seed path, and `collect`, which takes the run directory. `fit` comes in
-TEN-05.
+take the seed path, then `collect`, `dumps`, `trace` and `fit`, which take the run
+directory. Run them as `python -m dmi_pipeline <command>`; none submits a job.
 
 ## Where to look
 
