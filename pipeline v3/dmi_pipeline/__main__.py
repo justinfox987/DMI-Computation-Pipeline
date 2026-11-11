@@ -22,19 +22,20 @@ COMMANDS = {
 
 def plan_lines(summary) -> list[str]:
     """Plan report; the space-group line comes first (D-017)."""
-    ops, tags = summary["ops"], summary["incar"]
+    ops, tags, ranks = summary["ops"], summary["incar"], summary["ranks"]
     lines = [f"space group {ops['number']} ({ops['symbol']}) at symprec {summary['symprec']:g}: "
              f"{ops['total']} operations, "
              f"{ops['total'] - ops['dropped']} kept, {ops['dropped']} dropped",
-             f"p_D {summary['p_D']}  p_A {summary['p_A']}  n_twist {summary['n_twist']}",
-             f"ENCUT {tags['ENCUT']}  ENINI {tags['ENINI']}  ISMEAR {tags['ISMEAR']}  SIGMA {tags['SIGMA']}",
-             f"directions (q_frac)  sigma_D {summary['sigma_D']:.3f}  sigma_A {summary['sigma_A']:.3f}"]
+             f"p_D {summary['p_D']}  p_A {summary['p_A']}  n_twist {summary['n_twist']}"]
+    shown = [f"{key} {tags[key]}" for key in ("ENCUT", "ENINI", "ISMEAR", "SIGMA") if key in tags]
+    if shown:
+        lines.append("  ".join(shown))
+    lines += summary["overrides"]
+    lines.append(f"directions (q_frac)  rank D {ranks['D']:.3f}  A {ranks['A']:.3f}  D_free {ranks['D_free']:.3f}")
     lines += [f"  d{i}  " + " ".join(f"{x:g}" for x in d) for i, d in enumerate(summary["directions"], 1)]
+    if ranks["D_free"] < spiral.RANK_FLOOR:
+        lines.append("D_free is not determined: the forbidden part will not be evaluated")
     lines.append(f"{len(summary['points'])} runs including q0")
-    if summary["classes"] is not None:
-        lines.append(f"exchange classes: {summary['classes']}")
-    if summary["unseen_tags"]:
-        lines.append(f"WARNING: INCAR tags not seen before, kept as given (D-019): {', '.join(summary['unseen_tags'])}")
     return lines
 
 

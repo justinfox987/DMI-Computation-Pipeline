@@ -35,7 +35,7 @@ stability. Results are harmonic and first order in SOC; the
 Each material is one folder under `materials/` with a POSCAR and a `seed.toml`
 ([format](docs/seed_file.md)). The commands are `plan` and `prepare`, which
 take the seed path, then `collect`, `dumps` and `fit`, which take the run
-directory. `dumps` writes one CSO dump per material, and `fit` traces every run
+directory. Before any dump, `fit` gives $A$ from the energies alone. `dumps` writes one CSO dump per material, and `fit` traces every run
 from the dump files each time it runs. Run them as `python -m dmi_pipeline <command>`; none submits a job.
 
 ## Where to look

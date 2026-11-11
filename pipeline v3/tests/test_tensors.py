@@ -45,68 +45,74 @@ MODELS = {  # structure, magnetic sites, signs, seed bonds (r in Å, d and J in 
 
 
 def model_fit(name, t, noise=0.0, rng=None):
+    """Spin-model pairs along the default directions, fitted by tensors.fit_pairs."""
     structure, sites, signs, seeds = MODELS[name]
     ops = symmetry.operations(*structure, sites, signs)
     d_basis, a_basis = symmetry.spiralization_basis(ops["rotations"]), symmetry.stiffness_basis(ops["rotations"])
     big_d, big_a, per_cell = spin_model(ops["rotations"], seeds, len(sites))
     lattice, species = structure[0], structure[1]
-    directions = spiral.choose_directions(lattice, a_basis)
-    s = spiral.unit_directions(lattice, directions)
+    s = spiral.unit_directions(lattice, spiral.choose_directions(lattice, d_basis, a_basis))
     share = np.linspace(1, 2, len(species)) / np.linspace(1, 2, len(species)).sum()   # T split over ions
-    data = []
-    for s_i in s:
-        rows = []
+    pairs = []
+    for i, s_i in enumerate(s):
         for t_j in t:
             (t_plus, e_plus), (t_minus, e_minus) = per_cell(t_j * s_i), per_cell(-t_j * s_i)
             if noise:
                 t_plus, t_minus = t_plus + rng.normal(0, noise, 3), t_minus + rng.normal(0, noise, 3)
                 e_plus, e_minus = e_plus + rng.normal(0, noise), e_minus + rng.normal(0, noise)
-            y, g = tensors.pair_observables(t_plus, t_minus, e_plus, e_minus, 0.0, len(sites))
-            rows.append((y, g, share[:, None] * (t_plus - t_minus) / len(sites)))
-        data.append({"t": np.asarray(t), "y": np.array([r[0] for r in rows]),
-                     "g": np.array([r[1] for r in rows]), "y_ion": np.array([r[2] for r in rows])})
-    slopes = tensors.fit_directions(data)
-    part = tensors.spiralization(s, slopes["v"], slopes["cov_v"], d_basis)
-    stiff = tensors.stiffness(s, slopes["kappa"], slopes["cov_kappa"], a_basis)
-    return (big_d, big_a, slopes, part, stiff, tensors.by_species(slopes, data, species, part["linear"]),
-            s, d_basis)
+            pairs.append({"i": i, "t": t_j, "E_plus": e_plus, "E_minus": e_minus, "T_plus": t_plus,
+                          "T_minus": t_minus, "per_ion": share[:, None] * (t_plus - t_minus)})
+    fit = lambda p: tensors.fit_pairs(s, p, len(sites), 0.0, d_basis, a_basis, species)   # noqa: E731
+    return big_d, big_a, fit(pairs), fit, pairs, s
 
 
 def test_fits_recover_spin_model_tensors():
-    """Gate 1: Eq (6.3) tensors come back through Eqs (1.3), (1.4) and Section 9."""
+    """Gate 1: Eq (6.3) tensors come back through Eqs (1.3), (1.4) and the single solves of Section 9.4."""
+    def forbidden(r):
+        return gate_forbidden(r["F"]["tensor"], np.sqrt(np.diag(r["F"]["cov"])).reshape(3, 3), r["D_free"]["tensor"])
     for name in MODELS:
-        big_d, big_a, slopes, part, stiff, species, s, d_basis = model_fit(name, [0.005, 0.01, 0.015])
+        big_d, big_a, r, fit, pairs, s = model_fit(name, [0.005, 0.01, 0.015])
         assert np.abs(big_d).max() > 1e-5 and np.abs(big_a).max() > 1e-3
-        assert part["D_free"] == pytest.approx(big_d, abs=1e-6 * np.abs(big_d).max())
-        assert part["D"] == pytest.approx(big_d, abs=1e-6 * np.abs(big_d).max())
-        assert stiff["A"] == pytest.approx(big_a, abs=1e-6 * np.abs(big_a).max())
-        assert np.abs(part["F"]).max() < 1e-6 * np.abs(big_d).max()
-        assert sum(v["D"] for v in species.values()) == pytest.approx(part["D"], abs=1e-15)
-        assert sum(v["D_free"] for v in species.values()) == pytest.approx(part["D_free"], abs=1e-15)
-        assert gate_forbidden(part["F"], np.sqrt(np.diag(part["cov_F"])).reshape(3, 3), part["D_free"]).passed
+        for tensor, exact in ((r["D_free"], big_d), (r["D"], big_d), (r["A"], big_a)):
+            assert tensor["tensor"] == pytest.approx(exact, abs=1e-6 * np.abs(exact).max())
+        # Noise-free pairs give sigma = 0, so the Forbidden check would see the t^5 truncation
+        # (about 1e-7 |D| here); it is tested on the noisy model below.
+        assert np.abs(r["F"]["tensor"]).max() < 1e-6 * np.abs(big_d).max()
+        for key in ("D", "D_free"):
+            assert sum(v[key] for v in r["by_species"].values()) == pytest.approx(r[key]["tensor"], abs=1e-15)
 
-    # Noise-free BFO (3m) with a forbidden 1e-3 |D| component added to D_free: the check must fail.
+    # Noise-free BFO (3m) with a forbidden 1e-3 |D| component added to y: the check must fail.
     # diag(1, 0, 0) has no projection on the 3m form D [z]x, so all of it is forbidden.
     extra = 1e-3 * np.abs(big_d).max() * np.diag([1.0, 0, 0])
-    tainted = tensors.spiralization(s, slopes["v"] + 2 * s @ extra.T, slopes["cov_v"], d_basis)
-    assert tainted["F"] == pytest.approx(extra, abs=1e-6 * np.abs(big_d).max())
-    assert not gate_forbidden(tainted["F"], np.sqrt(np.diag(tainted["cov_F"])).reshape(3, 3),
-                              tainted["D_free"]).passed
+    # Odd in q like a real term, so the parity residuals stay zero: y += 2 t F s with N_m = 2.
+    tainted = [dict(p, T_plus=p["T_plus"] + 2 * p["t"] * extra @ s[p["i"]],
+                    T_minus=p["T_minus"] - 2 * p["t"] * extra @ s[p["i"]]) for p in pairs]
+    bad = fit(tainted)
+    assert bad["F"]["tensor"] == pytest.approx(extra, abs=1e-6 * np.abs(big_d).max()) and not forbidden(bad).passed
 
-    # Real magnitudes with noise of known sigma: pooled sigma2 and coverage (Eq 9.9).
+    # Real magnitudes with noise of known sigma: the parity residuals measure it (Eq 9.9), the
+    # covariances cover the truth, and the forbidden part is within 3 sigma.
     noise, n_m = 2e-6, 2
-    big_d, big_a, slopes, part, stiff, *_ = model_fit("BFO", [0.03, 0.06, 0.09], noise, np.random.default_rng(5))
-    # 9 degrees of freedom for y, so the factor-two band depends on the fixed seed. g has
-    # only 3 (one per direction), too few for a band; its sigma is checked by A's coverage.
-    assert 0.5 < slopes["sigma2"]["y"] / (2 * noise ** 2 / n_m ** 2) < 2
-    sigma_d = np.sqrt(np.diag(part["cov_D"])).reshape(3, 3)
-    assert np.all(np.abs(part["D"] - big_d) <= 3 * sigma_d + 1e-12)
-    sigma_a = np.sqrt(np.diag(stiff["cov_A"])).reshape(3, 3)
-    assert np.all(np.abs(stiff["A"] - big_a) <= 3 * sigma_a + 1e-12)
+    big_d, big_a, r, *_ = model_fit("BFO", [0.03, 0.06, 0.09], noise, np.random.default_rng(5))
+    assert r["noise"]["n_y"] == 27 and 0.5 < r["noise"]["sigma_y"] / (np.sqrt(2) * noise / n_m) < 2
+    for tensor, exact in ((r["D"], big_d), (r["A"], big_a)):
+        assert np.all(np.abs(tensor["tensor"] - exact) <= 3 * np.sqrt(np.diag(tensor["cov"])).reshape(3, 3) + 1e-12)
+    assert forbidden(r).passed
+    # Calibration of Eq (9.9): over repeated noise draws the spread of D and A matches the reported sigma.
+    _, _, _, fit, exact, _ = model_fit("BFO", [0.03, 0.06, 0.09])
+    rng, draws = np.random.default_rng(7), []
+    for _ in range(40):
+        noisy = [dict(p, T_plus=p["T_plus"] + rng.normal(0, noise, 3), T_minus=p["T_minus"] + rng.normal(0, noise, 3),
+                      E_plus=p["E_plus"] + rng.normal(0, noise), E_minus=p["E_minus"] + rng.normal(0, noise)) for p in exact]
+        result = fit(noisy)
+        draws.append([result["D"]["coef"][0], result["A"]["coef"][0], np.sqrt(result["D"]["cov_coef"][0, 0]),
+                      np.sqrt(result["A"]["cov_coef"][0, 0])])
+    draws = np.array(draws)
+    assert 0.6 < draws[:, 0].std() / draws[:, 2].mean() < 1.6 and 0.6 < draws[:, 1].std() / draws[:, 3].mean() < 1.6
 
 
 def test_predictions():
-    """Section 10.1's three cases and the uncertainty flags."""
+    """Section 10.1's three cases and the propagated pitch uncertainty."""
     d0, a0 = 2e-3, 0.05
     scalar = tensors.predict(d0 * np.eye(3), a0 * np.eye(3))
     assert scalar["pitch_A"] == pytest.approx(4 * np.pi * a0 / d0) and scalar["e_star"] == pytest.approx(-d0 ** 2 / (4 * a0))
@@ -131,11 +137,6 @@ def test_predictions():
     d_coeff, a_coeff = np.array([d0 * np.sqrt(2)]), np.array([a0 * np.sqrt(2), 3 * a0])
     small = tensors.prediction_uncertainty(d_coeff, np.diag([(0.05 * d_coeff[0]) ** 2]), basis,
                                            a_coeff, np.diag((0.01 * a_coeff) ** 2), a_basis)
-    large = tensors.prediction_uncertainty(d_coeff, np.diag([(0.5 * d_coeff[0]) ** 2]), basis,
-                                           a_coeff, np.diag((0.01 * a_coeff) ** 2), a_basis)
-    gamma = tensors.predict(d0 * z_cross, np.diag([a0, a0, 3 * a0]))["gamma_max"]
-    assert small["gamma_max"] / gamma < tensors.POOR_PITCH < large["gamma_max"] / gamma
-    assert not small["poorly_determined"] and large["poorly_determined"]
     # pitch = 4 pi A_perp / |D|: 5% on D and 1% on A_perp add in quadrature.
     assert small["pitch_A"] == pytest.approx(np.hypot(0.05, 0.01) * 4 * np.pi * a0 / d0, rel=1e-6)
 
@@ -150,7 +151,9 @@ def test_command_chain(tmp_path, capsys):
     OUTCAR energies and COCC traces reproduce Eq (6.2), so fit must return the Eq (6.3)
     tensors; fit reads only these files (D-021).
     """
-    path, out, job = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.005, 0.01, 0.015")), tmp_path / "runs", tmp_path / "job.sh"
+    # Small t keeps the t^5 truncation in F below the Forbidden check's roundoff floor: these
+    # pairs are noise-free, so sigma_y = 0.
+    path, out, job = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.001, 0.002, 0.003")), tmp_path / "runs", tmp_path / "job.sh"
     assert main(["prepare", str(path), "--job", str(job), "--out", str(out)]) == 0
     structure, sites, signs, seeds = MODELS["BFO"]
     big_d, big_a, per_cell = spin_model(symmetry.operations(*structure, sites, signs)["rotations"], seeds, 2)
@@ -201,7 +204,7 @@ def test_command_chain(tmp_path, capsys):
     assert np.allclose(report["micromagnetic"]["A_pJ_per_m"], 1e3 * big_a / volume * 1.602, rtol=1e-6, atol=1e-12)
     assert np.allclose(report["D_by_species"]["Fe"]["D"], report["D"]["value"], atol=1e-12)
     assert report["sign"] == "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"
-    assert report["D_sw"]["value"] is None
+    assert report["D_sw"]["value"] is None and report["noise"]["sigma_y"] == 0 and report["noise"]["n_g"] == 9
     assert report["prediction"]["pitch_nm"] > 0 and report["prediction"]["degeneracy"] == 2
     traces = manifest.load(out / "traces.json")
     assert traces["passed"] and traces["checks"]["C0"]["passed"] and traces["checks"]["N0"]["passed"]
@@ -222,8 +225,33 @@ def test_command_chain(tmp_path, capsys):
     # Exchanged flip blocks keep C0's Hermiticity but reverse the handedness (Section 4.2).
     write_cso(out / "dump_C" / "CSO.dat", cso[[0, 2, 1, 3]])
     refused("C0  FAIL", "handedness h >= 0", "fit refused: failed C0")
+    assert manifest.load(out / "tensors.json") == {"passed": False, "failures": ["C0"]}   # no stale result
     write_cso(out / "dump_C" / "CSO.dat", cso)
-    # A run that collect rejects leaves d1 with 2 complete pairs, too few for the rank conditions.
+    # A run that collect rejects leaves d1 with 2 complete pairs; the single solve still uses them.
     finish(out / "d1_t2_plus", energy=-50.0 + cells["d1_t2_plus"][1], reversed_site=True)
-    capsys.readouterr()
-    assert main(["fit", str(out)]) == 1 and "fail the Section 8.2 rank conditions" in capsys.readouterr().err
+    assert main(["fit", str(out)]) == 0
+    report = manifest.load(out / "tensors.json")
+    assert report["directions"][0]["t"] == [0.001, 0.003]
+    assert np.allclose(report["D"]["value"], 1e3 * big_d, atol=1e-6 * 1e3 * np.abs(big_d).max())
+
+
+def test_energies_only_tree(tmp_path, capsys):
+    """Item 2.10: FeGe (p_A = 1) from one explicit direction and no dumps gives A and D_sw;
+    D_free is not determined, and every trace quantity is not evaluated."""
+    structure, sites, signs, seeds = MODELS["FeGe"]
+    big_d, big_a, per_cell = spin_model(symmetry.operations(*structure, sites, signs)["rotations"], seeds, 4)
+    seed = "sites = [1, 2, 3, 4]\nsigns = [1, 1, 1, 1]\nmoments = [1.0, 1.0, 1.0, 1.0]\nt = [0.005, 0.01, 0.015]\n" \
+           "directions = [[1, 0, 0]]\n"
+    path, out = material(tmp_path, seed, "ISMEAR = 0\nSIGMA = 0.05\n", structure), tmp_path / "runs"
+    assert main(["prepare", str(path), "--job", str(tmp_path / "job.sh"), "--out", str(out)]) == 0
+    assert "D_free is not determined: the forbidden part will not be evaluated" in capsys.readouterr().out
+    for name in spiral.run_names(out):
+        q = spiral.cartesian(structure[0], manifest.load(out / name / "config.json")["q_frac"])[0]
+        finish(out / name, energy=-50.0 + per_cell(q)[1])
+    assert main(["fit", str(out)]) == 0
+    report = manifest.load(out / "tensors.json")
+    assert np.allclose(report["A"]["value"], 1e3 * big_a, atol=1e-6 * 1e3 * np.abs(big_a).max())
+    assert report["D_sw"]["value"] == pytest.approx(4 * np.asarray(report["A"]["value"]) / 3.9)
+    assert report["D"].startswith("not evaluated") and report["noise"]["n_g"] == 3 and "sigma_y" not in report["noise"]
+    traces = manifest.load(out / "traces.json")
+    assert traces["checks"]["C0"]["passed"] is None and traces["checks"]["E0"]["d1_t1"]["passed"]

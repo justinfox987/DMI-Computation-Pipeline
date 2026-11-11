@@ -15,9 +15,9 @@ any result as physically validated on that basis.
 | Module | Implements |
 | --- | --- |
 | `symmetry.py` | Eqs. (7.1)–(7.3) kept operations; (7.6)–(7.7) bases; (7.9) twist count; (7.11) exchange classes (not yet used) |
-| `spiral.py` | Eq. (3.1) targets; Section 3 inputs and readback; (3.2)–(3.3) phases; (8.1) and Section 8 $q$ plan |
+| `spiral.py` | Eq. (3.1) targets; Section 3 inputs and readback; (3.2)–(3.3) phases; (8.1) and Section 8 $q$ plan; the Section 9.4 design matrices and their rank value, shared by `plan` and `fit` |
 | `trace.py` | Eqs. (4.4), (4.8) orbital matrices and trace vector, with the file-array contraction of Section 4.4 and the COCC-newer-than-OUTCAR guard |
-| `tensors.py` | Eqs. (1.3), (1.4) observables; Section 9 fits; Section 10 predictions and units |
+| `tensors.py` | Eqs. (1.3), (1.4) observables; Section 9.4 single solves with parity noise (9.9); Section 10 predictions and units |
 | `gates.py` | Section 11 checks C0 (with the Section 4.2 handedness), N0, I0, P0, E0 and the forbidden part; the tree trace that `fit` runs |
 | `acceptance/m1.py` | Section 11 check M1, once per build, outside the package |
 | `anisotropy.py` (later) | Section 13; spec in `plans/anisotropy-1.md` |
@@ -29,7 +29,7 @@ any result as physically validated on that basis.
 - SCFs run at `LAMBDA = 0`. Never replace measured `M_int` with target directions.
 - `CSO.dat` and `COCC.dat` both store the ket index first. Contract them as VASP does, $\mathrm{Re}\sum\Lambda^{\rm file}\,\overline{(\mathrm{COCC}_{\uparrow\uparrow}-\mathrm{COCC}_{\downarrow\downarrow})}$. Dropping the conjugate reverses the sign of every trace, and no null test sees it.
 - Keep all four CSO blocks when reading: $\Lambda_x$ and $\Lambda_y$ live in the flip blocks. The split triple from the file must be left-handed ($h<0$) on every ion.
-- The design matrix of the fit must have full column rank. Three non-coplanar directions do not guarantee a determined $A$.
+- The design matrix of the fit must have full column rank: smallest singular value of the column-normalized design at least `RANK_FLOOR`. Three non-coplanar directions do not guarantee a determined $A$. When the directions do not determine $\mathcal D_{\rm free}$ (for example, fewer than three), $\mathcal D_{\rm free}$ and $\mathcal F$ are reported as not evaluated, never as a pass.
 - Noise comes from the parity residuals, Eq. (9.9), not from fit residuals.
 - Keep `M_int` and `MW_int` distinct; only `M_int` supplies directions here.
 - Match the OUTCAR energy line with flexible whitespace, for example `free\s+energy\s+TOTEN`, and take the last match.

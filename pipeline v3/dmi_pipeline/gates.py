@@ -132,24 +132,34 @@ def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
                       sigmas, "|F_ij| <= 3 sigma(F_ij) for every element")
 
 
+NOT_EVALUATED = "not evaluated: no dump_C, an energies-only tree"
+
+
 def check_tree(out, states) -> dict:
     """Trace every ok run from its files, then C0, N0, I0, P0 and E0 (Section 11).
 
-    states is spiral.read_runs(out), q0 first. Writes traces.json as a report;
-    no command reads it back (D-021).
+    states is spiral.read_runs(out), q0 first. A tree with no dump_C directory is
+    energies-only (item 2.10): only E0 applies and every trace check is not
+    evaluated. A dump_C that exists but fails is an error. Writes traces.json as
+    a report; no command reads it back (D-021).
     """
     out = Path(out)
     names = list(states)
+    traced = (out / "dump_C").is_dir()
     lines, failures, runs, energies = [], [], {}, {}
-    checks = {}
-    try:
-        cso = load_cso(out / "dump_C" / "CSO.dat")
-        checks["C0"] = gate_c0(cso).to_dict()
-    except (OSError, ValueError) as error:
-        cso, checks["C0"] = None, {"name": "C0", "passed": False, "detail": str(error)}
-    if not checks["C0"]["passed"]:
-        failures.append("C0")
-    lines.append(f"C0  {'pass' if checks['C0']['passed'] else 'FAIL: ' + checks['C0']['detail']}")
+    checks, cso = {}, None
+    if traced:
+        try:
+            cso = load_cso(out / "dump_C" / "CSO.dat")
+            checks["C0"] = gate_c0(cso).to_dict()
+        except (OSError, ValueError) as error:
+            checks["C0"] = {"name": "C0", "passed": False, "detail": str(error)}
+        if not checks["C0"]["passed"]:
+            failures.append("C0")
+        lines.append(f"C0  {'pass' if checks['C0']['passed'] else 'FAIL: ' + checks['C0']['detail']}")
+    else:
+        checks["C0"] = {"name": "C0", "passed": None, "detail": NOT_EVALUATED}
+        lines.append(f"C0, N0, I0 and P0 {NOT_EVALUATED}")
 
     for name in names:
         if "error" in states[name]:
@@ -169,7 +179,9 @@ def check_tree(out, states) -> dict:
             failures.append(name)
             lines.append(f"{name:24} {error}")
 
-    if "q0" in runs and "error" not in runs["q0"]:
+    if not traced:
+        checks["N0"] = {"name": "N0", "passed": None, "detail": NOT_EVALUATED}
+    elif "q0" in runs and "error" not in runs["q0"]:
         checks["N0"] = gate_n0(runs["q0"]["per_ion_eV"]).to_dict()
     else:
         checks["N0"] = {"name": "N0", "passed": False, "detail": "q0 has no trace"}
@@ -182,17 +194,18 @@ def check_tree(out, states) -> dict:
         if plus in energies and minus in energies and "q0" in energies:
             checks["E0"][pair] = gate_e0(energies[plus], energies[minus], energies["q0"]).to_dict()
     # Gate at each direction's smallest t; every t is reported.
-    for name in ("P0", "E0"):
+    for name in ("P0", "E0") if traced else ("E0",):
         for direction in sorted({n.split("_t")[0] for n in names if n.endswith("_plus")}):
             entry = checks[name].get(f"{direction}_t1")
             if entry is None or not entry["passed"]:
                 failures.append(f"{name} {direction}")
-    if not checks["N0"]["passed"]:
+    if checks["N0"]["passed"] is False:
         failures.append("N0")
-    report = {"runs": runs, "checks": checks, "passed": not failures, "failures": failures}
+    report = {"traced": traced, "runs": runs, "checks": checks, "passed": not failures, "failures": failures}
     manifest.save(report, out / "traces.json")
-    lines += [f"N0  {'pass' if checks['N0']['passed'] else 'FAIL'}",
-              *(f"{name}  {pair:12} {'pass' if g['passed'] else 'FAIL'}" for name in ("P0", "E0")
-                for pair, g in checks[name].items())]
+    if traced:
+        lines.append(f"N0  {'pass' if checks['N0']['passed'] else 'FAIL'}")
+    lines += [f"{name}  {pair:12} {'pass' if g['passed'] else 'FAIL'}" for name in ("P0", "E0")
+              for pair, g in checks[name].items()]
     report["lines"] = lines
     return report
