@@ -650,7 +650,10 @@ def assert_header(
 
 
 def load_ferwe(path_or_directory: str | Path) -> Occupations:
-    """Load FERWE.dat with strict index, weight, electron, and insulating checks.
+    """Load FERWE.dat with strict index, weight and electron checks.
+
+    Occupations are not bounded: smeared states are fractional, and
+    Methfessel-Paxton ones fall outside [0, 1] (D-018, D-021).
 
     The source writes ``RSPIN * WTKPT * FERTOT`` into the SANITY electron
     total, but does not emit RSPIN.  For ISPIN=2 it is one; for ISPIN=1 this
@@ -684,10 +687,6 @@ def load_ferwe(path_or_directory: str | Path) -> Occupations:
         weight, eigenvalue, occupation = (_parse_float(parts[3], "WTKPT"), _parse_float(parts[4], "EIG_Re"), _parse_float(parts[5], "FERWE"))
         if weight < 0:
             raise ValueError(f"{path}: negative WTKPT")
-        if not 0.0 <= occupation <= 1.0:
-            raise ValueError(f"{path}: FERWE at ISP={isp}, NK={nk}, BAND={band} is outside [0, 1]: {occupation}")
-        if min(abs(occupation), abs(occupation - 1.0)) > OCCUPATION_TOLERANCE:
-            raise ValueError(f"{path}: fractional FERWE at ISP={isp}, NK={nk}, BAND={band}: {occupation}")
         if math.isnan(weights[spin, kpoint]):
             weights[spin, kpoint] = weight
         elif not math.isclose(weights[spin, kpoint], weight, abs_tol=WEIGHT_TOLERANCE, rel_tol=0.0):

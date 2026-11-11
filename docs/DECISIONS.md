@@ -267,7 +267,7 @@ rule, the single mesh, and the echo check that VASP received each tag.
 
 ## D-020 — Contract the dump files as VASP does
 
-**Status:** accepted 2026-11-11; code change pending (FIX-1). Supersedes the
+**Status:** accepted 2026-11-11; code change made in FIX-1. Supersedes the
 "contract elementwise, not with a matrix trace" rule of Revisions 2.4 to 3.1.  
 `CSO.dat` and `COCC.dat` both store the ket index first. The trace is
 `Re sum Lambda_file * conj(COCC_uu - COCC_dd)`, VASP's own form of the SOC
