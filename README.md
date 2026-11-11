@@ -5,11 +5,9 @@ $A$ and exchange classes from SOC-free spin spirals in VASP, then uses them to
 predict magnetic properties. It covers materials with one magnetic order
 parameter: ferromagnets and collinear patterns of site signs.
 
-**Status: mid-pivot.** The project has moved away from bond-resolved DMI vectors.
-The old orchestration and the bond rows are removed. `pipeline v3/` has the
-symmetry module, the spiral inputs and readback (`plan`, `prepare`, `collect`),
-the Patch B dump reader and the trace. The trace step, the fits and `fit` are
-not implemented yet, and no VASP calculation has tested any of it. See [STATUS.md](STATUS.md) for the current state.
+The project has moved away from bond-resolved DMI vectors. The current state,
+including what has and has not been tested on VASP output, is in
+[STATUS.md](STATUS.md) and nowhere else.
 
 ## What it computes
 
@@ -18,7 +16,7 @@ not implemented yet, and no VASP calculation has tested any of it. See [STATUS.m
 | Spiralization $\mathcal D$ | First-order SOC trace on paired spirals at small $q$ | Yes |
 | Stiffness $A$ | SOC-free total energies at small $q$ | No |
 | Exchange classes $J_c$ | SOC-free total energies on a coarse $q$ grid | No |
-| Anisotropy $K$ | Standard SOC static runs at $q=0$ | No |
+| Anisotropy $K$ | Self-consistent SOC runs at $q=0$ (later module) | No |
 
 From these the code predicts the spiral period, spin plane and texture class,
 along with magnon stiffness, a mean-field ordering temperature and spiral
@@ -51,8 +49,8 @@ directory. Run them as `python -m dmi_pipeline <command>`; none submits a job.
 | [plans/](plans/) | One spec per task, written and approved before coding |
 | [docs/seed_file.md](docs/seed_file.md) | Format of the per-material seed file |
 | [materials/](materials/) | One folder per material, with its seed and inputs |
-| [Math source](docs/math/heide_math_v3.tex) | Revision 3.1; the authoritative foundation |
-| [Math for agents](docs/math/heide_math_v3.md) | Same numbering, plus module map and rules |
+| [Math source](docs/math/heide_math_v3.tex) | Revision 3.2; the only copy of the mathematics |
+| [Agent notes](docs/math/heide_math_v3.md) | Module map and the rules that must not drift |
 | [pipeline v3/](pipeline%20v3/) | Python package `dmi_pipeline` and its tests |
 | [acceptance/](acceptance/) | Historical Patch B N0 record |
 | [evidence/](evidence/) | Small selected validation records and links to external run data |
@@ -90,8 +88,8 @@ python -m pytest -q
 If `venv` is missing, install it with `sudo apt install python3-venv`. Activate
 the environment in each new shell, and use `.venv/bin/python` from scripts.
 
-This runs a deliberately small suite of 16 tests. Passing them says nothing about
-VASP results. `spglib` is installed with the package, for `symmetry.py`.
+This runs a deliberately small test suite. Passing it says nothing about VASP
+results. `spglib` is installed with the package, for `symmetry.py`.
 
 The math source is standalone LaTeX. From `docs/math`:
 

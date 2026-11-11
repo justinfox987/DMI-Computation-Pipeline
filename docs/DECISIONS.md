@@ -264,3 +264,109 @@ whitelist turned every new tag into a code change and an agent judgment. The
 rules that protect the method stay: the spiral tags, the force-theorem smearing
 rule, the single mesh, and the echo check that VASP received each tag.
 **Authority:** user decision, 2026-11-09; math Section 3.2.
+
+## D-020 — Contract the dump files as VASP does
+
+**Status:** accepted 2026-11-11; code change pending (FIX-1). Supersedes the
+"contract elementwise, not with a matrix trace" rule of Revisions 2.4 to 3.1.  
+`CSO.dat` and `COCC.dat` both store the ket index first. The trace is
+`Re sum Lambda_file * conj(COCC_uu - COCC_dd)`, VASP's own form of the SOC
+energy. The code up to `454afa2` drops the conjugate, which reverses the sign of
+every `T`, so of `D` and the predicted rotation sense. Magnitudes, the forbidden
+part, the pitch, N0, P0 and M1 are unaffected.
+
+**Reason:** `relativistic.F` stores `D(lm, l'm', a + 2a') = <a'|<l'm'|D|lm>|a>`
+and computes `Re sum CSO * CONJG(COCC)`; `DEPSUM` and `COCC_FROM_INPUT` share one
+layout. A bookkeeping test with those layouts returns minus the exact value
+without the conjugate. The real BFO `CSO.dat` has the handedness that layout
+predicts (-0.707 on O). This is source reading and a bookkeeping test, not a
+VASP run; the supercell control confirms it.
+**Authority:** math Revision 3.2, Sections 4.2 and 4.4; `plans/simplify-1.md`
+item 1.1.
+
+## D-021 — Recompute from the VASP files; M1 once per build; no T3 runs
+
+**Status:** accepted 2026-11-11; code change pending (SIM-1). Amends D-009,
+D-011 and D-013.  
+- Every command reads OUTCAR, OSZICAR, COCC and CSO again. `collected.json` and
+  `traces.json` are reports and are never inputs. The hash, `parent.json`,
+  `provenance.json`, `config.json` and OUTCAR-echo guards go. One guard stays:
+  a `COCC.dat` must be newer than its parent's OUTCAR.
+- M1 moves to a standalone script and runs once per production build, on one
+  state whose `dump_P` the user gives `LDUMPCPROJ = T`. The package keeps only
+  the CSO and COCC readers. `dmi dumps` no longer sets `LDUMPCPROJ`.
+- `dmi dumps` no longer writes `dump_C_x` and `dump_C_y`. C0 gains the
+  handedness check of math Section 4.2, which pins the flip-block order from
+  the z dump. T3 is optional, by hand, once.
+- The OSZICAR reader takes the last `M_int` block of a static run.
+
+**Reason:** the guards protect against a stale intermediate file, which
+recomputing removes; a 1 MB dump loads in 0.05 s. M1 tests the Fortran routine
+`COCC_FROM_INPUT`, a property of the build, and already passed at 5e-15 on the
+BFO dump. The CPROJ and FERWE readers are about 600 of the package's 2,537
+lines, and the FERWE reader rejects every smeared state. T3 pinned one bit that
+D-020's evidence already fixes.
+**Authority:** `plans/simplify-1.md` items 1.2, 2.2 to 2.4 and 2.6.
+
+## D-022 — The one smearing rule is no tetrahedron
+
+**Status:** accepted 2026-11-11; code change pending (SIM-1). Narrows D-018 and
+completes D-019.  
+The code overrides the tags it owns (`LNONCOLLINEAR`, `LSPIRAL`, `LSORBIT`,
+`LZEROZ`, `SAXIS`, `ISYM`, `I_CONSTRAINED_M`, `LAMBDA`, `QSPIRAL`, `MAGMOM`,
+`M_CONSTR`) and prints one line per override. It refuses tetrahedron smearing.
+It checks no other tag: the `ISMEAR` allowlist, the `SIGMA` floor, `min_sigma`,
+the required `ENCUT`, `ENINI` and `RWIGS`, the `KSPACING` rejection and the
+known-tag list go. Energies still come from `free energy TOTEN`.
+
+**Reason:** the force theorem needs a variational energy, and tetrahedron modes
+do not give one; that is the whole physics content of D-018. Everything else is
+the user's choice. The user's own Fe INCAR was stopped twice by the old checks.
+**Authority:** `plans/simplify-1.md` item 2.5; math Section 3.2.
+
+## D-023 — Noise from the parity residuals; one solve per tensor
+
+**Status:** accepted 2026-11-11; code change pending (SIM-1). Replaces
+decisions 3 and 4 of `plans/ten-05-tensors.md`.  
+`sigma_y` is the RMS of `[T(q) + T(-q)]/N_m` over all pairs and axes, and
+`sigma_g` that of `[E(q) - E(-q)]/2N_m`. The fit is one linear solve with the
+tensor components and one nuisance term per direction and axis; covariances
+follow from its pseudoinverse. The pooled fit variance, `MIN_PAIRS` and the
+`poorly_determined` flag go. The rank condition is full column rank of the
+design matrix.
+
+**Reason:** the pairs measure the noise directly, with 27 samples for the
+standard plan against 9 degrees of freedom. The single solve reproduces the
+current `D_free`, `D`, `F` and `A` to 1e-12 on the spin models.
+**Authority:** math Revision 3.2, Section 9.4; `plans/simplify-1.md` item 2.7.
+
+## D-024 — Anisotropy by self-consistent SOC energies, in its own module
+
+**Status:** accepted 2026-11-11; build deferred until the spiralization tensor
+works on VASP output.  
+`K` comes from self-consistent SOC total energies along symmetry-chosen
+directions, fitted to the symmetry-allowed even polynomials of order 2 or 4. A
+uniaxial magnet gets five runs: the fit directions, one spare and two noise
+runs. The code writes `submit.sh` and the user submits. The force-theorem value
+is not computed.
+
+**Reason:** canting is second order in SOC, like `K` itself, so the functional
+needs the relaxed energy. The spare and noise runs are what detect a wrong
+order or a different electronic branch.
+**Authority:** `plans/anisotropy-1.md`; math Revision 3.2, Section 13.
+
+## D-025 — One math document
+
+**Status:** accepted 2026-11-11.  
+`docs/math/heide_math_v3.tex` is the only copy of the mathematics, now Revision
+3.2. `heide_math_v3.md` holds the agent notes only. The project copy
+`claude/heide_math_v3.tex` is replaced by the repository file. New material
+goes in a new last section or an unnumbered display, so no equation number
+moves. Exchange classes and the twist count stay in the math: exchange is a
+project goal for a later task, and the twist gate is a real check on twist-free
+materials. The half-built `exchange_grid` and `rmax` seed keys leave the code
+until that task.
+
+**Reason:** two different documents were both called Revision 3.1, with
+different equation numbers, and the Markdown edition was kept in step by hand.
+**Authority:** `plans/simplify-1.md` items 2.1 and 2.9.
