@@ -49,11 +49,12 @@ def split_operator(cso: MatrixDump) -> np.ndarray:
 def trace_vector(cocc: MatrixDump, lam: np.ndarray) -> np.ndarray:
     """Per-ion T_alpha of Eq (4.8), shape (nions, 3), complex.
 
-    COCC[i, j] = rho[j, i], so Tr[Lambda rho] is the elementwise sum of
-    Lambda * COCC; a matrix trace would insert the wrong transpose.
+    CSO.dat and COCC.dat both store the ket index first, so this is VASP's own
+    SOC energy form, Re sum CSO * conj(COCC) (math Section 4.4, D-020). Without
+    the conjugate every T reverses sign.
     """
     magnetization = cocc.matrix[conventions.UU_IDX] - cocc.matrix[conventions.DD_IDX]
-    return np.einsum("anij,nij->na", lam, magnetization)
+    return np.einsum("anij,nij->na", lam, magnetization.conj())
 
 
 def trace_run(run: Path, out: Path) -> dict:

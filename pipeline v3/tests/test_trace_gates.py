@@ -6,7 +6,7 @@ import pytest
 from dmi_pipeline.dumpio import load_cocc, load_cproj, load_cso, load_ferwe
 from dmi_pipeline.gates import gate_c0, gate_e0, gate_i0, gate_m1, gate_n0, gate_p0, gate_t3
 from dmi_pipeline.trace import split_operator, trace_vector
-from tests.fixtures import cproj_trace as compute_delta_E1, make_clean_cso, write_cso, write_fake_dump
+from tests.fixtures import cproj_trace as compute_delta_E1, make_clean_cso, write_cocc, write_cso, write_fake_dump
 
 
 def inputs(tmp_path, *, collinear=False):
@@ -19,14 +19,14 @@ def inputs(tmp_path, *, collinear=False):
 def test_cproj_trace_matches_density_oracle(tmp_path):
     cp, occ, cso, _ = inputs(tmp_path)
     result = compute_delta_E1(cp, occ, cso)
-    # Independent density-matrix route: rho = |c><c|, followed by Tr(C rho).
+    # Independent density-matrix route: rho = |c><c|, then Tr(C rho) with C = file.T (ket first).
     oracle = np.zeros((2, 2), complex)
     for ion in range(2):
         for k in range(2):
             for spin, block in ((0, 0), (1, 3)):
                 states = cp.c[0, k, ion, spin]
                 rho = (states * occ.occupations[0, k]) @ states.conj().T
-                oracle[ion, k] += occ.weights[k] * np.trace(cso.matrix[block, ion] @ rho)
+                oracle[ion, k] += occ.weights[k] * np.trace(cso.matrix[block, ion].T @ rho)
     assert result.delta_E1 == pytest.approx(oracle.sum().real, abs=1e-12)
     assert result.per_ion == pytest.approx(dict(enumerate(oracle.sum(axis=1).real)), abs=1e-12)
     assert result.per_k == pytest.approx(oracle.sum(axis=0), abs=1e-12)
@@ -107,6 +107,43 @@ def test_trace_vector_and_t3(tmp_path):
     assert gate_t3(z, genuine(0), "x").passed and gate_t3(z, genuine(1), "y").passed
     swapped = gate_t3(replace(z, matrix=z.matrix[[0, 2, 1, 3]]), genuine(1), "y")
     assert not swapped.passed and "stored du, ud" in swapped.detail
+
+
+def test_vasp_file_layout_fixes_the_trace_sign(tmp_path):
+    """Math Section 4.4 layout test (D-020): both files written as VASP writes them.
+
+    relativistic.F stores CSO(lm, l'm', 1 + a + 2a') = <a'|<l'm'|C|lm>|a>; DEPSUM and
+    COCC_FROM_INPUT store COCC(LP, L, 1 + s_ + 2s) = sum w f c(L, s) conj(c(LP, s_)).
+    """
+    xi = 0.3
+    eps = np.zeros((3, 3, 3))
+    eps[0, 1, 2] = eps[1, 2, 0] = eps[2, 0, 1] = 1
+    eps[0, 2, 1] = eps[2, 1, 0] = eps[1, 0, 2] = -1
+    lam = xi / 2 * -1j * eps                                       # xi L.S on a real p shell, (L_k)_ij = -i eps_kij
+    pauli = np.array([[[0, 1], [1, 0]], [[0, -1j], [1j, 0]], [[1, 0], [0, -1]]])
+    h_soc = sum(np.kron(pauli[a], lam[a]) for a in range(3))       # spin-major: index = 3 * spin + orbital
+    rng = np.random.default_rng(11)
+    psi = rng.normal(size=(5, 2, 3)) + 1j * rng.normal(size=(5, 2, 3))
+    wf = np.array([0.4, 0.3, 0.2, 0.07, -0.01])                    # fractional and MP-negative occupations
+    flat = psi.reshape(5, 6)
+    exact_e = np.einsum("n,ni,ij,nj->", wf, flat.conj(), h_soc, flat).real
+    exact_t = [np.einsum("n,ni,ij,nj->", wf, flat.conj(), np.kron(pauli[2], lam[a]), flat).real for a in range(3)]
+
+    cso, cocc = np.zeros((4, 1, 3, 3), complex), np.zeros((4, 1, 3, 3), complex)
+    for a in range(2):
+        for b in range(2):
+            cso[a + 2 * b, 0] = h_soc[3 * b:3 * b + 3, 3 * a:3 * a + 3].T
+            cocc[a + 2 * b, 0] = np.einsum("n,nl,np->pl", wf, psi[:, b], psi[:, a].conj())
+    cso = load_cso(write_cso(tmp_path / "CSO.dat", cso))
+    cocc = load_cocc(write_cocc(tmp_path / "COCC.dat", cocc, nelect=8.0))
+
+    assert np.sum(cso.matrix * cocc.matrix.conj()).real == pytest.approx(exact_e, abs=1e-12)
+    assert gate_c0(cso).passed
+    lx, ly, lz = split_operator(cso)[:, 0]
+    handedness = np.trace((lx @ ly - ly @ lx) @ lz).imag / np.trace(lz @ lz).real ** 1.5
+    assert handedness == pytest.approx(-1 / np.sqrt(2))            # left-handed in file arrays
+    assert min(map(abs, exact_t)) > 1e-2
+    assert trace_vector(cocc, split_operator(cso))[0].real == pytest.approx(exact_t, abs=1e-12)
 
 
 def test_parity_checks():

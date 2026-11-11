@@ -119,8 +119,10 @@ def write_fake_dump(
     occupations = np.zeros((1, nk, nb), dtype=np.float64)
     if collinear:
         cproj[:, :, :, 1] = cproj[:, :, :, 0]
-    full_bands = nelect
-    occupations[:, :, :full_bands] = 1.0
+    occupations[:, :, :nelect] = 1.0
+    if nelect < nb:  # Smeared edge: fractional on even k, Methfessel-Paxton overshoot on odd k.
+        occupations[:, 0::2, nelect - 1:nelect + 1] = (0.7, 0.3)
+        occupations[:, 1::2, nelect - 1:nelect + 1] = (1.04, -0.04)
 
     lmmax = tuple(lmdim for _ in range(nions))
     lmbase = tuple(ion * lmdim for ion in range(nions))
@@ -271,6 +273,7 @@ def cproj_trace(cproj, ferwe, cso):
     """Test oracle: the CPROJ contraction of Eq (4.7) on the spin-diagonal CSO blocks.
 
     sum_s s c^dagger C_ss c with FERWE weights; production uses the COCC trace vector.
+    CSO.dat stores the ket index first (math Section 4.2), so file entry (i, j) is C_ji.
     """
     assert_state_inputs(cproj, ferwe)
     weights = ferwe.weights[:, None] * ferwe.occupations[0]
@@ -278,7 +281,7 @@ def cproj_trace(cproj, ferwe, cso):
     for ion, lmmax in enumerate(cproj.header.lmmax_ion):
         for spin, block in ((0, conventions.UU_IDX), (1, conventions.DD_IDX)):
             c = cproj.c[0, :, ion, spin, :lmmax, :]
-            by_ion_k[ion] += np.einsum("kib,ij,kjb,kb->k", c.conj(), cso.matrix[block, ion, :lmmax, :lmmax],
+            by_ion_k[ion] += np.einsum("kib,ji,kjb,kb->k", c.conj(), cso.matrix[block, ion, :lmmax, :lmmax],
                                        c, weights)
     ions = by_ion_k.sum(axis=1)
     return SimpleNamespace(delta_E1=float(ions.sum().real), imag_total=float(ions.sum().imag),
