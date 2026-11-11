@@ -1,22 +1,24 @@
 # Current project status
 
-**Last reconciled:** 2026-11-11 UTC, at FIX-1 on branch `fix-1-trace-sign` ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)).
+**Last reconciled:** 2026-11-11 UTC, at SIM-1a on branch `sim-1a-recompute` ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
 campaign orchestration and `step1.py` are removed. TEN-02 (`symmetry.py`) and
 TEN-03 (`spiral.py`: seed, `plan`, `prepare`, `collect`), TEN-04 (`dumps`,
-`trace`) and TEN-05 (`tensors.py`, `dmi fit`) and cleanup 1 are merged. The full
-workflow exists; none of it has run on a spiral. FIX-1 (`fix-1-trace-sign`,
-awaiting review) corrects the trace sign and lets the FERWE reader accept
-smeared states (D-020, D-021).
+`trace`), TEN-05 (`tensors.py`, `dmi fit`), cleanup 1 and FIX-1 (trace sign,
+smeared FERWE; D-020) are merged. The full workflow exists; none of it has run
+on a spiral. SIM-1a (`sim-1a-recompute`, awaiting review) makes every command
+read the VASP files again: `fit` traces and checks the tree itself, there is no
+`trace` command, M1 moves to `acceptance/m1.py` and C0's handedness replaces T3
+(D-021).
 
-**Integration branch / base commit:** `main` at `cf5f9da`, the PR #17 merge. PRs #15 (cleanup 1), #16 (D-019) and #17 (decisions D-020 to D-025, math Revision 3.2) are merged. Tag
+**Integration branch / base commit:** `main` at `27bfe86`, the PR #18 merge (FIX-1). PRs #15 to #18 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `fix-1-trace-sign`, FIX-1 only; done and
+**Handoff owner / scope:** Claude / `sim-1a-recompute`, D-021 only; done and
 awaiting review. One writer per branch.
 
 ## Established
@@ -33,7 +35,7 @@ awaiting review. One writer per branch.
 | Tensor fits and the spiral prediction (TEN-05, Gate 1) | Spin-model `D` and `A` (Eq 6.3) recovered through Eqs (1.3), (1.4) and Section 9 for FeGe (23) and BFO (3m), `F` at roundoff; Section 10.1 scalar, polar and chain cases reproduced ([log](docs/sessions/2026-11-09_0300Z-agent-ten05-tensors.md)) | Merged in PR #14. Spin-model data only; Gate 2 needs the bcc Fe pilot |
 
 | Trace sign and CSO layout (D-020) | VASP source (`relativistic.F`, `us.F`, `csodump.F`); the layout test `test_vasp_file_layout_fixes_the_trace_sign` on `fix-1-trace-sign`; handedness -0.707 (O), -0.523 (Fe), -0.440 (Bi) on the real BFO `CSO.dat` ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) | Source reading and a repository test. Not a VASP run; TEN-07 confirms |
-| Current readers on real dumps | `load_cso`, `load_cocc`, C0, and N0 on all three axes pass on `pipeline v3/noq/` (BFO, q = 0): total T = (+2.1e-8, +4.3e-8, +5.2e-8) eV with the FIX-1 sign ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) | One collinear state; says nothing about finite q |
+| Current readers on real dumps | On `pipeline v3/noq/` (BFO, q = 0): `load_cso`, `load_cocc`, C0 with h = -0.523 (Fe), -0.440 (Bi), -0.707 (O), and N0 on all three axes pass; total T = (+2.1e-8, +4.3e-8, +5.2e-8) eV; `acceptance/m1.py` gives 5.3e-15, as recorded. The new OSZICAR reader returns the old `M_int` on `Fe_q0_test/q0` and `reader_test_2` ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) | One collinear state; says nothing about finite q |
 | Single-solve fit and parity noise (D-023) | Reproduces `D_free`, `D`, `F`, `A` to 1e-12 on the FeGe and BFO spin models; parity sigma 1.32e-6 against a true 1.41e-6 ([log](docs/sessions/2026-11-11_1600Z-agent-simplify-decisions.md)) | Prototype in a scratch copy, not repository code |
 
 No VASP calculation has tested Revision 3.2. There is no finite-q trace evidence,
@@ -50,8 +52,9 @@ and no parity (P0) measurement has been made with Patch B.
 | TEN-04 | Dump inputs, `provenance.json`, COCC trace vector, N0/I0/P0/E0, Section 11 T3; remove the `Bi` check and the Euler search | Done, [spec](plans/ten-04-trace.md) | Merged in PR #13, `6aceeea` | Agrees with the CPROJ trace on fixtures |
 | TEN-05 | `tensors.py`: fits, forbidden part, predictions, units | Done, [spec](plans/ten-05-tensors.md) | Merged in PR #14, `ec3e961` | **Gate 1:** spin-model tensors recovered end to end |
 | Cleanup 1 | Remove dead and duplicate code without changing behavior | Done, [spec](plans/cleanup-1.md) | Merged in PR #15, `b082893` | Identical outputs to `main`; tests and fault injections unchanged |
-| FIX-1 | Conjugate in the trace and its oracle, the layout test, delete the FERWE occupation checks (D-020) | In review; [spec](plans/simplify-1.md) Part 1 | Claude / `fix-1-trace-sign` | Layout test passes; the smeared fixture loads; 22 tests ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) |
-| SIM-1 | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader, INCAR overrides, single-solve fit with parity noise (D-021 to D-023) | After FIX-1; [spec](plans/simplify-1.md) | Unassigned | Same tensors on the synthetic trees; about 12 tests |
+| FIX-1 | Conjugate in the trace and its oracle, the layout test, delete the FERWE occupation checks (D-020) | Done; [spec](plans/simplify-1.md) Part 1 | Merged in PR #18, `27bfe86` | Layout test passes; the smeared fixture loads; 22 tests ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) |
+| SIM-1a | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader (D-021) | In review; [spec](plans/simplify-1.md) items 2.2, 2.3, 2.4, 2.6 | Claude / `sim-1a-recompute` | D, A, F and the pitch agree with `main` to 5e-16 meV; 14 tests ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) |
+| SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025) | After SIM-1a; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9 | Unassigned | Same tensors on the synthetic trees |
 | TEN-06 | bcc Fe F0 pilot at lambda 0 | After SIM-1; [spec](plans/ten-06-fe-pilot.md) drafted, awaits approval; Fe inputs are in `materials/fe/` uncommitted | Unassigned | **Gate 2:** T near zero on all axes, plausible A, first wall times |
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
@@ -64,14 +67,14 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `fix-1-trace-sign` (FIX-1).
-2. SIM-1 on a new branch from `main`, then TEN-06.
+1. Review and merge `sim-1a-recompute` (SIM-1a).
+2. SIM-1b on a new branch from `main`, then TEN-06.
 
 One cluster check can run now, because it needs no new code: one `dump_P` with
 `LDUMPCOCC` on and `LDUMPCPROJ` off.
 
 `dmi plan materials/fe/seed.toml` currently stops on the user's INCAR, first
-for `MAGMOM` and then for a missing `ENINI`. SIM-1 turns both into overrides
+for `MAGMOM` and then for a missing `ENINI`. SIM-1b turns both into overrides
 (D-022).
 
 The old Fe F0 recipe used lambda 1 and is retired. Its replacement is

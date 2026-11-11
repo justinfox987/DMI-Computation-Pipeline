@@ -11,7 +11,7 @@ import tomllib
 import numpy as np
 
 from . import manifest, spiral, symmetry
-from .gates import gate_forbidden
+from .gates import check_tree, gate_forbidden
 from .realized import poscar
 
 MEV = 1e3
@@ -21,7 +21,6 @@ MJ_PER_M2_FROM_MEV_PER_A2 = 16.02    # D: meV Å^-2 -> mJ m^-2
 MIN_PAIRS = 3          # complete +-q pairs per direction, so every Eq (9.1) fit has dof >= 1
 POOR_PITCH = 0.3       # sigma(gamma_max) / gamma_max above which first order is unreliable
 DEGENERATE = 1e-9      # relative eigenvalue gap that counts as a degenerate n*
-FLIP = np.diag([1.0, -1.0, 1.0])     # a wrong CSO flip-block order reverses every T_y
 
 
 def least_squares(X, y):
@@ -82,12 +81,6 @@ def projector(basis):
     return lambda m: sum((np.sum(b * m) * b for b in basis), np.zeros((3, 3)))
 
 
-def y_flip_visible(basis):
-    """True when D -> diag(1, -1, 1) D leaves the allowed space, so F sees a wrong flip-block order."""
-    project = projector(basis)
-    return any(np.linalg.norm(FLIP @ b - project(FLIP @ b)) > 1e-9 for b in basis)
-
-
 def spiralization(s, v, cov_v, basis):
     """D_free (9.3), F (9.4) and the constrained D (9.5), with covariances; v is (Nd, 3)."""
     s, v = np.asarray(s, float), np.asarray(v, float)
@@ -111,7 +104,6 @@ def spiralization(s, v, cov_v, basis):
     result = {"D_free": free(flat), "F": forbidden(flat), "D": constrained(flat), "d": coefficients(flat)}
     for name, linear in (("D_free", free), ("F", forbidden), ("D", constrained), ("d", coefficients)):
         result["cov_" + name] = propagate(linear, cov_v)
-    result["F_flipped_norm"] = float(np.linalg.norm(forbidden((v @ FLIP).ravel())))
     result["linear"] = {"free": free, "constrained": constrained}
     return result
 
@@ -186,13 +178,10 @@ def spin_wave_stiffness(a_matrix, cov_a_matrix, moment, signs):
 
 # ---- the run tree --------------------------------------------------------------
 
-def observables(out):
-    """y, g and per-ion y per kept direction, after every Section 9 input guard."""
+def observables(out, states, traces):
+    """y, g and per-ion y per kept direction, from read_runs and check_tree of this call."""
     out = Path(out)
-    plan, collected = manifest.load(out / "plan.json"), manifest.load(out / "collected.json")
-    traces = manifest.load(out / "traces.json")
-    if traces.get("passed") is not True:
-        raise ValueError(f"traces.json did not pass ({traces.get('failures')}); fit refuses")
+    plan = manifest.load(out / "plan.json")
     seed = tomllib.loads(plan["seed"])
     lattice, species, tau = poscar(out / "q0" / "POSCAR")
     config = manifest.load(out / "q0" / "config.json")
@@ -201,26 +190,18 @@ def observables(out):
     if n_m != len(seed["sites"]):
         raise ValueError(f"N_m = {n_m} from config.json, but the seed in plan.json has {len(seed['sites'])} sites")
     ops = symmetry.operations(lattice, species, tau, sites, signs, seed.get("symprec", 1e-3), seed.get("spacegroup"))
-    if (ops["number"], ops["total"], ops["dropped"]) != (plan["number"], plan["total"], plan["dropped"]):
-        raise ValueError("Rebuilt symmetry differs from plan.json; bases would not match the plan")
     t_seed = np.sort(seed["t"])
 
     def run(name):
         """E, T and per-ion T of one run, or None when it is not complete."""
-        result, trace = collected.get(name, {"error": "missing"}), traces["runs"].get(name, {"error": "missing"})
+        result, trace = states.get(name, {"error": "missing"}), traces["runs"].get(name, {"error": "missing"})
         if "error" in result or "error" in trace:
             return None
-        spiral.unchanged(out / name, result["sha256"], "dmi collect")
-        spiral.unchanged(out / name / "dump_P", {"COCC.dat": trace["sha256"]["COCC"]}, "dmi trace")
-        if manifest.load(out / name / "config.json")["sites"] != sites:
-            raise ValueError(f"{name}: magnetic sites differ from q0")
-        if not np.allclose(poscar(out / name / "POSCAR")[0], lattice, rtol=0, atol=1e-12):
-            raise ValueError(f"{name}: lattice differs from q0")
         return result["E_eV"], np.asarray(trace["T_eV"]), np.asarray(trace["per_ion_eV"]), trace["q_frac"]
 
     zero = run("q0")
     if zero is None:
-        raise ValueError("q0 is not complete in collected.json and traces.json")
+        raise ValueError("q0 has no state or no trace")
     kept, dropped = [], []
     for i, direction in enumerate(plan["directions"], 1):
         rows = []
@@ -246,8 +227,8 @@ def observables(out):
         raise ValueError(f"After dropping {dropped or 'none'} (fewer than {MIN_PAIRS} complete pairs), the kept "
                          f"directions fail the Section 8.2 rank conditions (sigma_D {sigma_d:.3g}, sigma_A {sigma_a:.3g})")
     return {"lattice": lattice, "species": species, "n_m": n_m, "signs": signs, "s": s, "directions": kept,
-            "dropped": dropped, "d_basis": d_basis, "a_basis": a_basis, "T_y": traces.get("T_y"),
-            "M_q0": float(np.mean(collected["q0"]["M"])),
+            "dropped": dropped, "d_basis": d_basis, "a_basis": a_basis,
+            "M_q0": float(np.mean(states["q0"]["M"])),
             "parity_residual_eV": {k: v["value"]["even_eV"] for k, v in traces["checks"]["P0"].items()}}
 
 
@@ -256,9 +237,14 @@ def _value(matrix, cov, scale=MEV):
 
 
 def fit(out):
-    """dmi fit: every Section 9 and 10.1 result, written to DIR/tensors.json."""
+    """dmi fit: trace and check the tree from its files, then every Section 9 and
+    10.1 result, written to DIR/tensors.json. Refuses when a Section 11 check fails."""
     out = Path(out)
-    obs = observables(out)
+    states = spiral.read_runs(out)
+    traces = check_tree(out, states)
+    if not traces["passed"]:
+        return {"passed": False, "lines": traces["lines"] + [f"fit refused: failed {', '.join(traces['failures'])}"]}
+    obs = observables(out, states, traces)
     slopes = fit_directions(obs["directions"])
     spiral_part = spiralization(obs["s"], slopes["v"], slopes["cov_v"], obs["d_basis"])
     stiff = stiffness(obs["s"], slopes["kappa"], slopes["cov_kappa"], obs["a_basis"])
@@ -287,10 +273,7 @@ def fit(out):
               "micromagnetic": {"A_pJ_per_m": (MEV * stiff["A"] / volume * PJ_PER_M_FROM_MEV_PER_A).tolist(),
                                 "D_mJ_per_m2": (MEV * spiral_part["D"] / volume * MJ_PER_M2_FROM_MEV_PER_A2).tolist()},
               "parity_residual_eV": obs["parity_residual_eV"],
-              "T_y": obs["T_y"], "y_flip_visible_in_F": y_flip_visible(obs["d_basis"]),
-              "sign": "unanchored until the TEN-07 supercell control"}
-    if report["y_flip_visible_in_F"]:
-        report["F_flipped_norm"] = MEV * spiral_part["F_flipped_norm"]
+              "sign": "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"}
     if positive:
         result = predict(spiral_part["D"], stiff["A"])
         prediction = {"Gamma": result["Gamma"].tolist(), "eigenvalues": result["eigenvalues"].tolist(),
@@ -314,7 +297,7 @@ def fit(out):
         report["D_sw"] = {"value": None, "reason": "A is not positive definite"}
     report["passed"] = forbidden.passed and positive
     manifest.save(report, out / "tensors.json")
-    report["lines"] = _lines(report)
+    report["lines"] = traces["lines"] + _lines(report)
     return report
 
 
@@ -336,6 +319,5 @@ def _lines(report):
             lines.append("WARNING: pitch poorly determined (sigma(gamma_max)/gamma_max > 0.3)")
     if report["dropped_directions"]:
         lines.append(f"dropped directions: {', '.join(report['dropped_directions'])}")
-    lines += [f"T_y {report['T_y']}; y-row flip visible in F: {report['y_flip_visible_in_F']}",
-              f"sign {report['sign']}"]
+    lines.append(f"sign {report['sign']}")
     return lines

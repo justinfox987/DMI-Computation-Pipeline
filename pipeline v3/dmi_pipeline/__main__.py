@@ -1,19 +1,22 @@
-"""Command line: plan, prepare, collect, dumps, trace and fit (math Section 12)."""
+"""Command line: plan, prepare, collect, dumps and fit (math Section 12).
+
+Every command reads the VASP files again; JSON files other than plan.json and
+config.json are reports, never inputs (D-021).
+"""
 
 import argparse
 from pathlib import Path
 import sys
 
 from . import spiral, tensors
-from .gates import check_tree
 
 COMMANDS = {
     "plan": "Print the symmetry summary and the checked q plan; writes nothing",
     "prepare": "Write every F0 run, runs.txt and submit.sh; submits nothing",
-    "collect": "Read E and M_int from every finished run into collected.json",
-    "dumps": "Write dump_C, dump_C_x, dump_C_y and every ok run's dump_P; submits nothing",
-    "trace": "Finish the dumps, trace every ok run and apply N0, I0, P0, E0 and T3",
-    "fit": "Fit D and A, check the forbidden part, predict the spiral; writes tensors.json",
+    "collect": "Print one status line per run; writes collected.json as a report",
+    "dumps": "Write dump_C and every ok run's dump_P; submits nothing",
+    "fit": "Trace every ok run, apply C0, N0, I0, P0 and E0, fit D and A, check the forbidden "
+           "part and predict the spiral; writes traces.json and tensors.json",
 }
 
 
@@ -51,11 +54,11 @@ def run(args) -> int:
         return 0 if all("error" not in value for value in results.values()) else 1
     if args.command == "dumps":
         dumps, skipped = spiral.prepare_dumps(args.out, args.job)
-        for name in skipped:
-            print(f"{name:16} no dump: not ok in collected.json")
+        for name, error in skipped.items():
+            print(f"{name:16} no dump: {error}")
         print(f"wrote {len(dumps)} dumps; submit from {args.out} with: sbatch submit_dumps.sh")
         return 0
-    report = check_tree(args.out) if args.command == "trace" else tensors.fit(args.out)
+    report = tensors.fit(args.out)
     print("\n".join(report["lines"]))
     return 0 if report["passed"] else 1
 

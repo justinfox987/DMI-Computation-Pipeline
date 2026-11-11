@@ -2,9 +2,11 @@
 
 Status: decided on 2026-11-11. The user chose the anisotropy route and asked
 Claude to choose the rest; the choices are at the end and in D-020 to D-025.
-The math and the project records are updated. **No code is changed yet.** Part 2
-below is kept as written on 2026-11-10; where a choice differs from it, the
-Decisions section wins.
+The math and the project records are updated. FIX-1 (Part 1) is merged in PR
+#18. SIM-1a (D-021: items 2.2, 2.3, 2.4 and 2.6) is in review on branch
+`sim-1a-recompute`; the D-022 and D-023 parts are not started. Part 2 below is
+kept as written on 2026-11-10; where a choice differs from it, the Decisions
+section wins.
 
 Scope read: `pipeline v3/` at `454afa2` (branch `incar-user-settings`), the
 plans, DECISIONS, STATUS, both math editions, the patched VASP source under
@@ -277,11 +279,11 @@ I0, P0, E0 and C0; the symmetry module; the seed file; the direction chooser.
 
 ## Order of work
 
-1. **FIX-1**, branch from `main` after `incar-user-settings` merges: the
-   conjugate in `trace_vector` and in the test oracle, the layout test of math
-   Section 4.4 as a new test, and the two FERWE checks deleted.
-2. **SIM-1**, one code branch: D-021, D-022 and D-023, with the test suite cut
-   to about 12. `docs/seed_file.md` loses `min_sigma`, `exchange_grid` and
+1. **FIX-1**, done (PR #18): the conjugate in `trace_vector` and in the test
+   oracle, the layout test of math Section 4.4 as a new test, and the two FERWE
+   checks deleted.
+2. **SIM-1**, in parts: SIM-1a (D-021, in review on `sim-1a-recompute`), then
+   D-022 and D-023, with the test suite cut to about 12. `docs/seed_file.md` loses `min_sigma`, `exchange_grid` and
    `rmax` in that branch, not before, because it describes the code.
 3. **TEN-06**, the Fe pilot, as revised.
 4. **ANI-1**, the anisotropy module, after the spiralization tensor works.

@@ -14,7 +14,7 @@ import tomllib
 import numpy as np
 
 from . import manifest, symmetry
-from .realized import INCAR_TAGS, echo_check, incar, logical, numbers, poscar
+from .realized import INCAR_TAGS, incar, logical, numbers, poscar
 
 RANK_FLOOR = 0.1       # smallest singular value accepted in either rank condition
 COLLAPSED = 0.1        # μB; a shorter M_int has no usable direction
@@ -42,151 +42,38 @@ DUMP_P = {"ISTART": "1", "ICHARG": "11", "ALGO": "Normal", "NELM": "1",
           "LDUMPCOCC": "T", "LWAVE": "F", "LCHARG": "F"}
 # CSO depends only on the potential: read q0's CHGCAR (ICHARG = 11) and no WAVECAR.
 DUMP_C = {"LNONCOLLINEAR": "T", "LSORBIT": "T", "ISYM": "-1", "ISTART": "0", "ICHARG": "11",
-          "ALGO": "Normal", "NELM": "1", "LDUMPCSO": "T", "LWAVE": "F", "LCHARG": "F"}
-CSO_DUMPS = {"dump_C": "0 0 1", "dump_C_x": "1 0 0", "dump_C_y": "0 1 0"}
+          "ALGO": "Normal", "NELM": "1", "LDUMPCSO": "T", "LWAVE": "F", "LCHARG": "F", "SAXIS": "0 0 1"}
 SPIRAL_ONLY = ("LSPIRAL", "QSPIRAL", "LZEROZ", "I_CONSTRAINED_M", "LAMBDA", "M_CONSTR")
 
-FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
-PENALTY = re.compile(r"\bE_p\s*=\s*(" + FLOAT + r")\s+lambda\s*=\s*(" + FLOAT + r")", re.I)
-ELECTRONIC = re.compile(r"^\s*(?:DAV|RMM|CG|DMP|SDA|CGA):\s*(\d+)\b", re.I)
-SUMMARY = re.compile(r"^\s*(\d+)\s+F=")
-ITERATION = re.compile(r"Iteration\s+(\d+)\(\s*(\d+)\)")
-BANNER = re.compile(r"^[ \t]*vasp\.\S+", re.I | re.M)
+SPHERE = re.compile(r"^\s*ion\s+MW_int\s+M_int\s*$", re.I)
 
 
+def read_static(run, nions):
+    """(E, M_int) of one finished static run (Section 3.3, D-021).
 
-def sphere(path, nions):
-    """Parse terminal OSZICAR ionic record; segment convergence is checked by check_run.
-
-    Fail closed for incomplete or ambiguous restarts rather than taking the last
-    earlier complete table. Convergence is checked independently in OUTCAR.
+    The OUTCAR must have reached EDIFF and printed its timing footer. M_int is the
+    last OSZICAR sphere block, one row per ion; E is the last free energy TOTEN.
     """
-    lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
-    headers = [i for i, line in enumerate(lines) if re.match(r"^\s*ion\s+MW_int\s+M_int\s*$", line, re.I)]
+    run = Path(run)
+    outcar = (run / "OUTCAR").read_text(encoding="utf-8", errors="replace")
+    if "aborting loop because EDIFF is reached" not in outcar:
+        raise ValueError("OUTCAR: the SCF did not reach EDIFF")
+    if "General timing and accounting" not in outcar:
+        raise ValueError("OUTCAR has no timing footer: the run did not finish")
+    energies = TOTEN.findall(outcar)
+    if not energies:
+        raise ValueError("OUTCAR has no free energy TOTEN line")
+    lines = (run / "OSZICAR").read_text(encoding="utf-8", errors="replace").splitlines()
+    headers = [i for i, line in enumerate(lines) if SPHERE.match(line)]
     if not headers:
-        raise ValueError("OSZICAR has no sphere moment block")
-    if any(re.match(r"^\s*ion\s+MW_int\b", line, re.I) and i not in headers for i, line in enumerate(lines)):
-        raise ValueError("Malformed OSZICAR sphere header")
-    start = headers[-1]
-    m, seen = [], set()
-    end = start + 1
-    for i in range(start + 1, len(lines)):
-        parts = lines[i].split()
-        if not parts or not parts[0].isdigit() or (len(parts) > 1 and parts[1] == "F="):
-            end = i
-            break
-        if len(parts) != 7:
-            raise ValueError("Incomplete OSZICAR sphere row")
-        ion = int(parts[0])
-        if ion in seen or ion != len(seen) + 1:
-            raise ValueError("Duplicate or out-of-order OSZICAR ion")
-        seen.add(ion)
-        try:
-            values = np.array([float(x.replace("D", "E").replace("d", "e")) for x in parts[1:]])
-        except ValueError as error:
-            raise ValueError("Invalid OSZICAR sphere number") from error
-        if not np.all(np.isfinite(values)):
-            raise ValueError("Nonfinite OSZICAR sphere moment")
-        m.append(values[3:].tolist())       # M_int; MW_int (values[:3]) is not used
-        end = i + 1
-    if len(seen) != nions:
-        raise ValueError("Terminal OSZICAR sphere block ion count mismatch")
-    summary = [i for i in range(end, len(lines)) if SUMMARY.match(lines[i])]
-    if not summary:
-        raise ValueError("Terminal sphere block has no final F= record")
-    f = summary[0]
-    if any(line.strip() for line in lines[end:f]):
-        raise ValueError("Unexpected data before OSZICAR final F= record")
-    tail = lines[f + 1:]
-    penalties = [(i + f + 1, PENALTY.search(line)) for i, line in enumerate(tail)]
-    penalties = [(i, match) for i, match in penalties if match]
-    if len(penalties) != 1 or any(re.search(r"\bE_p\s*=", line, re.I) and not PENALTY.search(line) for line in tail):
-        raise ValueError("Terminal OSZICAR record needs one printed E_p and lambda")
-    p, match = penalties[0]
-    ep, lam = (float(x.replace("D", "E").replace("d", "e")) for x in match.groups())
-    if not np.all(np.isfinite([ep, lam])) or lam < 0 or ep < 0:
-        raise ValueError("Invalid OSZICAR penalty or lambda")
-    field_headers = [i for i in range(p + 1, len(lines)) if re.match(r"^\s*ion\s+lambda\*MW_perp\s*$", lines[i], re.I)]
-    if len(field_headers) > 1:
-        raise ValueError("Ambiguous terminal OSZICAR field blocks")
-    if field_headers:
-        field = []
-        for ion in range(nions):
-            row = lines[field_headers[0] + 1 + ion].split() if field_headers[0] + 1 + ion < len(lines) else []
-            if len(row) != 4 or row[0] != str(ion + 1):
-                raise ValueError("Incomplete/duplicate terminal OSZICAR field")
-            field.append([float(x.replace("D", "E").replace("d", "e")) for x in row[1:]])
-        if not np.all(np.isfinite(field)):
-            raise ValueError("Nonfinite OSZICAR field")
-    # A preceding complete ionic step is allowed; no later electronic work is.
-    if len(summary) != 1 or any(SUMMARY.match(line) for line in lines[p + 1:]):
-        raise ValueError("Ambiguous terminal OSZICAR record")
-    if field_headers and any(line.strip() for line in lines[field_headers[0] + 1 + nions:]):
-        raise ValueError("Trailing data after terminal OSZICAR field")
-    if not field_headers and any(line.strip() for line in lines[p + 1:]):
-        raise ValueError("Trailing data after terminal OSZICAR penalty")
-    previous = [i for i, line in enumerate(lines[:start]) if SUMMARY.match(line)]
-    # VASP may print several sphere tables per electronic iteration; require
-    # complete tables and an indexed loop within each ionic step.
-    boundary = -1
-    for summary_line in previous + [f]:
-        step_headers = [i for i in headers if boundary < i < summary_line]
-        if not step_headers:
-            raise ValueError("OSZICAR ionic steps missing sphere blocks or contain restarts")
-        for header in step_headers:
-            for ion in range(nions):
-                row = lines[header + 1 + ion].split() if header + 1 + ion < summary_line else []
-                if len(row) != 7 or row[0] != str(ion + 1):
-                    raise ValueError("Incomplete OSZICAR ionic sphere block")
-                try:
-                    values = [float(x.replace("D", "E").replace("d", "e")) for x in row[1:]]
-                except ValueError as error:
-                    raise ValueError("Invalid OSZICAR sphere number") from error
-                if not np.all(np.isfinite(values)):
-                    raise ValueError("Nonfinite OSZICAR sphere moment")
-            if header + 1 + nions < summary_line and re.match(r"^\s*\d+\s+", lines[header + 1 + nions]):
-                raise ValueError("Duplicate or extra OSZICAR ionic sphere ion")
-        electronic = [int(match.group(1)) for line in lines[boundary + 1:summary_line]
-                      if (match := ELECTRONIC.match(line))]
-        if not electronic or electronic != list(range(1, electronic[-1] + 1)):
-            raise ValueError("OSZICAR electronic loop missing or ambiguous")
-        boundary = summary_line
-    steps = [int(SUMMARY.match(lines[i]).group(1)) for i in previous + [f]]
-    if steps != list(range(1, steps[-1] + 1)):
-        raise ValueError("OSZICAR ionic summaries contain a restart or missing step")
-    return {"M_int": m, "lambda": lam, "ionic_step": steps[-1], "ionic_steps": steps,
-            "electronic_step": electronic[-1]}
-
-
-def check_run(directory, nions) -> dict:
-    """Check one converged OUTCAR segment against the terminal OSZICAR sphere; return the sphere record."""
-    directory = Path(directory)
-    outcar = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
-    # Count actual run banners, not compatibility prose mentioning vasp.4.x.
-    if outcar.count("General timing and accounting") != 1 or len(BANNER.findall(outcar)) != 1:
-        raise ValueError("Missing or ambiguous completed OUTCAR run segment")
-    converged = outcar.rfind("aborting loop because EDIFF is reached")
-    iterations = list(ITERATION.finditer(outcar))
-    footer = outcar.rfind("General timing and accounting")
-    if (not iterations or converged < iterations[-1].end() or converged > footer or
-            ITERATION.search(outcar[footer:]) or BANNER.search(outcar[footer:])):
-        raise ValueError("Final electronic loop did not reach EDIFF after its last iteration")
-    # OUTCAR Iteration I(E) prints ionic I first and electronic E second.
-    outcar_steps = [int(match.group(1)) for match in iterations if int(match.group(2)) == 1]
-    if not outcar_steps or outcar_steps != list(range(1, outcar_steps[-1] + 1)):
-        raise ValueError("OUTCAR ionic loop contains a restart or missing first iteration")
-    for step in outcar_steps:
-        count = [int(match.group(2)) for match in iterations if int(match.group(1)) == step]
-        if count != list(range(1, count[-1] + 1)):
-            raise ValueError("OUTCAR electronic loop contains a restart or missing iteration")
-    echo_check(directory)
-    result = sphere(directory / "OSZICAR", nions)
-    ionic, electronic = (int(x) for x in iterations[-1].groups())
-    if (result["ionic_steps"] != outcar_steps or
-            (result["ionic_step"], result["electronic_step"]) != (ionic, electronic)):
-        raise ValueError("Final OSZICAR ionic/electronic step cannot be associated with final OUTCAR EDIFF loop")
-    return result
-
+        raise ValueError("OSZICAR has no ion MW_int M_int block")
+    rows = [line.split() for line in lines[headers[-1] + 1:headers[-1] + 1 + nions]]
+    if len(rows) != nions or any(len(row) != 7 or row[0] != str(ion) for ion, row in enumerate(rows, 1)):
+        raise ValueError(f"Last OSZICAR sphere block does not have one row for each of the {nions} ions")
+    m = np.array([[float(x.replace("D", "E").replace("d", "e")) for x in row[4:]] for row in rows])
+    if not np.all(np.isfinite(m)):
+        raise ValueError("Non-finite OSZICAR M_int")
+    return float(energies[-1].replace("D", "E").replace("d", "e")), m
 
 
 # ---- seed ----------------------------------------------------------------
@@ -481,8 +368,7 @@ def prepare(seed, out, job):
                        "targets": u.tolist(), "tags": tags}, run / "config.json")
         names.append(point["name"])
     write_array(out, "runs.txt", "submit.sh", names, job_parts, "dmi prepare")
-    hashes = {name: manifest.file_hash(folder / name) for name in ("seed.toml", "POSCAR", "INCAR", "KPOINTS", "POTCAR")}
-    manifest.save({"seed": seed["text"], "sha256": hashes, "symbol": summary["ops"]["symbol"],
+    manifest.save({"seed": seed["text"], "symbol": summary["ops"]["symbol"],
                    "number": summary["ops"]["number"], "total": summary["ops"]["total"],
                    "dropped": summary["ops"]["dropped"], "p_D": summary["p_D"], "p_A": summary["p_A"],
                    "n_twist": summary["n_twist"], "directions": summary["directions"].tolist(),
@@ -497,17 +383,8 @@ def read_run(run):
     """E and M_int of one finished run, with the Eq (3.3) phase relaxation."""
     run = Path(run)
     config = manifest.load(run / "config.json")
-    tags = incar(run / "INCAR")
-    for key, value in config["tags"].items():
-        if key not in tags or not _same(key, tags[key], value):
-            raise ValueError(f"Run INCAR {key} differs from config.json")
-    state = check_run(run, len(poscar(run / "POSCAR")[1]))
-    if state["lambda"] != 0:
-        raise ValueError(f"Printed final lambda is {state['lambda']}, not 0")
-    energies = TOTEN.findall((run / "OUTCAR").read_text(encoding="utf-8", errors="replace"))
-    if not energies:
-        raise ValueError("OUTCAR has no free energy TOTEN line")
-    m = np.asarray(state["M_int"])[config["sites"]]       # lab vectors; never the targets
+    energy, m_int = read_static(run, len(poscar(run / "POSCAR")[1]))
+    m = m_int[config["sites"]]                            # lab vectors; never the targets
     length = np.linalg.norm(m, axis=1)
     if np.any(length < COLLAPSED):
         raise ValueError(f"Collapsed moment: |M_int| = {length.min():.3g} μB < {COLLAPSED}")
@@ -523,9 +400,8 @@ def read_run(run):
         raise ValueError(f"Site reversed: relative site phase {pair:.1f} deg; another sign pattern")
     theta = np.angle(np.sum(z))                           # Eq (3.3)
     delta = np.degrees(np.angle(z * np.exp(-1j * theta)))
-    return {"E_eV": float(energies[-1].replace("D", "E").replace("d", "e")), "M_int": m.tolist(),
-            "M": length.tolist(), "theta_deg": float(np.degrees(theta)), "delta_deg": delta.tolist(),
-            "sha256": {name: manifest.file_hash(run / name) for name in ("OUTCAR", "OSZICAR")}}
+    return {"E_eV": energy, "M_int": m.tolist(), "M": length.tolist(),
+            "theta_deg": float(np.degrees(theta)), "delta_deg": delta.tolist()}
 
 
 def state_error(name, result, q0, twist_free):
@@ -544,8 +420,11 @@ def state_error(name, result, q0, twist_free):
     return None
 
 
-def collect(out):
-    """Read every run in runs.txt and write collected.json; rerunning is safe."""
+def read_runs(out):
+    """E, M_int and the Section 11 state checks of every run in runs.txt, q0 first.
+
+    Every command that needs a run's state calls this; nothing reads collected.json.
+    """
     out = Path(out)
     twist_free = manifest.load(out / "plan.json")["n_twist"] == 0
     results = {}
@@ -562,7 +441,13 @@ def collect(out):
         error = state_error(name, results[name], None if q0 is None or "error" in q0 else q0, twist_free)
         if error:
             results[name] = {"error": error}
-    manifest.save(results, out / "collected.json")
+    return results
+
+
+def collect(out):
+    """dmi collect: read every run and write collected.json as a report."""
+    results = read_runs(out)
+    manifest.save(results, Path(out) / "collected.json")
     return results
 
 
@@ -571,63 +456,29 @@ def run_names(out):
     return (Path(out) / "runs.txt").read_text(encoding="utf-8").split()
 
 
-def unchanged(directory, sha256, since):
-    """Raise unless every named file in directory still has its recorded hash."""
-    directory = Path(directory)
-    for file, digest in sha256.items():
-        if manifest.file_hash(directory / file) != digest:
-            raise ValueError(f"{directory.name}/{file} changed since {since}; rerun it")
-
-
 # ---- dump inputs ---------------------------------------------------------
 
-def _stat(path):
-    info = os.stat(path)
-    return {"size": info.st_size, "mtime_ns": info.st_mtime_ns}
-
-
-def parent_unchanged(dump_dir):
-    """Raise unless the parent recorded by prepare_dumps is byte- and stat-identical."""
-    dump_dir = Path(dump_dir)
-    record = manifest.load(dump_dir / "parent.json")
-    parent = dump_dir.parent / "q0" if dump_dir.name in CSO_DUMPS else dump_dir.parent
-    for name, digest in record["sha256"].items():
-        if manifest.file_hash(parent / name) != digest:
-            raise ValueError(f"{dump_dir}: parent {name} changed since dmi dumps")
-    for name, recorded in record["links"].items():
-        if _stat(dump_dir / name) != recorded:
-            raise ValueError(f"{dump_dir}: linked parent {name} changed size or mtime since dmi dumps")
-
-
 def prepare_dumps(out, job):
-    """Write dump_C, dump_C_x, dump_C_y and every ok run's dump_P (Section 5).
+    """Write dump_C from q0's CHGCAR and every ok run's dump_P (Section 5).
 
-    Returns (dump directories in submit order, names of runs skipped as not ok).
+    Returns (dump directories in submit order, {name: error} of runs skipped).
     """
     out = Path(out)
     job_parts = read_job(job)
-    collected = manifest.load(out / "collected.json")
-    names = run_names(out)
-    if "error" in collected.get("q0", {"error": "missing"}):
-        raise ValueError("q0 is not ok in collected.json; the CSO dumps need its CHGCAR")
+    states = read_runs(out)
+    if "error" in states.get("q0", {"error": "missing"}):
+        raise ValueError(f"q0 is not ok ({states.get('q0', {}).get('error', 'missing')}); dump_C needs its CHGCAR")
     q0_tags = incar(out / "q0" / "INCAR")
     cso_base = {k: v for k, v in q0_tags.items() if k not in SPIRAL_ONLY}   # keeps q0's MAGMOM
-    decks, skipped = [], []
-    for name in names:
-        result = collected.get(name, {"error": "missing"})
-        if "error" in result:
-            skipped.append(name)
+    decks = [(out / "dump_C", "q0", "../q0/", ("CHGCAR",), dict(cso_base, **DUMP_C))]
+    skipped = {}
+    for name, state in states.items():
+        if "error" in state:
+            skipped[name] = state["error"]
             continue
-        parent = out / name
-        unchanged(parent, result["sha256"], "dmi collect")
-        tags = dict(incar(parent / "INCAR"), **DUMP_P)
-        if name == "q0":
-            tags["LDUMPCPROJ"] = "T"                       # M1 on the first state (D-011)
-            for dump, saxis in CSO_DUMPS.items():
-                decks.append((out / dump, name, "../q0/", ("CHGCAR",),
-                              dict(cso_base, **DUMP_C, SAXIS=saxis), result["sha256"]))
-        decks.append((parent / "dump_P", name, "../", ("CHGCAR", "WAVECAR"), tags, result["sha256"]))
-    for directory, name, link, files, tags, _ in decks:
+        decks.append((out / name / "dump_P", name, "../", ("CHGCAR", "WAVECAR"),
+                      dict(incar(out / name / "INCAR"), **DUMP_P)))
+    for directory, name, link, files, tags in decks:
         if directory.exists():
             raise ValueError(f"{directory} exists; do not overwrite a dump")
         for file in files:
@@ -636,15 +487,13 @@ def prepare_dumps(out, job):
                 raise ValueError(f"{name}: no {file}; the parent INCAR must not set LWAVE or LCHARG to F")
         if logical(tags, "LSORBIT") and any(key in tags for key in SPIRAL_ONLY):
             raise ValueError(f"{directory}: an LSORBIT = T deck must not contain spiral tags")
-    for directory, name, link, files, tags, digests in decks:
+    for directory, name, link, files, tags in decks:
         directory.mkdir()
         (directory / "INCAR").write_text("".join(f"{k} = {v}\n" for k, v in tags.items()), encoding="utf-8")
         for file in ("POSCAR", "KPOINTS", "POTCAR"):
             (directory / file).write_bytes((out / name / file).read_bytes())
         for file in files:
             os.symlink(link + file, directory / file)
-        manifest.save({"parent": name, "sha256": digests,
-                       "links": {file: _stat(directory / file) for file in files}}, directory / "parent.json")
     dirs = [d for d, *_ in decks]
     write_array(out, "dumps.txt", "submit_dumps.sh", [str(d.relative_to(out)) for d in dirs],
                 job_parts, "dmi dumps")
