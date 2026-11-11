@@ -12,7 +12,7 @@
  urlcolor=blue!45!black,breaklinks=true]{hyperref}
 \usepackage{bookmark}
 \hypersetup{pdftitle={From Heide's Force Theorem to Magnetic Tensors},
- pdfauthor={DMI extraction project},pdfsubject={Mathematical foundation for spiralization, stiffness and exchange from spin spirals}}
+ pdfauthor={DMI extraction project},pdfsubject={Mathematical foundation for spiralization, stiffness, exchange and anisotropy from DFT}}
 \numberwithin{equation}{section}
 \setcounter{tocdepth}{1}
 \setlength{\parindent}{0pt}
@@ -24,7 +24,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small Spin-spiral tensors from DFT}
-\fancyhead[R]{\small Revision 3.1}
+\fancyhead[R]{\small Revision 3.2}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.3pt}
 \newcommand{\vct}[1]{\bm{#1}}
@@ -47,10 +47,10 @@
 \vspace{12mm}
 {\LARGE\bfseries From Heide's Force Theorem\\[3pt] to Magnetic Tensors\par}
 \vspace{8mm}
-{\large Computing spiralization, stiffness and exchange\\
-from paired, SOC-free spin spirals\par}
+{\large Computing spiralization, stiffness, exchange and anisotropy\\
+from SOC-free spin spirals and collinear SOC energies\par}
 \vspace{10mm}
-{\large Revision 3.1 \quad | \quad 9 November 2026\par}
+{\large Revision 3.2 \quad | \quad 11 November 2026\par}
 \vspace{13mm}
 \begin{abstract}
 \noindent
@@ -65,7 +65,8 @@ stiffness tensor and exchange classes.
 This document derives what the code needs for those steps and nothing more.
 The tensors are long-wavelength sums of the bond interactions, so they avoid
 the bond-resolution limit of flat spirals. They then give predictions such as
-the spiral period, spin plane and texture class.
+the spiral period, spin plane and texture class. Anisotropy is a separate
+calculation on collinear states, described in Section~\ref{sec:mca}.
 \end{abstract}
 \vfill
 \textbf{Source and scope.} This revision replaces the bond-vector target of
@@ -79,6 +80,15 @@ yet tested this revision.
 Section~\ref{sec:frames} input table and states in the same section why the
 free energy is the energy to read. Nothing else changes, and every equation
 keeps its number.
+
+\textbf{Revision 3.2} (11 November 2026) records the decisions of
+\code{plans/simplify-1.md} and \code{plans/anisotropy-1.md}. It corrects the
+contraction of the two dump files in Sections~\ref{sec:paw}, which reverses the
+sign of every trace. It replaces the pooled fit variance by the measured parity
+residual, runs M1 once per build, replaces T3 by a handedness check, narrows the
+smearing rule, and adds Section~\ref{sec:mca} on anisotropy. Every existing
+equation keeps its number; new displays in old sections are unnumbered. The sign
+correction rests on the VASP source and a bookkeeping test, not on a VASP run.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -108,7 +118,7 @@ For long wavelengths, the energy per magnetic site relative to $\qh=0$ is
 $A$ is the symmetric \emph{stiffness tensor}; it comes from SOC-free exchange.
 $\Dt$ is the $3\times3$ \emph{spiralization tensor}; it comes from SOC at first
 order. Anisotropy is second order in SOC and is treated separately in
-Section~\ref{sec:predict}.
+Section~\ref{sec:mca}.
 
 Two measured quantities isolate these tensors. Let $T_\alpha(\qh)$ be the
 first-order SOC energy per calculation cell with the operator selecting
@@ -220,9 +230,9 @@ at $-\qh$, and the $q=0$ reference is the same formula at $\qh=0$.
 \code{LZEROZ}, \code{SAXIS} & \code{T} and \code{0 0 1}: flat spiral about $z$.\\
 \code{ISYM} & $-1$. VASP symmetry does not account for the spiral~\cite{spiralhowto}.\\
 \code{I_CONSTRAINED_M}, \code{LAMBDA} & $1$ and $0$. This gives sphere moments with no penalty.\\
-\code{RWIGS} & One explicit radius per species.\\
-\code{ENCUT}, \code{ENINI} & \code{ENCUT} about 100 eV above \code{ENINI}, as the wiki advises.\\
-\code{ISMEAR}, \code{SIGMA} & Set explicitly: \code{ISMEAR} $-1$, $0$ or $1$ (Fermi--Dirac, Gaussian or first-order Methfessel--Paxton) and \code{SIGMA} about 0.05 eV, identical across all $q$ of one material. Tetrahedron modes are not variational.\\
+\code{RWIGS} & The user's. VASP needs it to print sphere moments.\\
+\code{ENCUT}, \code{ENINI} & The user's. \code{ENINI} is VASP's spiral cutoff~\cite{spiralhowto}.\\
+\code{ISMEAR}, \code{SIGMA} & The user's, identical across all $q$ of one material. One rule: tetrahedron modes are refused, because their energy is not variational.\\
 \code{MAGMOM} & $m_a\hat{\vct S}_a^0$, with seed magnitude $m_a$.\\
 \code{M_CONSTR} & $\hat{\vct S}_a^0$. It has no effect at \code{LAMBDA = 0}.\\
 \bottomrule
@@ -308,7 +318,26 @@ and therefore
 \end{equation}
 One \code{CSO} dump at \code{SAXIS = 0 0 1} thus supplies all three. Keep all
 four blocks when reading it: the $x$ and $y$ information lives in the flip
-blocks. The block order in the file is a stored convention, which T3 checks.
+blocks.
+
+\textbf{What the file holds.} VASP stores the operator with the ket index
+first~\cite{vaspsrc}: entry $(i,j)$ of block $ss'$ in \code{CSO.dat} is
+$C^{ss'}_{ji}$, with the blocks in the order $\uparrow\uparrow$,
+$\uparrow\downarrow$, $\downarrow\uparrow$, $\downarrow\downarrow$.
+Equation~\eqref{eq:lambda} applied to the file arrays therefore returns the
+transposes, $\Lambda_\alpha^{T}=-\Lambda_\alpha$, on all three axes.
+
+One number tests this layout from the $z$ dump alone. For each ion,
+\[
+ h=\frac{\operatorname{Im}\Tr\bigl([\Lambda_x,\Lambda_y]\Lambda_z\bigr)}
+ {\bigl[\Tr\Lambda_z^{2}\bigr]^{3/2}} .
+\]
+For $\Lambda=\tfrac12\xi\vct L$ with $\xi>0$, $[\Lambda_x,\Lambda_y]=\tfrac{\ii}{2}\xi\Lambda_z$,
+so $h>0$, with $h=1/\sqrt2$ on a single p shell. Transposing all three, or
+exchanging the two flip blocks, reverses $h$. The file arrays must therefore
+give $h<0$ on every ion. The real BFO dump gives $-0.707$ on every O, $-0.523$
+on Fe and $-0.440$ on Bi. This replaces the comparison with genuine $x$ and $y$
+dumps, T3 of earlier revisions.
 
 \subsection{Selecting the rotation axis}
 
@@ -351,12 +380,24 @@ Summing over occupied states first gives the density-matrix form,
  \bigl(\rho^{\mu\uparrow}-\rho^{\mu\downarrow}\bigr)\bigr].}
 \end{equation}
 This needs only the on-site \code{COCC} blocks, not the full \code{CPROJ}
-arrays, which is a large storage saving. The stored convention matters:
-$\code{COCC}[i,j]=\rho[j,i]$. The implementation therefore contracts
-\code{sum(Lambda * (COCC_uu - COCC_dd))} elementwise, not
-\code{trace(Lambda @ ...)}, which inserts the wrong transpose. A wrong
-transpose can still give a real number, so the imaginary-part gate cannot
-replace this check.
+arrays, which is a large storage saving.
+
+\textbf{The contraction on file arrays.} \code{COCC.dat} also stores the ket
+index first, $\code{COCC}[i,j]=\rho_{ji}$ with
+$\rho_{ij}=\sum_{n\kh}w_{\kh}f_{n\kh}c_ic_j^{*}$~\cite{vaspsrc}. With both files
+in that layout, Eq.~\eqref{eq:rho} is
+\[
+ T_\alpha=\operatorname{Re}\sum_\mu\sum_{ij}
+ \Lambda^{\rm file}_{\alpha,ij}\,
+ \overline{\bigl(\code{COCC}_{\uparrow\uparrow}-\code{COCC}_{\downarrow\downarrow}\bigr)_{ij}} ,
+\]
+which is VASP's own expression for the SOC energy,
+$\operatorname{Re}\sum\code{CSO}\cdot\overline{\code{COCC}}$. The conjugate is
+essential. $\Lambda$ is imaginary and antisymmetric and each spin-diagonal
+block is Hermitian, so dropping it reverses the sign on every axis. Revisions
+up to 3.1 dropped it. The imaginary-part check, the $q=0$ null and M1 cannot
+see this error. The check is a bookkeeping test: build both arrays in VASP's
+layout from known spinors and require the exact $\langle\sigma_z\otimes\Lambda_\alpha\rangle$.
 
 The per-atom terms of Eq.~\eqref{eq:rho} are retained. They are additive,
 so they later give the element-resolved origin of $\Dt$.
@@ -396,15 +437,14 @@ rule~\cite{projectcore}.
 \toprule Run & Object and relevant condition\\\midrule
 \code{dump_C} & Full \code{CSO} with SOC on and \code{LSPIRAL = F}, from a
 converged SOC-free in-plane reference. One per material.\\
-Genuine $x$, $y$ \code{dump_C} & \code{CSO} at \code{SAXIS} along $x$ and $y$.
-Used only for check T3, once per build.\\
 Spiral SCF & SOC-free state at $\pm\qh$ and at $\qh=0$. Supplies
 $E$ and \code{M_int}.\\
 \code{dump_P} & \code{COCC} from one SOC-free \code{PRE_LOOP} capture, after
-\code{PROALL} and before orbital updates. Add \code{CPROJ} and \code{FERWE} on
-the first state of each material for check M1.\\
+\code{PROALL} and before orbital updates. \code{CPROJ} and \code{FERWE} are
+added by hand on one state per build, for check M1.\\
 Exchange SCF & SOC-free state on a coarse $q$ grid. No dump, no patch.\\
-Anisotropy run & Standard SOC static run at $q=0$. No patch.\\
+Anisotropy runs & Self-consistent SOC runs at $q=0$, one per direction
+(Section~\ref{sec:mca}). No patch.\\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -587,6 +627,9 @@ the two bond phases are already balanced, at $|J_1|x=|J_2|(a-x)$.
 
 \subsection{Exchange classes}\label{sec:classes}
 
+This subsection and its fit in Section~\ref{sec:fit} are the specification for a
+later task. No code implements them yet.
+
 For exchange, the data determine one coupling per class of equivalent
 displacements. List the bonds from all site pairs and cell translations within
 a cutoff $R_{\max}$, counting each undirected bond once. Two bonds belong to the same class $c$ if they have equal
@@ -718,17 +761,28 @@ which must agree with Eq.~\eqref{eq:afit}.
 
 \subsection{Uncertainties}
 
-For one linear fit with design matrix $X$, $m$ rows and $p$ parameters,
+The pairs measure the noise directly. By Eq.~\eqref{eq:parity} the even part of
+$T$ and the odd part of $E$ vanish for ideal states, and for independent noise
+they have the same variance as $y$ and as the pair part of $g$. Let $M$ be the
+number of pairs. For a linear fit with design matrix $X$,
 \begin{equation}\label{eq:cov}
- \hat\sigma^2=\frac{\|\vct y-X\hat{\vct x}\|^2}{m-p},\qquad
- \operatorname{Cov}(\hat{\vct x})=\hat\sigma^2(X^TX)^{-1}.
+ \hat\sigma_y^2=\frac{1}{3M}\sum_{m,\alpha}
+ \Bigl[\frac{T_\alpha(\qh_m)+T_\alpha(-\qh_m)}{\Nm}\Bigr]^2,\qquad
+ \operatorname{Cov}(\hat{\vct x})=\hat\sigma^2(X^TX)^{-1},
 \end{equation}
-With three magnitudes and two terms each direction has one degree of freedom,
-so pool $\hat\sigma^2$ over all directions and axes in Eq.~\eqref{eq:slopes}.
-Carry the resulting slope errors into Eqs.~\eqref{eq:dfit} and~\eqref{eq:afit}.
-Axes from one state share noise, so treat these errors as estimates. Also report
-the parity residuals of Section~\ref{sec:parity}, since a common
-background cancels in $y$ and would not appear in this fit.
+and $\hat\sigma_g^2$ is the mean square of $[E(\qh_m)-E(-\qh_m)]/2\Nm$ in the
+same way. This replaces the variance pooled from fit residuals, which had one
+degree of freedom per fit. On a noisy BFO spin model with true
+$\sigma_y=1.41\times10^{-6}$, the parity value was $1.32\times10^{-6}$ from 27
+samples and the pooled value $1.59\times10^{-6}$ from 9.
+
+The two-step fit above is linear end to end, so one solve gives the same
+tensors: the unknowns are the tensor components and one cubic or quartic
+nuisance per direction and axis. The two agree to $10^{-12}$ on the spin
+models. Its condition for a determined fit is full column rank of that design
+matrix, which contains both rank conditions of Section~\ref{sec:qplan}. The
+noise in $E(0)$ is common to every $g$ and is not in $\hat\sigma_g$; the fit
+residual shows it.
 
 \subsection{Element-resolved spiralization}
 
@@ -768,7 +822,8 @@ $\lambda=18.85$ nm, against $18.91$ nm from the exact lattice minimum.
 
 The texture class follows from the form of $\Dt$, as in the table of
 Section~\ref{sec:basis}. These are harmonic, homogeneous results. A real spiral
-ground state also depends on anisotropy and magnetostatics.
+ground state also depends on anisotropy (Section~\ref{sec:mca}) and
+magnetostatics.
 
 \subsection{Exchange and magnons}
 
@@ -802,22 +857,27 @@ $\sin^2\!\theta\,e^*-M\mu_{\rm B}B\cos\theta$. The cone closes at the saturation
 \begin{equation}\label{eq:bd}
  B_D=\frac{D^2}{2AM\mu_{\rm B}}.
 \end{equation}
-Anisotropy is second order in SOC, so the trace cannot supply it. Take $K$ per
-magnetic site as the difference between hard and easy directions, from standard SOC
-total energies at $q=0$. For a chosen pair $(\sh,\nh)$, define $A_s=\sh^TA\sh$ and
+Anisotropy is second order in SOC, so the trace cannot supply it;
+Section~\ref{sec:mca} computes it. Let $K_s\ge0$ be the difference per magnetic
+site between the hard and easy directions within the spin plane. For a chosen
+pair $(\sh,\nh)$, define $A_s=\sh^TA\sh$ and
 $D_s=\nh^T\Dt\sh$. The one-dimensional energy per site is
 \begin{equation}\label{eq:sg}
- e[\varphi]=A_s(\varphi')^2+D_s\varphi'+K\sin^2\varphi.
+ e[\varphi]=A_s(\varphi')^2+D_s\varphi'+K_s\sin^2\varphi.
 \end{equation}
-For a uniaxial easy-axis magnet, a $180^\circ$ wall then costs
+A $180^\circ$ wall then costs
 \begin{equation}\label{eq:wall}
- \sigma=4\sqrt{A_sK}-\pi|D_s|,
+ \sigma=4\sqrt{A_sK_s}-\pi|D_s|,
 \end{equation}
 which becomes an energy per unit wall area on dividing by $V_{\rm m}$ of
 Section~\ref{sec:units}. The collinear state gives way to a spiral when $\sigma$ becomes negative:
 \begin{equation}\label{eq:dc}
- |D_s|>D_c=\frac{4}{\pi}\sqrt{A_sK}.
+ |D_s|>D_c=\frac{4}{\pi}\sqrt{A_sK_s}.
 \end{equation}
+In terms of the harmonic gain $e^*$ the stiffness cancels:
+$r\equiv|D_s|/D_c$ obeys $r^2=\tfrac14\pi^2|e^*|/K_s$, and a spiral requires
+$r>1$. This agrees with the criterion of Schweflinghaus
+\emph{et al.}~\cite{schwef} when the easy direction lies in the spin plane.
 
 \subsection{Units}\label{sec:units}
 
@@ -840,13 +900,14 @@ compare ratios such as $\lambda$ first.
 Each check addresses a specific way the result can fail.
 
 \begin{description}[style=nextline,leftmargin=0pt,labelsep=0pt]
-\item[C0, T3 and M1: is the operator and trace assembled correctly?]
+\item[C0 and M1: is the operator and trace assembled correctly?]
 C0 checks $C_{\downarrow\downarrow}=-C_{\uparrow\uparrow}$, an imaginary
-antisymmetric $C_{\uparrow\uparrow}$ with zero diagonal, and flip-block
-Hermiticity. T3 compares $\Lambda_x$ and $\Lambda_y$ from Eq.~\eqref{eq:lambda}
-with the $C_{\uparrow\uparrow}$ block of genuine dumps at \code{SAXIS} along $x$
-and $y$. M1 compares \code{COCC} with the density matrix rebuilt from
-\code{CPROJ}, to $10^{-10}$ eV.
+antisymmetric $C_{\uparrow\uparrow}$ with zero diagonal, flip-block
+Hermiticity, and $h<0$ on every ion (Section~\ref{sec:paw}). M1 compares
+\code{COCC} with the density matrix rebuilt from \code{CPROJ}, to $10^{-10}$ eV.
+It tests the dump routine, so it runs once per build and not per material; it
+passed at $5\times10^{-15}$ on the BFO dump of the 14 September build. The
+comparison with genuine $x$ and $y$ dumps (T3) is optional, once.
 
 \item[SCF and state: is this the intended spiral?]
 Require the final electronic loop to reach \code{EDIFF}. Require small $M_z$, and
@@ -860,16 +921,21 @@ $T_\alpha(\qh)+T_\alpha(-\qh)$ with $T_\alpha(\qh)-T_\alpha(-\qh)$; start at $10
 at the smallest $q$ and tighten from data. E0 compares $E(\qh)$ with $E(-\qh)$.
 
 \item[Forbidden: do the tensors obey symmetry?]
-Require $\mathcal F$ of Eq.~\eqref{eq:forbidden} to vanish within $3\sigma$. Also
+Require $\mathcal F$ of Eq.~\eqref{eq:forbidden} to vanish within $3\sigma$,
+with $\sigma$ from Eq.~\eqref{eq:cov}. Also
 test directions with a symmetry-required zero, such as $y$ along a polar axis.
 
 \item[Cross-check: do the two stiffness routes agree?]
-Compare Eq.~\eqref{eq:afit} with Eq.~\eqref{eq:acheck}.
+Compare Eq.~\eqref{eq:afit} with Eq.~\eqref{eq:acheck}, once exchange classes
+are implemented.
 
 \item[Nulls and anchors: is the result physically right?]
 If inversion is kept, then $e(-\qh,\nh)=e(\qh,\nh)$, so $y_\alpha(\qh)=0$ at every
-$q$, not only in the slope. Bcc Fe is the first such test. For sign and magnitude, compare with direct SOC energies on a
-commensurate supercell of a cheap noncentrosymmetric control. For the method,
+$q$, not only in the slope. Bcc Fe is the first such test. The sign of $T$
+follows VASP's own SOC energy (Section~\ref{sec:paw}), and the sense of rotation
+follows the measured relative site phases. A comparison with direct SOC
+energies on a commensurate supercell of a cheap noncentrosymmetric control
+confirms both, and the magnitude. For the method,
 compare with FLEUR first-order spiral results for BFO~\cite{xu} and
 FeGe~\cite{grytsiuk}, matching structure, functional and normalization. These are
 tests of the code, not of experiment: those calculations give about 80~nm against
@@ -880,7 +946,8 @@ The remaining physical assumptions are compact: one order parameter with one
 magnetic pattern; SOC at first order on fixed SOC-free states and occupations;
 all-electron on-site SOC; and one material operator reused across small $q$.
 SOC-driven twist is second order in the energy and is outside this
-scheme~\cite{twisted}. The numerical checks of this document confirm the algebra.
+scheme~\cite{twisted}; its uniform part at $q=0$ is the canting that
+Section~\ref{sec:mca} includes. The numerical checks of this document confirm the algebra.
 They do not establish any DFT result.
 
 \section{One material, from inputs to tensors}\label{sec:walkthrough}
@@ -893,17 +960,137 @@ Eqs.~\eqref{eq:project}--\eqref{eq:ntwist}.
 \item Choose directions and magnitudes, and test both rank conditions of
 Section~\ref{sec:qplan}.
 \item Write targets from Eq.~\eqref{eq:target} at $\pm\qh$, at $q=0$ and on the
-exchange grid. Run the SCFs, the \code{dump_P} captures and the \code{dump_C} runs.
+exchange grid. Run the SCFs, the \code{dump_P} captures and the one \code{dump_C} run.
 \item Read $E$ and \code{M_int}. Compute $\delta_a$ from Eq.~\eqref{eq:delta}.
 \item Form $\Lambda_\alpha$ from Eq.~\eqref{eq:lambda} and $\vct T$ from
-Eq.~\eqref{eq:rho} for each state.
+Eq.~\eqref{eq:rho} for each state, with the conjugate of Section~\ref{sec:paw}.
 \item Form $y_\alpha$ and $g$ from Eqs.~\eqref{eq:y} and~\eqref{eq:g}.
 \item Fit Eq.~\eqref{eq:slopes}, then compute $\Dt_{\rm free}$, $\mathcal F$, $\Dt$,
 $A$ and $J_c$.
 \item Apply the checks of Section~\ref{sec:checks}.
 \item Evaluate Section~\ref{sec:predict} and convert units. Report the tensors in
 the POSCAR Cartesian frame, with the stated Hamiltonian and per-site convention.
+\item Separately, and later: run Section~\ref{sec:mca} and evaluate $r$.
 \end{enumerate}
+
+Every step reads the VASP files again. Derived files are reports, and no step
+trusts one as input.
+
+\section{Magnetocrystalline anisotropy}\label{sec:mca}
+
+This is a separate module. It shares no VASP state with the spirals, and it is
+built after the spiralization tensor works. Its specification is
+\code{plans/anisotropy-1.md}.
+
+\subsection{Why it needs its own runs}
+
+In a collinear state along $\hat{\vct m}$ the first-order SOC energy vanishes;
+that is the null of Section~\ref{sec:parity}. The dependence on direction first
+appears at second order, through SOC mixing of occupied and empty
+states~\cite{heide}. A frozen-state trace cannot give it. The eigenvalue problem
+has to be solved with SOC.
+
+\subsection{What is fitted}
+
+For site moments $\varepsilon_am_a\hat{\vct m}$, the energy per magnetic site is
+\begin{equation}\label{eq:mca}
+ \boxed{E(\hat{\vct m})=E_0+\sum_{\ell=1}^{p}k_\ell\,f_\ell(\hat{\vct m}).}
+\end{equation}
+The $f_\ell$ are the polynomials in $\hat{\vct m}$ of even degree, up to a
+chosen order of 2 or 4, that every kept operation leaves unchanged, with
+constants removed. Even degree is time reversal, $E(-\hat{\vct m})=E(\hat{\vct m})$,
+and it also cancels the $\det(R)$ of an axial vector. They are built by
+averaging each monomial over $G$ and keeping the independent results. At order 2
+this is a traceless symmetric tensor,
+\begin{equation}\label{eq:ktensor}
+ E(\hat{\vct m})=E_0+\hat{\vct m}^T\mathcal K\,\hat{\vct m},
+ \qquad \mathcal K=R\,\mathcal K\,R^T\ \text{for all }g\in G,
+\end{equation}
+with $p=p_A-1$. The counts are regression tests:
+
+\begin{center}
+\begin{tabular}{@{}lccc@{}}
+\toprule Group & Example & $p$ at order 2 & $p$ at order 4\\\midrule
+Cubic & bcc Fe, FeGe & 0 & 1\\
+$3m$, $4/mmm$ & BFO & 1 & 3\\
+$mmm$ & & 2 & 5\\
+$\bar1$ & & 5 & 14\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For a uniaxial group, $\mathcal K=K_c(\hat{\vct c}\hat{\vct c}^T-\tfrac13I)$ with
+\begin{equation}\label{eq:kc}
+ K_c\equiv E_\parallel-E_\perp ,
+\end{equation}
+so $K_c>0$ is easy-plane and $K_c<0$ is easy-axis. Papers differ: Xu's Table II
+has the same sign~\cite{xu}, while the spin-wave form
+$-K\sum_i(\vct S_i\cdot\hat{\vct c})^2$ of Jeong \emph{et al.} gives
+$K_c=-KS^2$~\cite{jeong}.
+
+\subsection{One route: self-consistent energies}\label{sec:mcaroute}
+
+Each direction is one self-consistent SOC run, and the energies are compared
+directly. Section~\ref{sec:unconstrained} dropped SOC-driven relaxation because
+it is second order in $\xi$. Anisotropy is second order too, so here the
+relaxation must be kept. With $\vct\delta$ the small deviation from collinearity,
+$H_\delta$ its SOC-free stiffness and $\vct f$ the first-order force,
+\begin{equation}\label{eq:keff}
+ E(\hat{\vct m})=E_0+\xi^2K_{\rm bare}(\hat{\vct m})
+ -\tfrac12\xi^2\,\vct f(\hat{\vct m})^TH_\delta^{-1}\vct f(\hat{\vct m}).
+\end{equation}
+A self-consistent run returns the whole right-hand side. A force-theorem run
+at fixed density returns only $K_{\rm bare}$. The functional of
+Section~\ref{sec:predict} describes the slow order parameter after the fast
+relaxation, so it needs the whole. In BFO the relaxation is the
+weak-ferromagnetic canting, present for in-plane moments and absent along
+$[111]$~\cite{ederer}. A canting angle $\theta$ changes $K_c$ by about
+$(E_{\rm FM}-E_G)\theta^2$, tens of $\mu$eV for $\theta$ near $1^\circ$, which is
+as large as $K_c$ itself. The cost of this choice is that $K_{\rm bare}$, the
+quantity Xu \emph{et al.} report, is not computed.
+
+\subsection{Runs and checks}
+
+The module writes $p+1$ fit directions, chosen from symmetry axes and generic
+points for the best-conditioned design matrix; one spare generic direction
+$\hat{\vct g}$; and two noise runs, $-\hat{\vct g}$ and a symmetry image
+$R\hat{\vct g}$, whose energies equal that of $\hat{\vct g}$ exactly in an ideal
+calculation. A uniaxial magnet gets five runs. Moments are written as lab
+vectors with no constraint, so they are free to cant.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule Check & Requirement\\\midrule
+A1 & Every run finished and reached \code{EDIFF}.\\
+A2 & $\sum_a\varepsilon_a\vct M_a$ lies within $2^\circ$ of $\hat{\vct m}$.\\
+A3 & No site is reversed, and each $|\vct M_a|$ agrees within $2\%$ across runs.\\
+A4 & Each noise-pair difference is below $10\%$ of the energy span, with a warning above $5\%$.\\
+A5 & The spare residual is below $3\sigma$, with a warning above $2\sigma$.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+$\sigma$ is the root mean square of the noise-pair differences divided by
+$\sqrt2$. A3 and A4 detect runs that landed on different electronic branches;
+they do not prevent it. A5 detects terms beyond the chosen order. The
+thresholds are first values.
+
+\subsection{Use in the spiral criterion}
+
+For the spin plane normal to $\nh^*$, $K_s$ of Eq.~\eqref{eq:sg} is the maximum
+minus the minimum of the fitted $E(\hat{\vct m})$ on that circle. Then
+\begin{equation}\label{eq:r}
+ \boxed{r^2=\frac{\pi^2}{4}\,\frac{|e^*|}{K_s},}
+\end{equation}
+and the collinear state gives way to a spiral for $r>1$. For a plane that
+contains $\hat{\vct c}$, as in BFO, $K_s=|K_c|$. Rough per-Fe numbers show why
+this term decides the outcome there: the spiral gain $|e^*|$ is about 20
+(DFT) to 35 (experiment) $\mu$eV, against $K_c=+69$ $\mu$eV from the force
+theorem~\cite{xu} and $-29$ $\mu$eV from spin waves~\cite{jeong}. Those give
+$r\approx0.85$ and $r\approx1.7$. $K_c$ is the small remainder of two
+structural contributions near $\pm200$ $\mu$eV~\cite{xu}, so its sensitivity to
+structure and functional, not numerical noise, is the dominant uncertainty.
+
 
 \renewcommand{\refname}{References and implementation records}
 \begin{thebibliography}{10}
@@ -920,6 +1107,22 @@ B. Xu, S. Meyer, M. J. Verstraete, L. Bellaiche and B. Dup\'e,
 \emph{First-principles study of spin spirals in the multiferroic BiFeO$_3$},
 Phys. Rev. B \textbf{103}, 214423 (2021).
 \href{https://doi.org/10.1103/PhysRevB.103.214423}{DOI}.
+
+\bibitem{schwef}
+B. Schweflinghaus \emph{et al.},
+\emph{Role of Dzyaloshinskii--Moriya interaction for magnetism in transition-metal chains at Pt step edges},
+Phys. Rev. B \textbf{94}, 024403 (2016).
+
+\bibitem{jeong}
+J. Jeong \emph{et al.},
+\emph{Temperature-dependent interplay of Dzyaloshinskii--Moriya interaction and
+single-ion anisotropy in multiferroic BiFeO$_3$}.
+\href{https://arxiv.org/abs/1408.2942}{arXiv:1408.2942}.
+
+\bibitem{ederer}
+C. Ederer and N. A. Spaldin,
+\emph{Weak ferromagnetism and magnetoelectric coupling in bismuth ferrite}.
+\href{https://arxiv.org/abs/cond-mat/0407003}{arXiv:cond-mat/0407003}.
 
 \bibitem{grytsiuk}
 S. Grytsiuk \emph{et al.},
@@ -942,6 +1145,12 @@ Symmetry, cutoffs and sphere-moment readback.
 \bibitem{lsorbit}
 VASP Wiki, \href{https://vasp.at/wiki/LSORBIT}{LSORBIT}.
 All-electron one-center SOC approximation.
+
+\bibitem{vaspsrc}
+VASP 6.4.2 source: \code{relativistic.F} (\code{SPINORB_STRENGTH},
+\code{CALC_SPINORB_MATRIX_ELEMENTS}) and \code{us.F} (\code{DEPSUM}); Patch B
+\code{csodump.F} (\code{COCC_FROM_INPUT}). Index order of the SOC operator and
+the occupancy matrix, and the SOC energy contraction.
 
 \bibitem{spglib}
 \href{https://spglib.readthedocs.io/en/v2.8.0/api/autodoc/spglib.spg.html}{spglib documentation}.

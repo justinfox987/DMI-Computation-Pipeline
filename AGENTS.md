@@ -2,9 +2,9 @@
 
 ## Start every session
 
-1. Read `STATUS.md`, `docs/DECISIONS.md` and the task spec in `plans/`
-   (`plans/ten-NN-*.md`). For physics or pipeline work, also read
-   `docs/math/heide_math_v3.md`. If the task has no spec yet, write one in
+1. Read `STATUS.md`, `docs/DECISIONS.md` and the task spec in `plans/`.
+   For physics or pipeline work, also read `docs/math/heide_math_v3.tex` and
+   the short agent notes in `docs/math/heide_math_v3.md`. If the task has no spec yet, write one in
    `plans/` and get the user's approval before writing code.
 2. Inspect `git status --short --branch`, the current branch and recent commits.
    Preserve existing edits. Read any more-specific repository instructions.
@@ -103,11 +103,11 @@ not merely fewer lines or a smaller-looking diff.
 
 ## Scientific authority
 
-- Current foundation: `docs/math/heide_math_v3.tex`, **Revision 3.1**.
-- `docs/math/heide_math_v3.md` is the agent edition, with the same section and
-  equation numbers. Its opening notes give the module map and the rules that must
-  not drift. Change the two files together. If they disagree, the TeX wins and
-  the conflict must be reported.
+- Current foundation: `docs/math/heide_math_v3.tex`, **Revision 3.2**. It is
+  the only copy of the mathematics (D-025).
+- `docs/math/heide_math_v3.md` holds the module map and the rules that must not
+  drift, and no mathematics. Add new mathematics as a new last section or an
+  unnumbered display, so no equation number moves.
 - Superseded for current work: `docs/math/heide_math_v2.tex` and everything in
   `docs/archive/`, including the Step 1 spec, the Perlmutter pilot guide, the old
   Perlmutter runner plan and old project records.
@@ -119,9 +119,11 @@ not merely fewer lines or a smaller-looking diff.
   from OSZICAR `M_int`. Never substitute target directions for measured ones.
 - Keep first-order SOC, the frozen-state trace and computed pairs at both signs
   of q. Do not add a second spin-axis rotation.
+- Contract `CSO.dat` with `COCC.dat` as VASP does, with the conjugate (D-020).
+  Every command reads the VASP files again and trusts no derived file (D-021).
 - Report the free 9-component spiralization fit and its forbidden part, not only
-  the symmetry-constrained result. That check cannot see an overall sign, so the
-  sign needs an external anchor.
+  the symmetry-constrained result. That check cannot see an overall sign. The
+  sign follows VASP's own SOC energy (D-020); the supercell control confirms it.
 - Mathematical equivalence, spin-model recovery, local test passes and production
   VASP validation are separate claims. State which evidence supports each result.
 - Do not fabricate run metadata, hashes, convergence, uncertainties or gate passes.
