@@ -37,7 +37,16 @@ Not run: any VASP job, M1 on the real dump, `dmi trace` on a real tree.
 
 ## Decisions or deviations
 
-None new. This implements D-020 and the FERWE part of D-021. The `tensors.json` sign label still says "unanchored until the TEN-07 supercell control". That is still true for VASP confirmation, so it was left for SIM-1 to reword, together with the `T_y`/T3 report fields it sits beside.
+None new. This implements D-020 and the FERWE part of D-021. DECISIONS and the math are not edited; an early edit of the D-020 status line was reverted, because the task brief excludes DECISIONS.
+
+Existing tests tied to the old convention: two, both oracles rather than sign assertions. They were changed together with the code:
+
+- `cproj_trace` in `tests/fixtures.py` read the CSO file as bra-first;
+- the inline density-matrix route in `test_cproj_trace_matches_density_oracle` used `Tr(file @ rho)`.
+
+No test asserts the sign of a dump-derived `T` or `D`. The `D` assertions in `test_tensors.py` feed spin-model traces to the fit and never call `trace_vector`. All 21 tests passed unchanged in their assertions.
+
+Expected effect: every `T` changes sign, so `D` and the predicted rotation sense change sign. Magnitudes, the forbidden part `F`, the pitch, N0, P0, E0 and M1 are unchanged. The `tensors.json` sign label still says "unanchored until the TEN-07 supercell control". That is still true for VASP confirmation, so it was left for SIM-1 to reword, together with the `T_y`/T3 report fields it sits beside.
 
 ## Handoff
 
