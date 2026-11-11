@@ -5,6 +5,17 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- SIM-1a (D-021): every command reads the VASP files again, and no derived file is an input.
+  - **Commands:** `plan`, `prepare`, `collect`, `dumps` and `fit`; `dmi trace` is removed. `fit` traces every run from `dump_C/CSO.dat` and the `dump_P/COCC.dat` files and applies C0, N0, I0, P0 and E0 itself. `collected.json` and `traces.json` are reports.
+  - **Guards:** the SHA-256, `parent.json`, `provenance.json`, OUTCAR-echo and INCAR-against-config guards are replaced by one: a COCC.dat older than its run's OUTCAR is an error.
+  - **M1** moved to `acceptance/m1.py`, which reads a fixed little-endian layout and runs once per build. The CPROJ and FERWE readers left the package, and `dmi dumps` no longer sets `LDUMPCPROJ`.
+  - **T3 removed:** `dmi dumps` writes `dump_C` only, and C0 requires handedness h < 0 on every ion. `gate_t3`, `T_y`, `y_flip_visible` and `F_flipped_norm` are removed. The `tensors.json` sign entry now says it follows VASP's SOC energy and is not yet VASP-confirmed.
+  - **OSZICAR:** a lean reader takes the last `M_int` block and the last free energy of a finished static run.
+  - **Size:** package 2,537 -> 1,590 lines; tests 22 -> 14.
+  - **Checks:** D, A, F and the pitch agree with the previous code to 5e-16 meV on the synthetic BFO tree. On the real BFO dump, C0 passes, the trace is unchanged and M1 gives 5.3e-15.
+
+  No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md).
+
 - FIX-1 (D-020): `trace_vector` contracts `Lambda` with `conj(COCC_uu - COCC_dd)`, VASP's own SOC energy form, so every `T`, and therefore `D`, changes sign. The CPROJ test oracles now read `CSO.dat` as ket-first. `load_ferwe` accepts smeared occupations, including Methfessel-Paxton values outside [0, 1], and the fake dump is now smeared. New layout test (math Section 4.4) builds both files in VASP's layout from known spinors. Tests 21 -> 22; four injected faults caught. On the real BFO q = 0 dumps, C0 and N0 still pass. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md).
 
 - Simplification decisions, documents only (D-020 to D-025). Math Revision 3.2: the dump files are contracted as VASP does, `Re sum Lambda * conj(COCC)`, which reverses the sign of every trace; the storage layout and a handedness check replace T3; M1 runs once per build; noise comes from the parity residuals; the smearing rule is narrowed to "no tetrahedron"; new Section 13 on anisotropy. No equation number moved. `heide_math_v3.md` now holds agent notes only. Added `plans/simplify-1.md` and `plans/anisotropy-1.md`; revised `plans/ten-06-fe-pilot.md` (20 dumps, energies-only convergence trees, no per-tree M1 or T3). README carries no status. **No code change:** the code still has the old sign and still rejects smeared FERWE files until FIX-1. See the [session log](docs/sessions/2026-11-11_1600Z-agent-simplify-decisions.md).

@@ -3,12 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import struct
-from types import SimpleNamespace
 
 import numpy as np
-
-from dmi_pipeline import conventions
-from dmi_pipeline.trace import assert_state_inputs
 
 # Literal writer constants: do not import the implementation being tested.
 CPROJ_MAGIC = "HEIDE_CPROJ_PATCH_B"
@@ -267,23 +263,3 @@ def bfo():
     oxygen += [(p + .5, q + .5, s + .5) for p, q, s in [(o2, o1, o3), (o3, o2, o1), (o1, o3, o2)]]
     tau = np.array([(0, 0, 0), (.5, .5, .5), (x, x, x), (x - .5, x - .5, x - .5)] + oxygen)
     return lattice, ["Bi"] * 2 + ["Fe"] * 2 + ["O"] * 6, tau
-
-
-def cproj_trace(cproj, ferwe, cso):
-    """Test oracle: the CPROJ contraction of Eq (4.7) on the spin-diagonal CSO blocks.
-
-    sum_s s c^dagger C_ss c with FERWE weights; production uses the COCC trace vector.
-    CSO.dat stores the ket index first (math Section 4.2), so file entry (i, j) is C_ji.
-    """
-    assert_state_inputs(cproj, ferwe)
-    weights = ferwe.weights[:, None] * ferwe.occupations[0]
-    by_ion_k = np.zeros((cproj.header.nions, cproj.header.nkpts_global), complex)
-    for ion, lmmax in enumerate(cproj.header.lmmax_ion):
-        for spin, block in ((0, conventions.UU_IDX), (1, conventions.DD_IDX)):
-            c = cproj.c[0, :, ion, spin, :lmmax, :]
-            by_ion_k[ion] += np.einsum("kib,ji,kjb,kb->k", c.conj(), cso.matrix[block, ion, :lmmax, :lmmax],
-                                       c, weights)
-    ions = by_ion_k.sum(axis=1)
-    return SimpleNamespace(delta_E1=float(ions.sum().real), imag_total=float(ions.sum().imag),
-                           per_ion=dict(enumerate(ions.real.tolist())),
-                           imag_per_ion=dict(enumerate(ions.imag.tolist())), per_k=by_ion_k.sum(axis=0))

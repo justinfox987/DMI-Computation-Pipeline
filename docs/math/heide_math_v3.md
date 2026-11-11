@@ -16,9 +16,10 @@ any result as physically validated on that basis.
 | --- | --- |
 | `symmetry.py` | Eqs. (7.1)–(7.3) kept operations; (7.6)–(7.7) bases; (7.9) twist count; (7.11) exchange classes (not yet used) |
 | `spiral.py` | Eq. (3.1) targets; Section 3 inputs and readback; (3.2)–(3.3) phases; (8.1) and Section 8 $q$ plan |
-| `trace.py` | Eqs. (4.4), (4.8) orbital matrices and trace vector, with the file-array contraction of Section 4.4 |
+| `trace.py` | Eqs. (4.4), (4.8) orbital matrices and trace vector, with the file-array contraction of Section 4.4 and the COCC-newer-than-OUTCAR guard |
 | `tensors.py` | Eqs. (1.3), (1.4) observables; Section 9 fits; Section 10 predictions and units |
-| `gates.py` | Section 11 checks |
+| `gates.py` | Section 11 checks C0 (with the Section 4.2 handedness), N0, I0, P0, E0 and the forbidden part; the tree trace that `fit` runs |
+| `acceptance/m1.py` | Section 11 check M1, once per build, outside the package |
 | `anisotropy.py` (later) | Section 13; spec in `plans/anisotropy-1.md` |
 
 ## Rules that must not drift

@@ -5,8 +5,7 @@ import re
 
 import numpy as np
 
-# Tags this code has seen before. plan warns about any other tag but keeps it
-# (D-019); the OUTCAR echo below proves VASP received it, not that VASP knows it.
+# Tags this code has seen before. plan warns about any other tag but keeps it (D-019).
 INCAR_TAGS = set("""
 SYSTEM ENCUT ENINI ENAUG PREC NCORE NPAR KPAR NBANDS NEDOS ISTART ICHARG ISMEAR SIGMA
 IBRION POTIM ISIF NSW NELM NELMIN NELMDL ISYM SYMPREC LMAXMIX LMAXPAW ALGO IALGO
@@ -78,26 +77,3 @@ def poscar(path: str | Path) -> tuple[np.ndarray, list[str], np.ndarray]:
     if not (np.all(np.isfinite(lattice)) and np.all(np.isfinite(tau))):
         raise ValueError("Non-finite POSCAR value")
     return lattice, species, tau
-
-
-def echo_check(directory: Path) -> dict:
-    tags = incar(directory / "INCAR")
-    text = (directory / "OUTCAR").read_text(encoding="utf-8", errors="replace")
-    if "General timing and accounting" not in text:
-        raise ValueError("OUTCAR has no completed-job timing footer")
-    for key, expected in tags.items():
-        # VASP's initial INCAR block retains every supplied value, including
-        # vector tags and ALGO. Compare tokens, not substring matches.
-        matches = re.findall(r"^\s*" + re.escape(key) + r"\s*=\s*(.*)$", text, re.M)
-        def equal(actual):
-            a, b = actual.split(), expected.split()
-            if a[:len(b)] == b:
-                return True
-            try:
-                x, y = numbers(" ".join(a[:len(b)])), numbers(expected)
-                return x.shape == y.shape and np.allclose(x, y, atol=1e-12, rtol=1e-8)
-            except ValueError:
-                return " ".join(a[:len(b)]).strip(".").upper() == expected.strip(".").upper()
-        if not any(equal(actual) for actual in matches):
-            raise ValueError(f"OUTCAR does not echo the requested {key}={expected}")
-    return {"passed": True, "checked_tags": sorted(tags)}

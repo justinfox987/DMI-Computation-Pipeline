@@ -23,14 +23,16 @@ dmi plan    materials/fe/seed.toml
 dmi prepare materials/fe/seed.toml --job job.sh --out RUNS
 cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires
 dmi collect RUNS                     # one state per run; safe to rerun
-dmi dumps   RUNS --job patchb.sh     # dump_C, dump_C_x, dump_C_y and each ok run's dump_P
+dmi dumps   RUNS --job patchb.sh     # one z-axis dump_C and each ok run's dump_P
 cd RUNS && sbatch submit_dumps.sh    # the user submits
-dmi trace   RUNS                     # provenance, trace vector, N0 I0 P0 E0 T3
-dmi fit     RUNS                     # D, F, A, the pitch and units; writes tensors.json
+dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0, then D, F, A, the pitch and units
 ```
 
 `--out` is required because the seed holds no paths. There is no `status`
-command: `collect` prints one line per run (D-013).
+command: `collect` prints one line per run (D-013). Every command reads the VASP
+files again; `collected.json`, `traces.json` and `tensors.json` are reports that
+no command reads back (D-021). M1 is not part of the workflow: it runs once per
+build as `python acceptance/m1.py DUMP_P_DIR`.
 
 ## Example
 

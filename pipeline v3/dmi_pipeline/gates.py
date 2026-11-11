@@ -1,4 +1,4 @@
-"""Section 11 checks, dump provenance and the dmi trace run. Results carry evidence, not global pins."""
+"""Section 11 checks and the tree trace that dmi fit runs. Results carry evidence, not global pins."""
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -6,12 +6,9 @@ from typing import Any
 
 import numpy as np
 
-from . import conventions, manifest, spiral
-from .dumpio import CprojData, MatrixDump, Occupations, load_cocc, load_cproj, load_cso, load_ferwe
-from .realized import echo_check
-from .trace import assert_state_inputs, split_operator, trace_run
-
-AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
+from . import conventions, manifest
+from .dumpio import MatrixDump, load_cso
+from .trace import split_operator, trace_run
 
 
 @dataclass(frozen=True)
@@ -26,12 +23,24 @@ class GateResult:
         return asdict(self)
 
 
-def gate_c0(cso: MatrixDump | np.ndarray, tol: float = 1e-12) -> GateResult:
-    """Check the full z-axis SOC operator; flip blocks are never forced to zero.
+def handedness(cso: MatrixDump | np.ndarray) -> np.ndarray:
+    """h = Im Tr([Lambda_x, Lambda_y] Lambda_z) / Tr(Lambda_z^2)^1.5 per ion, math Section 4.2.
 
-    Nonzero flip blocks are required for this material's later T3 validation.
-    Species-dependent magnitudes are reported separately, not hardcoded into
-    a structural Hermiticity test.
+    Ket-first file arrays give h < 0 for xi > 0; a bra-first file or exchanged
+    flip blocks give h > 0.
+    """
+    lx, ly, lz = split_operator(cso)
+    commutator = lx @ ly - ly @ lx
+    norm = np.einsum("nij,nji->n", lz, lz).real
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.einsum("nij,nji->n", commutator, lz).imag / norm ** 1.5
+
+
+def gate_c0(cso: MatrixDump | np.ndarray, tol: float = 1e-12) -> GateResult:
+    """Check the full z-axis SOC operator and its storage layout (Section 11).
+
+    Structure: dd = -uu, uu imaginary antisymmetric with zero diagonal, flip-block
+    Hermiticity, no empty ion. Layout: h < 0 on every ion (Section 4.2).
     """
     m = cso.matrix if isinstance(cso, MatrixDump) else np.asarray(cso)
     if (m.ndim != 4 or m.shape[0] != 4 or m.shape[-1] != m.shape[-2]
@@ -47,49 +56,21 @@ def gate_c0(cso: MatrixDump | np.ndarray, tol: float = 1e-12) -> GateResult:
     }
     magnitudes = np.max(np.abs(m), axis=(0, 2, 3))
     flips = np.max(np.abs(ud), axis=(1, 2))
+    h = handedness(m)
     value = {"errors": errors, "max_abs_per_ion": magnitudes.tolist(),
-             "max_ud_per_ion": flips.tolist()}
-    passed = max(errors.values()) <= tol and bool(np.all(magnitudes > tol)) and bool(np.max(flips) > tol)
-    detail = "Full CSO Hermiticity and z-axis structure checked"
+             "max_ud_per_ion": flips.tolist(), "handedness_per_ion": h.tolist()}
+    left = bool(np.all(h < 0))
+    passed = (max(errors.values()) <= tol and bool(np.all(magnitudes > tol))
+              and bool(np.max(flips) > tol) and left)
+    detail = "Full CSO Hermiticity, z-axis structure and handedness checked"
     if not np.max(flips) > tol:
-        detail += "; all flip blocks are zero: incomplete operator for T3"
+        detail += "; all flip blocks are zero: Lambda_x and Lambda_y are missing"
     if not np.all(magnitudes > tol):
         detail += "; empty ion operator"
+    if not left:
+        detail += (f"; handedness h >= 0 on ions {(np.flatnonzero(~(h < 0)) + 1).tolist()}: "
+                   "flip blocks exchanged or the file is not ket-first")
     return GateResult("C0", passed, value, tol, detail)
-
-
-def rebuild_cocc(cproj: CprojData, ferwe: Occupations) -> np.ndarray:
-    """Vectorized transcription of COCC_FROM_INPUT, including its block order.
-
-    Fortran stores conj(c_bra[LP])*c_ket[L] at IS=1+bra+2*ket.
-    No CSO off-diagonal packing assumption enters this calculation.
-    """
-    assert_state_inputs(cproj, ferwe)
-    h = cproj.header
-    if h.ncdij != 4:
-        raise ValueError("M1 requires four noncollinear COCC blocks")
-    result = np.zeros((4, h.nions, h.lmdim, h.lmdim), complex)
-    weights = ferwe.spin_factor * ferwe.weights[:, None] * ferwe.occupations[0]
-    for ion, lmmax in enumerate(h.lmmax_ion):
-        for block, (bra, ket) in enumerate(conventions.COCC_SPIN_BLOCKS):
-            result[block, ion, :lmmax, :lmmax] = np.einsum(
-                "kib,kjb,kb->ij", cproj.c[0, :, ion, bra, :lmmax].conj(),
-                cproj.c[0, :, ion, ket, :lmmax], weights, optimize=True,
-            )
-    return result
-
-
-def gate_m1(cproj: CprojData, ferwe: Occupations, cocc: MatrixDump, tol: float = 1e-10) -> GateResult:
-    rebuilt = rebuild_cocc(cproj, ferwe)
-    if cocc.matrix.shape != rebuilt.shape or not np.all(np.isfinite(cocc.matrix)):
-        return GateResult("M1", False, None, tol, "COCC dimensions or values invalid")
-    if cocc.metadata.nelect is None or not np.isclose(cocc.metadata.nelect, cproj.header.nelect, atol=1e-6, rtol=0):
-        return GateResult("M1", False, None, tol, "COCC NELECT disagrees with CPROJ")
-    diff = np.abs(rebuilt - cocc.matrix)
-    where = tuple(int(i) + 1 for i in np.unravel_index(np.argmax(diff), diff.shape))
-    deviation = float(diff.max())
-    return GateResult("M1", deviation <= tol, deviation, tol,
-                      f"Maximum mismatch at (IS, ION, I, J)={where}")
 
 
 def gate_i0(imag, tol: float = 1e-6) -> GateResult:
@@ -151,98 +132,34 @@ def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
                       sigmas, "|F_ij| <= 3 sigma(F_ij) for every element")
 
 
-def gate_t3(z: MatrixDump, dump: MatrixDump, axis: str, tol: float = 1e-10) -> GateResult:
-    """Section 11 T3: C_uu of a genuine SAXIS = axis dump equals Lambda_axis from the z dump."""
-    lam = split_operator(z)["xyz".index(axis)]
-    uu = dump.matrix[conventions.UU_IDX]
-    if uu.shape != lam.shape:
-        return GateResult("T3", False, None, tol, f"{axis} dump dimensions differ from the z dump")
-    error, reversed_ = float(np.max(np.abs(uu - lam))), float(np.max(np.abs(uu + lam)))
-    detail = f"C_uu at SAXIS = {axis} against Lambda_{axis} of Eq (4.4)"
-    if error > tol and axis == "y" and reversed_ <= tol:
-        detail = "C_uu matches -Lambda_y: the CSO flip blocks are stored du, ud; correct conventions.py"
-    return GateResult("T3", error <= tol, {"axis": axis, "error": error}, tol, detail)
+def check_tree(out, states) -> dict:
+    """Trace every ok run from its files, then C0, N0, I0, P0 and E0 (Section 11).
 
-
-# ---- dump provenance and the run tree -------------------------------------
-
-def completed(directory: Path) -> bool:
-    outcar = directory / "OUTCAR"
-    return outcar.exists() and "General timing and accounting" in outcar.read_text(encoding="utf-8", errors="replace")
-
-
-def finish(dump_dir, kind: str, out) -> dict:
-    """Check one finished dump and write its provenance.json; failures are recorded too."""
-    dump_dir, out = Path(dump_dir), Path(out)
-    record = {"kind": kind, "passed": False, "checks": {}, "files": {}, "parent": None,
-              "build_banner": None, "error": None}
-    try:
-        record["parent"] = manifest.load(dump_dir / "parent.json")["parent"]
-        spiral.parent_unchanged(dump_dir)
-        record["checks"]["incar_echo"] = echo_check(dump_dir)
-        record["build_banner"] = (dump_dir / "OUTCAR").read_text(errors="replace").splitlines()[0].strip()
-        names, result = ["INCAR", "OUTCAR"], None
-        if kind == "dump_P":
-            cocc = load_cocc(dump_dir / "COCC.dat")
-            names.append("COCC.dat")
-            if record["parent"] == "q0":                  # M1 on the first state (D-011)
-                cproj = load_cproj(dump_dir)
-                result = gate_m1(cproj, load_ferwe(dump_dir), cocc)
-                names += [str(f.path.relative_to(dump_dir)) for f in cproj.files] + ["FERWE.dat"]
-        else:
-            axis = {"dump_C": "z", "dump_C_x": "x", "dump_C_y": "y"}[kind]
-            cso = load_cso(dump_dir / "CSO.dat", expect_saxis=AXES[axis])
-            names.append("CSO.dat")
-            if axis == "z":
-                result = gate_c0(cso)
-            else:
-                manifest.require_done(out / "dump_C", "dump_C", out)
-                result = gate_t3(load_cso(out / "dump_C" / "CSO.dat"), cso, axis)
-        if result is not None:
-            record["checks"][result.name] = result.to_dict()
-        record["files"] = {str((dump_dir / n).relative_to(out)): manifest.file_hash(dump_dir / n) for n in names}
-        record["passed"] = all(check["passed"] for check in record["checks"].values())
-        if not record["passed"]:
-            record["error"] = "failed " + ", ".join(k for k, c in record["checks"].items() if not c["passed"])
-    except (OSError, ValueError, KeyError) as error:
-        record["error"] = str(error)
-    manifest.save(record, dump_dir / "provenance.json")
-    return record
-
-
-def check_tree(out) -> dict:
-    """dmi trace: finish new dumps, trace every ok run, then N0, I0, P0, E0 and T3."""
+    states is spiral.read_runs(out), q0 first. Writes traces.json as a report;
+    no command reads it back (D-021).
+    """
     out = Path(out)
-    names = spiral.run_names(out)
-    collected = manifest.load(out / "collected.json")
-    lines, failures = [], []
+    names = list(states)
+    lines, failures, runs, energies = [], [], {}, {}
+    checks = {}
+    try:
+        cso = load_cso(out / "dump_C" / "CSO.dat")
+        checks["C0"] = gate_c0(cso).to_dict()
+    except (OSError, ValueError) as error:
+        cso, checks["C0"] = None, {"name": "C0", "passed": False, "detail": str(error)}
+    if not checks["C0"]["passed"]:
+        failures.append("C0")
+    lines.append(f"C0  {'pass' if checks['C0']['passed'] else 'FAIL: ' + checks['C0']['detail']}")
 
-    dumps = [(out / d, d) for d in spiral.CSO_DUMPS] + [(out / n / "dump_P", "dump_P") for n in names]
-    status = {}
-    for directory, kind in dumps:                         # dump_C first: T3 needs it
-        label = str(directory.relative_to(out))
-        if not directory.exists():
-            continue
-        if not (directory / "provenance.json").exists():
-            if not completed(directory):
-                status[label] = "missing"
-                lines.append(f"{label:24} missing")
-                continue
-            finish(directory, kind, out)
-        record = manifest.load(directory / "provenance.json")
-        status[label] = "ok" if record["passed"] else record["error"]
-        lines.append(f"{label:24} {status[label]}")
-
-    runs, energies = {}, {}
     for name in names:
-        result = collected.get(name, {"error": "missing"})
-        if "error" in result:
+        if "error" in states[name]:
             lines.append(f"{name:24} skipped: not ok in collect")
             continue
+        energies[name] = states[name]["E_eV"]           # E0 needs no dump
+        if cso is None:
+            continue
         try:
-            spiral.unchanged(out / name, result["sha256"], "dmi collect")
-            energies[name] = result["E_eV"]            # E0 needs no dump
-            runs[name] = trace_run(out / name, out)
+            runs[name] = trace_run(out / name, cso)
             runs[name]["I0"] = gate_i0(runs[name]["imag_eV"]).to_dict()
             if not runs[name]["I0"]["passed"]:
                 failures.append(f"I0 {name}")
@@ -252,7 +169,6 @@ def check_tree(out) -> dict:
             failures.append(name)
             lines.append(f"{name:24} {error}")
 
-    checks = {}
     if "q0" in runs and "error" not in runs["q0"]:
         checks["N0"] = gate_n0(runs["q0"]["per_ion_eV"]).to_dict()
     else:
@@ -273,18 +189,10 @@ def check_tree(out) -> dict:
                 failures.append(f"{name} {direction}")
     if not checks["N0"]["passed"]:
         failures.append("N0")
-    t3 = {axis: status.get(f"dump_C_{axis}", "not run") for axis in "xy"}
-    for axis, state in t3.items():
-        if state not in ("ok", "not run", "missing"):
-            failures.append(f"T3 {axis}")
-    checks["T3"] = t3
-    report = {"runs": runs, "checks": checks, "dumps": status,
-              "T_y": "confirmed by T3" if t3["y"] == "ok" else "provisional: CSO flip-block order unpinned until T3",
-              "passed": not failures, "failures": failures}
+    report = {"runs": runs, "checks": checks, "passed": not failures, "failures": failures}
     manifest.save(report, out / "traces.json")
     lines += [f"N0  {'pass' if checks['N0']['passed'] else 'FAIL'}",
               *(f"{name}  {pair:12} {'pass' if g['passed'] else 'FAIL'}" for name in ("P0", "E0")
-                for pair, g in checks[name].items()),
-              f"T3  x {t3['x']}, y {t3['y']}", f"T_y {report['T_y']}"]
+                for pair, g in checks[name].items())]
     report["lines"] = lines
     return report

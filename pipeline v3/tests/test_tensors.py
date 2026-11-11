@@ -4,15 +4,21 @@ The spin model of Section 6 is the oracle: its D and A come from Eq (6.3), its
 y and g from Eq (6.2), independent of the fit code.
 """
 
+import os
+import subprocess
+
 import numpy as np
 import pytest
 
 from dmi_pipeline import manifest, spiral, symmetry, tensors
 from dmi_pipeline.__main__ import main
+from dmi_pipeline.dumpio import load_cso
 from dmi_pipeline.gates import gate_forbidden
-from tests.fixtures import bfo
-from tests.test_spiral import SEED, material
-from tests.test_symmetry import closure, fege, rot_z
+from dmi_pipeline.realized import incar
+from dmi_pipeline.trace import split_operator
+from tests.fixtures import bfo, make_clean_cso, write_cocc, write_cso
+from tests.test_spiral import SEED, finish, material
+from tests.test_symmetry import fege
 
 
 def spin_model(rotations, seeds, n_m):
@@ -100,7 +106,7 @@ def test_fits_recover_spin_model_tensors():
 
 
 def test_predictions():
-    """Section 10.1's three cases, the y-row flip, and the uncertainty flags."""
+    """Section 10.1's three cases and the uncertainty flags."""
     d0, a0 = 2e-3, 0.05
     scalar = tensors.predict(d0 * np.eye(3), a0 * np.eye(3))
     assert scalar["pitch_A"] == pytest.approx(4 * np.pi * a0 / d0) and scalar["e_star"] == pytest.approx(-d0 ** 2 / (4 * a0))
@@ -120,20 +126,6 @@ def test_predictions():
     assert chain["pitch_A"] / 10 == pytest.approx(18.85, abs=0.005)
     assert chain["q_star"][0] == pytest.approx(-d / (j * a))
 
-    rng = np.random.default_rng(2)
-    generic_d, base = rng.normal(size=(3, 3)) * 1e-3, rng.normal(size=(3, 3))
-    generic_a = base @ base.T * 0.01 + 0.02 * np.eye(3)
-    plain, flipped = tensors.predict(generic_d, generic_a), tensors.predict(tensors.FLIP @ generic_d, generic_a)
-    assert flipped["pitch_A"] == pytest.approx(plain["pitch_A"]) and flipped["e_star"] == pytest.approx(plain["e_star"])
-    assert flipped["q_star"] == pytest.approx(plain["q_star"])
-    assert flipped["n_star"][0] == pytest.approx(plain["n_star"][0] * [1, -1, 1]) or \
-        flipped["n_star"][0] == pytest.approx(-plain["n_star"][0] * [1, -1, 1])
-
-    mirror_x, c2x = np.diag([-1., 1, 1]), np.diag([1., -1, -1])
-    s4z = np.array([(0, -1, 0), (1, 0, 0), (0, 0, -1)], float)
-    for generators, visible in (([rot_z(3), mirror_x], True), ([s4z, c2x], True), ([rot_z(2), c2x], False)):
-        assert tensors.y_flip_visible(symmetry.spiralization_basis(closure(generators))) is visible
-
     basis = [z_cross / np.sqrt(2)]
     a_basis = [np.diag([1., 1, 0]) / np.sqrt(2), np.diag([0., 0, 1])]
     d_coeff, a_coeff = np.array([d0 * np.sqrt(2)]), np.array([a0 * np.sqrt(2), 3 * a0])
@@ -152,32 +144,53 @@ def test_predictions():
     assert tensors.spin_wave_stiffness(a_matrix, np.zeros((9, 9)), 2.2, [1, -1])[0] is None
 
 
-def test_fit_command(tmp_path, capsys):
-    """dmi fit on a prepared BFO tree whose collected.json and traces.json hold spin-model values."""
-    path, out = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.005, 0.01, 0.015")), tmp_path / "runs"
-    spiral.prepare(spiral.load_seed(path), out, tmp_path / "job.sh")
-    structure, sites, signs, seeds = MODELS["BFO"]
-    ops = symmetry.operations(*structure, sites, signs)
-    big_d, big_a, per_cell = spin_model(ops["rotations"], seeds, 2)
-    lattice = bfo()[0]
-    collected, runs = {}, {}
-    for name in (out / "runs.txt").read_text().split():
-        q_frac = manifest.load(out / name / "config.json")["q_frac"]
-        t_cell, e_cell = per_cell(spiral.cartesian(lattice, q_frac)[0])
-        for file, text in (("OUTCAR", "out " + name), ("OSZICAR", "osz " + name), ("dump_P/COCC.dat", "cocc " + name)):
-            (out / name / file).parent.mkdir(exist_ok=True)
-            (out / name / file).write_text(text)
-        collected[name] = {"E_eV": -50.0 + e_cell, "M": [4.0, 4.0],
-                           "sha256": {f: manifest.file_hash(out / name / f) for f in ("OUTCAR", "OSZICAR")}}
-        per_ion = np.zeros((10, 3))
-        per_ion[2], per_ion[3] = 0.7 * t_cell, 0.3 * t_cell
-        runs[name] = {"T_eV": t_cell.tolist(), "per_ion_eV": per_ion.tolist(), "q_frac": q_frac,
-                      "sha256": {"COCC": manifest.file_hash(out / name / "dump_P" / "COCC.dat")}}
-    traces = {"passed": True, "failures": [], "runs": runs, "T_y": "provisional: CSO flip-block order unpinned until T3",
-              "checks": {"P0": {f"d{i}_t{j}": {"value": {"even_eV": 0.0}} for i in (1, 2, 3) for j in (1, 2, 3)}}}
-    manifest.save(collected, out / "collected.json")
-    manifest.save(traces, out / "traces.json")
+def test_command_chain(tmp_path, capsys):
+    """prepare, collect, dumps and fit on a BFO tree whose VASP files hold spin-model values.
 
+    OUTCAR energies and COCC traces reproduce Eq (6.2), so fit must return the Eq (6.3)
+    tensors; fit reads only these files (D-021).
+    """
+    path, out, job = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.005, 0.01, 0.015")), tmp_path / "runs", tmp_path / "job.sh"
+    assert main(["prepare", str(path), "--job", str(job), "--out", str(out)]) == 0
+    structure, sites, signs, seeds = MODELS["BFO"]
+    big_d, big_a, per_cell = spin_model(symmetry.operations(*structure, sites, signs)["rotations"], seeds, 2)
+    lattice, names = bfo()[0], spiral.run_names(out)
+    cells = {name: per_cell(spiral.cartesian(lattice, manifest.load(out / name / "config.json")["q_frac"])[0])
+             for name in names}
+    for name in names:
+        finish(out / name, energy=-50.0 + cells[name][1])
+        for big in ("WAVECAR", "CHGCAR"):
+            (out / name / big).write_bytes(b"synthetic " + name.encode())
+    assert main(["collect", str(out)]) == 0
+    assert main(["dumps", str(out), "--job", str(job)]) == 0
+
+    # Section 5 decks: one z-axis CSO dump from q0's CHGCAR, and a COCC-only dump_P per run.
+    assert (out / "dumps.txt").read_text().split() == ["dump_C"] + [f"{n}/dump_P" for n in names]
+    assert subprocess.run(["bash", "-n", str(out / "submit_dumps.sh")]).returncode == 0
+    tags = incar(out / "dump_C" / "INCAR")
+    assert (tags["LSORBIT"], tags["ISTART"], tags["ICHARG"], tags["SAXIS"]) == ("T", "0", "11", "0 0 1")
+    assert not set(tags) & set(spiral.SPIRAL_ONLY) and tags["MAGMOM"] == incar(out / "q0" / "INCAR")["MAGMOM"]
+    assert os.readlink(out / "dump_C" / "CHGCAR") == "../q0/CHGCAR" and not (out / "dump_C" / "WAVECAR").exists()
+    for name in ("q0", "d2_t1_minus"):
+        tags = incar(out / name / "dump_P" / "INCAR")
+        assert (tags["ISTART"], tags["ICHARG"], tags["LDUMPCOCC"]) == ("1", "11", "T") and "LDUMPCPROJ" not in tags
+        assert tags["QSPIRAL"] == incar(out / name / "INCAR")["QSPIRAL"]
+        assert os.readlink(out / name / "dump_P" / "WAVECAR") == "../WAVECAR"
+
+    # Dump outputs. Per ion, COCC_uu - COCC_dd = sum_b c_b Lambda_b, with c chosen so
+    # that the trace gives 0.7 and 0.3 of the spin-model T(q) on the two Fe ions.
+    cso = make_clean_cso(10, 3)
+    write_cso(out / "dump_C" / "CSO.dat", cso)
+    lam = split_operator(load_cso(out / "dump_C" / "CSO.dat"))
+    for name in names:
+        cocc = np.zeros((4, 10, 3, 3), complex)
+        for ion, share in ((2, 0.7), (3, 0.3)):
+            gram = np.einsum("aij,bij->ab", lam[:, ion], lam[:, ion].conj()).real
+            m = np.einsum("b,bij->ij", np.linalg.solve(gram, share * cells[name][0]), lam[:, ion])
+            cocc[0, ion], cocc[3, ion] = m / 2, -m / 2
+        write_cocc(out / name / "dump_P" / "COCC.dat", cocc, nelect=8.0)
+
+    capsys.readouterr()
     assert main(["fit", str(out)]) == 0
     report = manifest.load(out / "tensors.json")
     assert report["N_m"] == 2 and np.allclose(report["D"]["value"], 1e3 * big_d, atol=1e-6 * 1e3 * np.abs(big_d).max())
@@ -187,22 +200,30 @@ def test_fit_command(tmp_path, capsys):
     assert np.allclose(report["micromagnetic"]["D_mJ_per_m2"], 1e3 * big_d / volume * 16.02, rtol=1e-6, atol=1e-12)
     assert np.allclose(report["micromagnetic"]["A_pJ_per_m"], 1e3 * big_a / volume * 1.602, rtol=1e-6, atol=1e-12)
     assert np.allclose(report["D_by_species"]["Fe"]["D"], report["D"]["value"], atol=1e-12)
-    assert report["T_y"].startswith("provisional") and report["y_flip_visible_in_F"] and "F_flipped_norm" in report
-    assert report["sign"].startswith("unanchored") and report["D_sw"]["value"] is None
+    assert report["sign"] == "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"
+    assert report["D_sw"]["value"] is None
     assert report["prediction"]["pitch_nm"] > 0 and report["prediction"]["degeneracy"] == 2
+    traces = manifest.load(out / "traces.json")
+    assert traces["passed"] and traces["checks"]["C0"]["passed"] and traces["checks"]["N0"]["passed"]
+    assert all(g["passed"] for name in ("P0", "E0") for g in traces["checks"][name].values())
 
-    def refused(message, path, change):
-        original = path.read_text()
-        change(path)
+    def refused(*messages):
         capsys.readouterr()
-        assert main(["fit", str(out)]) == 1 and message in capsys.readouterr().err
-        path.write_text(original)
-    refused("traces.json did not pass", out / "traces.json",
-            lambda p: manifest.save(dict(traces, passed=False), p))
-    refused("COCC.dat changed since dmi trace", out / "d2_t3_minus" / "dump_P" / "COCC.dat", lambda p: p.write_text("x"))
-    plan = manifest.load(out / "plan.json")
-    refused("seed in plan.json has 1 sites", out / "plan.json",
-            lambda p: manifest.save(dict(plan, seed=plan["seed"].replace("sites = [3, 4]", "sites = [3]")), p))
-    runs_without = {k: v for k, v in runs.items() if k != "d1_t1_plus"}
-    refused("fail the Section 8.2 rank conditions", out / "traces.json",
-            lambda p: manifest.save(dict(traces, runs=runs_without), p))
+        assert main(["fit", str(out)]) == 1
+        output = capsys.readouterr().out
+        assert all(message in output for message in messages), output
+
+    # The one guard: a COCC.dat older than its parent OUTCAR belongs to an earlier state.
+    cocc_path, outcar = out / "d2_t3_minus" / "dump_P" / "COCC.dat", out / "d2_t3_minus" / "OUTCAR"
+    stamp = os.stat(outcar).st_mtime_ns
+    os.utime(cocc_path, ns=(stamp - 10**9, stamp - 10**9))
+    refused("d2_t3_minus", "older than the run's OUTCAR", "fit refused")
+    os.utime(cocc_path, ns=(stamp + 10**9, stamp + 10**9))
+    # Exchanged flip blocks keep C0's Hermiticity but reverse the handedness (Section 4.2).
+    write_cso(out / "dump_C" / "CSO.dat", cso[[0, 2, 1, 3]])
+    refused("C0  FAIL", "handedness h >= 0", "fit refused: failed C0")
+    write_cso(out / "dump_C" / "CSO.dat", cso)
+    # A run that collect rejects leaves d1 with 2 complete pairs, too few for the rank conditions.
+    finish(out / "d1_t2_plus", energy=-50.0 + cells["d1_t2_plus"][1], reversed_site=True)
+    capsys.readouterr()
+    assert main(["fit", str(out)]) == 1 and "fail the Section 8.2 rank conditions" in capsys.readouterr().err
