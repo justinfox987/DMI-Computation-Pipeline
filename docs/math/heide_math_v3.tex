@@ -89,6 +89,10 @@ residual, runs M1 once per build, replaces T3 by a handedness check, narrows the
 smearing rule, and adds Section~\ref{sec:mca} on anisotropy. Every existing
 equation keeps its number; new displays in old sections are unnumbered. The sign
 correction rests on the VASP source and a bookkeeping test, not on a VASP run.
+Amended 12 November 2026 (D-023): the forbidden-part bound of
+Section~\ref{sec:checks} gains a floor of $1\%$ of $\max|\Dt_{\rm free}|$, and
+the rank test of Section~\ref{sec:fit} is on the geometry alone, with two
+magnitudes per direction.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -779,8 +783,15 @@ samples and the pooled value $1.59\times10^{-6}$ from 9.
 The two-step fit above is linear end to end, so one solve gives the same
 tensors: the unknowns are the tensor components and one cubic or quartic
 nuisance per direction and axis. The two agree to $10^{-12}$ on the spin
-models. Its condition for a determined fit is full column rank of that design
-matrix, which contains both rank conditions of Section~\ref{sec:qplan}. The
+models. Its condition for a determined fit has two parts. The geometry must
+determine the tensor: the tensor columns of the design, one row block per
+direction with $t$ set aside and each column scaled to unit norm, must have a
+smallest singular value of at least $0.1$. This contains both rank conditions of
+Section~\ref{sec:qplan}. Separately, every direction used needs complete pairs
+at two or more distinct magnitudes, so that its slope and its nuisance separate.
+The whole design is not tested as one matrix, because with magnitudes in the
+ratio $1{:}2{:}3$ its $t$ and $t^3$ columns are so correlated that its smallest
+normalized singular value stays below about $0.17$ for any directions. The
 noise in $E(0)$ is common to every $g$ and is not in $\hat\sigma_g$; the fit
 residual shows it.
 
@@ -921,8 +932,18 @@ $T_\alpha(\qh)+T_\alpha(-\qh)$ with $T_\alpha(\qh)-T_\alpha(-\qh)$; start at $10
 at the smallest $q$ and tighten from data. E0 compares $E(\qh)$ with $E(-\qh)$.
 
 \item[Forbidden: do the tensors obey symmetry?]
-Require $\mathcal F$ of Eq.~\eqref{eq:forbidden} to vanish within $3\sigma$,
-with $\sigma$ from Eq.~\eqref{eq:cov}. Also
+Require every element of $\mathcal F$ of Eq.~\eqref{eq:forbidden} to satisfy
+\[
+ |\mathcal F_{ij}|\le3\sigma(\mathcal F_{ij})
+ +0.01\max_{kl}\bigl|(\Dt_{\rm free})_{kl}\bigr|,
+\]
+with $\sigma$ from Eq.~\eqref{eq:cov}. The parity $\sigma$ measures noise only.
+Truncating the series at $t^3$ leaves a forbidden part of order $10^{-4}$ to
+$10^{-3}$ of $|\Dt|$ at realistic $t$, which no residual-based $\sigma$ captures:
+$9\times10^{-5}$ on the noise-free BFO spin model at $t=0.03$, $0.06$,
+$0.09$~\AA$^{-1}$. An axis, frame or transpose error is of order $|\Dt|$. The
+$1\%$ floor separates the two. With $\Dt=0$ the floor vanishes and $\sigma$
+alone decides. Report $\max|\mathcal F|/\max|\Dt_{\rm free}|$ in every case. Also
 test directions with a symmetry-required zero, such as $y$ along a polar axis.
 
 \item[Cross-check: do the two stiffness routes agree?]

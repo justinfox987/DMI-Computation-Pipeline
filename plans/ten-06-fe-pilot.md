@@ -6,9 +6,11 @@ Physics authority: `docs/math/heide_math_v3.tex` (Revision 3.2), Sections 3, 4,
 `docs/seed_file.md`. Input ownership: D-019 (pending on `incar-user-settings`).
 
 Status: draft for user review, 2026-11-09, revised with the user's answers, and
-revised again on 2026-11-11 for D-020 to D-023 (`plans/simplify-1.md`). **This
-pilot needs FIX-1 and SIM-1 merged first:** as the code stands at `454afa2`, the
-FERWE reader rejects a smeared metal and `dmi trace` cannot pass.
+revised again on 2026-11-11 for D-020 to D-023 (`plans/simplify-1.md`). FIX-1
+and SIM-1a are merged, and SIM-1b (D-022, D-023) is in review on
+`sim-1b-incar-fit`. The trace has VASP's sign, the dump readers accept a smeared
+metal, `dmi fit` traces and checks the tree itself, and `dmi plan
+materials/fe/seed.toml` runs on the user's INCAR with one override line.
 Nothing has run. When it is approved, and the user has added their inputs to
 `materials/fe/`, work on `ten-06-fe-pilot` from `main`. The user submits every job
 (D-006). No agent contacts the cluster.
@@ -47,8 +49,8 @@ Factual notes for those choices:
   `plan` requires both, prints them and does not check the gap (TEN-03).
 - VASP advises `LMAXMIX = 4` for d-electron systems when a run reads `CHGCAR`
   with `ICHARG = 11`. Every dump reads it that way (TEN-04).
-- After SIM-1 the code does two things with the INCAR, and nothing else
-  (D-022): it overrides the eleven tags it owns, printing one line per
+- The code does two things with the INCAR, and nothing else (D-022): it
+  overrides the eleven tags it owns, printing one line per
   override, and it refuses tetrahedron smearing. The dumps need `LWAVE` and
   `LCHARG` left `T` (their default).
 

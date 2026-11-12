@@ -10,7 +10,7 @@ TEN-03. A real example is `materials/fe/seed.toml`.
 materials/fe/
   seed.toml   what the pipeline needs to know
   POSCAR      structure, the main input
-  INCAR       electronic settings only (ENCUT, ENINI, ISMEAR, SIGMA, RWIGS, U)
+  INCAR       the user's settings (D-019); see the INCAR rules below
   KPOINTS     one mesh for every q
   POTCAR      never committed
 ```
@@ -26,6 +26,7 @@ dmi collect RUNS                     # one state per run; safe to rerun
 dmi dumps   RUNS --job patchb.sh     # one z-axis dump_C and each ok run's dump_P
 cd RUNS && sbatch submit_dumps.sh    # the user submits
 dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0, then D, F, A, the pitch and units
+                                     # with no dump_C yet: A, D_sw and E0 only (energies-only)
 ```
 
 `--out` is required because the seed holds no paths. There is no `status`
@@ -50,9 +51,6 @@ t = [0.03, 0.06, 0.09]   # spiral magnitudes in 1/Å
 spacegroup = 229         # stop if spglib finds a different group
 symprec = 1e-3           # symmetry tolerance in Å
 directions = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]   # q_frac; default: code chooses
-exchange_grid = [4, 4, 4]                        # default: no exchange runs
-rmax = 6.0               # exchange bond cutoff in Å
-min_sigma = 0.05         # lowest SIGMA accepted, eV; lower only for a convergence series
 ```
 
 ## Fields
@@ -65,14 +63,29 @@ min_sigma = 0.05         # lowest SIGMA accepted, eV; lower only for a convergen
 | `t` | Yes | Magnitudes in Å$^{-1}$; Section 8.3 asks for three per direction. The loader sorts them ascending, so run `d{i}_t1` is always the smallest `t`, where P0 and E0 gate |
 | `spacegroup` | No | Check on spglib's result, not an override |
 | `symprec` | No | spglib tolerance in Å, default `1e-3` |
-| `directions` | No | $\boldsymbol q_{\rm frac}$ directions; both rank conditions of Section 8.2 still apply |
-| `exchange_grid` | No | Coarse $\Gamma$-centered grid of Section 8.4 |
-| `rmax` | With `exchange_grid` | Bond cutoff in Å for Section 7.6 |
-| `min_sigma` | No | Lowest `SIGMA` in eV that `plan` accepts, default `0.05`; lower it only for a smearing convergence series (D-018) |
+| `directions` | No | $\boldsymbol q_{\rm frac}$ directions. Fewer than three are allowed (see below) |
 
-The material `INCAR` must set `ISMEAR` to `-1`, `0` or `1` (Fermi-Dirac, Gaussian,
-Methfessel-Paxton order 1) and `SIGMA` explicitly; `plan` prints both (D-018,
-math Section 3.2).
+Without `directions`, the code chooses $\max(3,p_A)$ low-index directions, so
+$\mathcal D_{\rm free}$ and its forbidden part are always evaluated. Explicit
+`directions` may be fewer than three when the constrained-$\mathcal D$ and $A$
+fit designs pass the rank test below (math Section 9.4). If the $\mathcal D_{\rm free}$
+design then lacks full rank, `plan` says so, and `tensors.json` reports
+$\mathcal D_{\rm free}$, $\mathcal F$ and the Forbidden check as not evaluated.
+A cubic material ($p_A = 1$) can be converged from one direction this way.
+
+## INCAR rules
+
+The `INCAR` belongs to the user (D-019, D-022). The code owns eleven tags and
+writes its own value for each: `LNONCOLLINEAR`, `LSPIRAL`, `LSORBIT`, `LZEROZ`,
+`SAXIS`, `ISYM`, `I_CONSTRAINED_M`, `LAMBDA`, `QSPIRAL`, `MAGMOM` and
+`M_CONSTR` (math Section 3.2). Where the material `INCAR` sets one of them
+differently, `plan` and `prepare` print one `override` line with the user's
+value and the value used, and continue. One rule is checked: `ISMEAR = -4` or
+`-5` (tetrahedron) is refused, because its energy is not variational and the
+force theorem does not hold. Every other tag, including its absence, is the
+user's choice and is passed through unchanged. `plan` prints `ENCUT`, `ENINI`,
+`ISMEAR` and `SIGMA` when the `INCAR` sets them. The dumps need the parent's
+`WAVECAR` and `CHGCAR`, so leave `LWAVE` and `LCHARG` at `T`.
 
 ## Rules
 
@@ -85,8 +98,10 @@ math Section 3.2).
 - The `plan` output starts with the group spglib found and the kept and dropped
   operation counts. This is the only protection from a wrong group when
   `spacegroup` is left out, so set `spacegroup` for production runs.
-- The code writes the run tags of math Section 3.2 itself. If the `INCAR` in the
-  material folder contradicts one, stop and report the tag. `KSPACING` is
-  rejected, because `KPOINTS` sets the mesh. Every other tag is the user's
-  (D-019): `plan` warns about tags it has not seen before and keeps them.
-- Check the rank conditions on `directions` before writing any input.
+- Check the rank conditions on `directions` before writing any input: the
+  tensor columns of the constrained-$\mathcal D$ and $A$ fit designs, one row
+  block per direction with `t` set aside and each column scaled to unit norm,
+  need smallest singular value at least `RANK_FLOOR = 0.1`, and every direction
+  needs two or more distinct magnitudes (math Section 9.4). `plan` prints the
+  values. In `fit`, a direction with complete pairs at fewer than two
+  magnitudes is dropped.

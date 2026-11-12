@@ -5,6 +5,22 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- SIM-1b (D-022, D-023), which completes SIM-1.
+  - **INCAR:** the code overrides the eleven tags it owns and prints one `override` line each. It refuses only tetrahedron smearing. The INCAR_TAGS warning, the ISMEAR allowlist, the SIGMA floor, `min_sigma`, the required ENCUT, ENINI, RWIGS, ISMEAR and SIGMA, and the KSPACING rejection are removed.
+  - **Fit:** one linear solve per tensor, with cubic and quartic nuisances (math Section 9.4). Noise comes from the parity residuals, and both sigmas and their sample counts are in `tensors.json`. The rank condition is the smallest singular value of each column-normalized design, shared by `plan` and `fit`. The per-direction fits, pooled variance, MIN_PAIRS and the poorly-determined flag are removed.
+  - **Fewer directions:** explicit `directions` may be fewer than three. D_free and F are then reported as not evaluated.
+  - **Energies-only:** with no `dump_C`, `fit` gives A, D_sw and E0.
+  - **Removed:** the `exchange_grid` and `rmax` seed keys.
+  - **Follow-ups:** a refused fit overwrites `tensors.json`; a run with a nonzero printed `lambda` is an error.
+  - **Results:** the tensors agree with the two-step fit to 3e-14 relative. The default BFO directions change to (1-10), (10-1), (111). Tests 14 -> 15.
+  - **Your Fe INCAR:** `dmi plan` now runs on it.
+  - **After review (D-023 amended):**
+    - The Forbidden bound is `3 sigma + 0.01 max|D_free|` (`FORBIDDEN_FLOOR`), and `tensors.json` records `max|F| / max|D_free|`.
+    - The rank test uses the tensor columns of each design, with t set aside, plus at least two distinct magnitudes per direction used. `fit` drops a direction that has fewer.
+    - Math Sections 9.4 and 11 and D-023 are amended.
+
+  No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md).
+
 - SIM-1a (D-021): every command reads the VASP files again, and no derived file is an input.
   - **Commands:** `plan`, `prepare`, `collect`, `dumps` and `fit`; `dmi trace` is removed. `fit` traces every run from `dump_C/CSO.dat` and the `dump_P/COCC.dat` files and applies C0, N0, I0, P0 and E0 itself. `collected.json` and `traces.json` are reports.
   - **Guards:** the SHA-256, `parent.json`, `provenance.json`, OUTCAR-echo and INCAR-against-config guards are replaced by one: a COCC.dat older than its run's OUTCAR is an error.

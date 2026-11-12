@@ -3,6 +3,7 @@
 Synthetic files only. The BFO geometry is a test structure, not a relaxed one.
 """
 
+from itertools import groupby
 import subprocess
 
 import numpy as np
@@ -18,16 +19,19 @@ JOB = "#!/bin/bash\n#SBATCH -N 1\n#SBATCH -t 00:30:00\n\nmodule load vasp\nsrun 
 SEED = "sites = [3, 4]\nsigns = [1, -1]\nmoments = [4.0, 4.0]\nt = [0.03, 0.06, 0.09]\nspacegroup = 161\n"
 
 
-def material(tmp_path, seed=SEED, incar_text=INCAR):
+def material(tmp_path, seed=SEED, incar_text=INCAR, structure=None):
+    """A material folder; BFO unless another (lattice, species, tau) is given."""
     folder = tmp_path / "bfo"
     folder.mkdir(exist_ok=True)
-    lattice, species, tau = bfo()
-    text = "BFO\n1.0\n" + "".join(" ".join(f"{x:.12f}" for x in row) + "\n" for row in lattice)
-    text += "Bi Fe O\n2 2 6\nDirect\n" + "".join(" ".join(f"{x:.6f}" for x in row) + "\n" for row in tau)
+    lattice, species, tau = bfo() if structure is None else structure
+    types = [(symbol, len(list(group))) for symbol, group in groupby(species)]
+    text = "test\n1.0\n" + "".join(" ".join(f"{x:.12f}" for x in row) + "\n" for row in lattice)
+    text += " ".join(s for s, _ in types) + "\n" + " ".join(str(n) for _, n in types) + "\nDirect\n"
+    text += "".join(" ".join(f"{x:.6f}" for x in row) + "\n" for row in tau)
     (folder / "POSCAR").write_text(text)
     (folder / "INCAR").write_text(incar_text)
     (folder / "KPOINTS").write_text("mesh\n0\nGamma\n4 4 4\n0 0 0\n")
-    (folder / "POTCAR").write_text("".join(f" VRHFIN ={x}: synthetic\n" for x in ("Bi", "Fe", "O")))
+    (folder / "POTCAR").write_text("".join(f" VRHFIN ={s}: synthetic\n" for s, _ in types))
     (folder / "seed.toml").write_text(seed)
     (tmp_path / "job.sh").write_text(JOB)
     return folder / "seed.toml"
@@ -39,33 +43,33 @@ def test_seed_and_plan(tmp_path, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "space group 161 (R3c) at symprec 0.001: 6 operations, 6 kept, 0 dropped"
     assert lines[2] == "ENCUT 600  ENINI 500  ISMEAR 0  SIGMA 0.05"
-    assert not any(line.startswith("WARNING") for line in lines)
-    # D-019: a tag the code has not seen is the user's; plan warns and keeps it.
-    assert main(["plan", str(material(tmp_path, incar_text=INCAR + "NBLOCK = 1\n"))]) == 0
-    assert capsys.readouterr().out.splitlines()[-1] == \
-        "WARNING: INCAR tags not seen before, kept as given (D-019): NBLOCK"
+    assert not any(line.startswith("override") for line in lines)
 
     # Section 8.2: the threefold relates BFO's three axes, so A has rank 1 of 2.
     def with_directions(rows):
         return spiral.load_seed(material(tmp_path, SEED + f"directions = {rows}\n"))
-    with pytest.raises(ValueError, match="stiffness: sigma_A = .* p_A = 2"):
+    with pytest.raises(ValueError, match="stiffness: rank value .* p_A = 2"):
         spiral.plan(with_directions([[1, 0, 0], [0, 1, 0], [0, 0, 1]]))
     good = spiral.plan(with_directions([[1, 1, 1], [1, -1, 0], [1, 0, 0]]))
-    assert (good["sigma_D"], good["sigma_A"]) == pytest.approx((.344, .929), abs=1e-3)
+    assert min(good["ranks"].values()) > spiral.RANK_FLOOR
     chosen = spiral.plan(spiral.load_seed(material(tmp_path)))
-    assert min(chosen["sigma_D"], chosen["sigma_A"]) >= .9 and len(chosen["points"]) == 19
+    assert min(chosen["ranks"].values()) > spiral.RANK_FLOOR and len(chosen["points"]) == 19
+    # Two explicit directions: both designs have full rank, D_free does not (Section 9.4).
+    two = spiral.plan(with_directions([[1, 1, 1], [1, -1, 0]]))
+    assert two["ranks"]["D_free"] < spiral.RANK_FLOOR <= min(two["ranks"]["D"], two["ranks"]["A"])
     # An unsorted t list still names the smallest magnitude t1, where P0 and E0 gate.
     shuffled = spiral.plan(spiral.load_seed(material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.09, 0.03, 0.06"))))
     lengths = {p["name"]: np.linalg.norm(2 * np.pi * np.linalg.solve(bfo()[0], p["q_frac"])) for p in shuffled["points"]}
     assert [lengths[f"d1_t{j}_plus"] for j in (1, 2, 3)] == pytest.approx([.03, .06, .09], rel=1e-10)
 
     for bad, message in [(SEED + "spacegroups = 161\n", "Unknown seed keys"),
+                         (SEED + "exchange_grid = [2, 2, 2]\nrmax = 6.0\n", "Unknown seed keys"),
                          (SEED.replace("0.03, ", ""), "at least 3 distinct")]:
         with pytest.raises(ValueError, match=message):
             spiral.load_seed(material(tmp_path, bad))
 
 
-def test_prepare_writes_paired_f0_inputs(tmp_path):
+def test_prepare_writes_paired_f0_inputs(tmp_path, capsys):
     path, out = material(tmp_path), tmp_path / "runs"
     assert main(["prepare", str(path), "--job", str(tmp_path / "job.sh"), "--out", str(out)]) == 0
     names = (out / "runs.txt").read_text().split()
@@ -94,6 +98,16 @@ def test_prepare_writes_paired_f0_inputs(tmp_path):
     assert f"#SBATCH --array=1-{len(names)}\n" in submit and submit.index("#SBATCH -t") < submit.index("cd ")
     assert subprocess.run(["bash", "-n", str(out / "submit.sh")]).returncode == 0
 
+    # D-022: the code owns eleven tags and overrides the user's value with one line each.
+    capsys.readouterr()
+    material(tmp_path, incar_text="ISMEAR = 1\nMAGMOM = 10*0\nLSPIRAL = F\nKSPACING = 0.2\n")
+    assert main(["prepare", str(path), "--job", str(tmp_path / "job.sh"), "--out", str(tmp_path / "over")]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "override LSPIRAL: INCAR has F; using T" in lines and "ISMEAR 1" in lines
+    assert "override MAGMOM: INCAR has 10*0; using the per-run value from the seed" in lines
+    tags = incar(tmp_path / "over" / "d1_t1_plus" / "INCAR")
+    assert tags["LSPIRAL"] == "T" and tags["KSPACING"] == "0.2" and tags["MAGMOM"] == incar(out / "d1_t1_plus" / "INCAR")["MAGMOM"]
+
     def rejected(message, incar_text=INCAR, job=JOB, potcar=None, target=None):
         material(tmp_path, incar_text=incar_text)
         (tmp_path / "job.sh").write_text(job)
@@ -102,18 +116,7 @@ def test_prepare_writes_paired_f0_inputs(tmp_path):
         with pytest.raises(ValueError, match=message):
             spiral.prepare(spiral.load_seed(path), target or tmp_path / "new", tmp_path / "job.sh")
     rejected("not empty", target=out)
-    rejected("ISYM = 2", INCAR + "ISYM = 2\n")
-    rejected("sets MAGMOM", INCAR + "MAGMOM = 10*0\n")
-    rejected("KSPACING is not allowed", INCAR + "KSPACING = 0.2\n")
-    rejected("RWIGS", INCAR.replace("RWIGS = 1.6 1.2 0.8", "RWIGS = 1.6 1.6 1.2 1.2 .8 .8 .8 .8 .8 .8"))
-    rejected("needs ENINI", INCAR.replace("ENINI = 500\n", ""))
-    rejected("needs SIGMA", INCAR.replace("SIGMA = 0.05\n", ""))
-    for ismear in (-5, 2):                                   # tetrahedron; Methfessel-Paxton order 2
-        rejected(rf"ISMEAR = {ismear} is not allowed; use -1 \(Fermi-Dirac\), 0 \(Gaussian\), "
-                 r"1 \(Methfessel-Paxton 1\)", INCAR.replace("ISMEAR = 0", f"ISMEAR = {ismear}"))
-    rejected("SIGMA = 0.02 eV is below 0.05", INCAR.replace("SIGMA = 0.05", "SIGMA = 0.02"))
-    series = material(tmp_path, SEED + "min_sigma = 0.01\n", INCAR.replace("SIGMA = 0.05", "SIGMA = 0.02"))
-    assert spiral.plan(spiral.load_seed(series))["incar"]["SIGMA"] == "0.02"
+    rejected(r"ISMEAR = -5 \(tetrahedron\) is refused: its energy is not variational", INCAR.replace("ISMEAR = 0", "ISMEAR = -5"))
     rejected("POTCAR elements", potcar=" VRHFIN =Fe:\n VRHFIN =Bi:\n VRHFIN =O:\n")
     rejected("must not cd", job=JOB + "cd scratch && srun vasp_ncl\n")
     rejected("already sets --array", job=JOB.replace("#SBATCH -N 1", "#SBATCH --array=1-4"))
@@ -127,7 +130,7 @@ def rot_z(degrees):
 def finish(run, energy=-12.25, rotate_deg=37.0, reversed_site=False, twist_deg=0.0, scale=1.0, mz=0.0):
     """A finished static run: two OSZICAR sphere tables, the last one final, and two TOTEN lines."""
     config = manifest.load(run / "config.json")
-    moments = np.zeros((10, 3))
+    moments = np.zeros((len(poscar(run / "POSCAR")[1]), 3))
     moments[config["sites"]] = 3.9 * scale * np.asarray(config["targets"]) @ rot_z(rotate_deg).T
     second = config["sites"][1]
     moments[second] = moments[second] @ rot_z(twist_deg).T * (-1 if reversed_site else 1)
@@ -159,6 +162,8 @@ def test_readback(tmp_path, capsys):
         outcar.write_text(outcar.read_text().replace(cut, ""))
     (out / names[5] / "OSZICAR").write_text("ion MW_int M_int\n 1 0 0 0 1 0 0\n")
     (out / names[6] / "OUTCAR").unlink()
+    oszicar = out / names[2] / "OSZICAR"                     # a constrained run: its energy holds a penalty
+    oszicar.write_text(oszicar.read_text() + " E_p = 0.1E-02 lambda = 0.1E+02\n")
     finish(out / names[7], twist_deg=4.0)            # delta = +-2 deg with n_twist = 0
     finish(out / names[8], scale=1.1)                # M 10% above q0
     finish(out / names[9], mz=0.1)
@@ -169,5 +174,6 @@ def test_readback(tmp_path, capsys):
     assert "did not reach EDIFF" in report[names[3]] and "no timing footer" in report[names[4]]
     assert "one row for each of the 10 ions" in report[names[5]]
     assert report[names[6]] == "missing" and report[names[0]] == "ok"
+    assert "OSZICAR prints lambda = 0.1E+02, not 0" in report[names[2]]
     assert "|delta| = 2.00 deg >= 1.0 with n_twist = 0" in report[names[7]]
     assert "|M_a / M_a(q0) - 1| = 0.100" in report[names[8]] and "|M_z|" in report[names[9]]

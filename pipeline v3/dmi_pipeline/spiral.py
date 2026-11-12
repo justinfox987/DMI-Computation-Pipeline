@@ -14,9 +14,9 @@ import tomllib
 import numpy as np
 
 from . import manifest, symmetry
-from .realized import INCAR_TAGS, incar, logical, numbers, poscar
+from .realized import incar, logical, numbers, poscar
 
-RANK_FLOOR = 0.1       # smallest singular value accepted in either rank condition
+RANK_FLOOR = 0.1       # smallest singular value of the column-normalized tensor columns (Section 9.4)
 COLLAPSED = 0.1        # μB; a shorter M_int has no usable direction
 PAIR_DEG = 90.0        # a relative site phase at or above this means another sign pattern
 # Section 11 SCF-and-state checks, applied by collect.
@@ -24,17 +24,18 @@ TWIST_FREE_DEG = 1.0   # |delta_a| bound when n_twist = 0
 MOMENT_DRIFT = 0.05    # |M_a / M_a(q0) - 1| bound
 MZ_MAX = 0.05          # μB; |M_int z| bound for a flat spiral
 REQUIRED = ("sites", "signs", "moments", "t")
-OPTIONAL = ("spacegroup", "symprec", "directions", "exchange_grid", "rmax", "min_sigma")
-# D-018 and math Section 3.2: finite smearing, so free energy TOTEN is variational
-# and the force theorem holds. Fermi-Dirac, Gaussian, Methfessel-Paxton order 1.
-SMEARING = {-1: "Fermi-Dirac", 0: "Gaussian", 1: "Methfessel-Paxton 1"}
-MIN_SIGMA = 0.05       # eV; a seed may lower it for a convergence series
-# Section 3.2 tags with one value for every run, and the tags set per run.
+OPTIONAL = ("spacegroup", "symprec", "directions")
+# D-022 and math Section 3.2: tetrahedron modes give no variational energy, so the
+# force theorem does not hold. This is the one check on the user's settings.
+TETRAHEDRON = (-4, -5)
+# The eleven tags the code owns (Section 3.2): one value for every run, and the tags set per run.
 FIXED = {"LNONCOLLINEAR": "T", "LSPIRAL": "T", "LSORBIT": "F", "LZEROZ": "T",
          "SAXIS": "0 0 1", "ISYM": "-1", "I_CONSTRAINED_M": "1", "LAMBDA": "0"}
 PER_RUN = ("QSPIRAL", "MAGMOM", "M_CONSTR")
 LOGICAL = {"LNONCOLLINEAR", "LSPIRAL", "LSORBIT", "LZEROZ"}
-TOTEN = re.compile(r"free\s+energy\s+TOTEN\s*=\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?)")
+FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
+TOTEN = re.compile(r"free\s+energy\s+TOTEN\s*=\s*(" + FLOAT + ")")
+PENALTY = re.compile(r"\blambda\s*=\s*(" + FLOAT + ")", re.I)
 CD = re.compile(r"(?:^|[;&|])\s*cd(?:\s|$)")
 # Section 5 dump decks. A dump writes no WAVECAR or CHGCAR, so the linked parent
 # files stay untouched.
@@ -53,6 +54,8 @@ def read_static(run, nions):
 
     The OUTCAR must have reached EDIFF and printed its timing footer. M_int is the
     last OSZICAR sphere block, one row per ion; E is the last free energy TOTEN.
+    A constrained run whose last printed lambda is not 0 is refused: its energy
+    holds a penalty term.
     """
     run = Path(run)
     outcar = (run / "OUTCAR").read_text(encoding="utf-8", errors="replace")
@@ -63,7 +66,11 @@ def read_static(run, nions):
     energies = TOTEN.findall(outcar)
     if not energies:
         raise ValueError("OUTCAR has no free energy TOTEN line")
-    lines = (run / "OSZICAR").read_text(encoding="utf-8", errors="replace").splitlines()
+    oszicar = (run / "OSZICAR").read_text(encoding="utf-8", errors="replace")
+    penalty = PENALTY.findall(oszicar)
+    if penalty and float(penalty[-1].replace("D", "E").replace("d", "e")) != 0:
+        raise ValueError(f"OSZICAR prints lambda = {penalty[-1]}, not 0: the energy holds a penalty term")
+    lines = oszicar.splitlines()
     headers = [i for i, line in enumerate(lines) if SPHERE.match(line)]
     if not headers:
         raise ValueError("OSZICAR has no ion MW_int M_int block")
@@ -117,16 +124,11 @@ def load_seed(path):
             "lattice": lattice, "species": species, "tau": tau,
             # Ascending t, so run d{i}_t1 is the smallest t, where P0 and E0 gate.
             "sites": sites - 1, "signs": signs, "moments": moments, "t": np.sort(t),
-            "spacegroup": None, "symprec": 1e-3, "directions": None, "min_sigma": MIN_SIGMA,
-            "exchange_grid": None, "rmax": None}
+            "spacegroup": None, "symprec": 1e-3, "directions": None}
     if "spacegroup" in raw:
         if type(raw["spacegroup"]) is not int:
             raise ValueError("Seed spacegroup must be an integer")
         seed["spacegroup"] = raw["spacegroup"]
-    if "min_sigma" in raw:
-        seed["min_sigma"] = float(_list(raw, "min_sigma", float, [raw["min_sigma"]])[0])
-        if seed["min_sigma"] <= 0:
-            raise ValueError("Seed min_sigma must be positive")
     if "symprec" in raw:
         seed["symprec"] = float(_list(raw, "symprec", float, [raw["symprec"]])[0])
         if seed["symprec"] <= 0:
@@ -139,14 +141,6 @@ def load_seed(path):
         if any(len(row) != 3 or not np.any(row) for row in d):
             raise ValueError("Each seed direction needs three numbers, not all zero")
         seed["directions"] = np.array(d)
-    if ("exchange_grid" in raw) != ("rmax" in raw):
-        raise ValueError("Seed exchange_grid and rmax go together")
-    if "exchange_grid" in raw:
-        grid = _list(raw, "exchange_grid", int)
-        rmax = _list(raw, "rmax", float, [raw["rmax"]])[0]
-        if len(grid) != 3 or np.any(grid < 1) or rmax <= 0:
-            raise ValueError("Seed exchange_grid needs 3 positive integers and rmax > 0")
-        seed["exchange_grid"], seed["rmax"] = grid, float(rmax)
     return seed
 
 
@@ -168,37 +162,20 @@ def species_types(species):
 
 
 def material_incar(seed):
-    """Electronic settings from the material INCAR, checked against Section 3.2.
+    """The user's INCAR (D-019, D-022), and one line per owned tag it sets differently.
 
-    The user owns every other setting (D-019): tags outside INCAR_TAGS are kept
-    as given, and plan warns about them instead of rejecting them.
+    The code writes its own value for each of the eleven tags it owns and refuses
+    tetrahedron smearing. It checks nothing else.
     """
     tags = incar(seed["folder"] / "INCAR")
-    if "KSPACING" in tags:
-        raise ValueError("KSPACING is not allowed: the KPOINTS file sets the one mesh for every q (Section 8.4)")
-    for key in PER_RUN:
-        if key in tags:
-            raise ValueError(f"Material INCAR sets {key}; the code writes it per run")
-    for key, value in FIXED.items():
-        if key in tags and not _same(key, tags[key], value):
-            raise ValueError(f"Material INCAR has {key} = {tags[key]}; Section 3.2 needs {value}")
-    types = species_types(seed["species"])
-    rwigs = numbers(tags["RWIGS"]) if "RWIGS" in tags else np.array([])
-    if len(rwigs) != len(types) or not np.all(rwigs > 0):
-        raise ValueError(f"Material INCAR needs RWIGS with one positive radius per species type {types}")
-    for key in ("ENCUT", "ENINI", "ISMEAR", "SIGMA"):
-        if key not in tags:
-            raise ValueError(f"Material INCAR needs {key}")
-    ismear, sigma = numbers(tags["ISMEAR"]), numbers(tags["SIGMA"])
-    if ismear.shape != (1,) or sigma.shape != (1,):
-        raise ValueError("Material INCAR ISMEAR and SIGMA need one value each")
-    if ismear[0] not in SMEARING:
-        allowed = ", ".join(f"{k} ({v})" for k, v in SMEARING.items())
-        raise ValueError(f"ISMEAR = {ismear[0]:g} is not allowed; use {allowed} (D-018)")
-    if sigma[0] < seed["min_sigma"]:
-        raise ValueError(f"SIGMA = {sigma[0]:g} eV is below {seed['min_sigma']:g}; set min_sigma in the seed "
-                         "for a convergence series (D-018)")
-    return tags
+    if "ISMEAR" in tags and numbers(tags["ISMEAR"])[0] in TETRAHEDRON:
+        raise ValueError(f"ISMEAR = {tags['ISMEAR']} (tetrahedron) is refused: its energy is not variational, "
+                         "so the force theorem of Section 3.2 does not hold (D-022)")
+    overrides = [f"override {key}: INCAR has {' '.join(tags[key].split())}; using {value}"
+                 for key, value in FIXED.items() if key in tags and not _same(key, tags[key], value)]
+    overrides += [f"override {key}: INCAR has {' '.join(tags[key].split())}; using the per-run value from the seed"
+                  for key in PER_RUN if key in tags]
+    return tags, overrides
 
 
 # ---- q plan --------------------------------------------------------------
@@ -214,24 +191,61 @@ def unit_directions(lattice, directions):
     return s / np.linalg.norm(s, axis=1)[:, None]
 
 
-def conditions(lattice, directions, stiffness):
-    """(sigma_D, sigma_A): rank-3 value of S and rank-p_A value of M[i, l] = s_i^T C_l s_i."""
-    s = unit_directions(lattice, directions)
-    sigma_d = np.linalg.svd(s.T, compute_uv=False)
-    sigma_a = np.linalg.svd(np.einsum("ij,ljk,ik->il", s, stiffness, s), compute_uv=False)
-    p_a = len(stiffness)
-    return (float(sigma_d[2]) if len(sigma_d) == 3 else 0.0,
-            float(sigma_a[p_a - 1]) if len(sigma_a) >= p_a else 0.0)
+FREE_BASIS = np.eye(9).reshape(9, 3, 3)    # D_free: the nine components, row-major
 
 
-def choose_directions(lattice, stiffness):
-    """Best-conditioned set of low-index q_frac directions, Section 8.2."""
+def spiralization_design(s, points, basis):
+    """Design of the single solve for D (Section 9.4): rows (point m, axis a) of
+    y_a = 2 t (D s_i)_a + c_ia t^3; columns: the basis coefficients, then c_ia."""
+    nb, nd = len(basis), len(s)
+    design = np.zeros((3 * len(points), nb + 3 * nd))
+    for m, (i, t) in enumerate(points):
+        design[3 * m:3 * m + 3, :nb] = 2 * t * np.reshape([b @ s[i] for b in basis], (nb, 3)).T
+        design[3 * m:3 * m + 3, nb + 3 * i:nb + 3 * i + 3] = t ** 3 * np.eye(3)
+    return design
+
+
+def stiffness_design(s, points, basis):
+    """Design of the single solve for A: rows m of g = t^2 s_i^T A s_i + b_i t^4."""
+    nb, nd = len(basis), len(s)
+    design = np.zeros((len(points), nb + nd))
+    for m, (i, t) in enumerate(points):
+        design[m, :nb] = [t * t * s[i] @ c @ s[i] for c in basis]
+        design[m, nb + i] = t ** 4
+    return design
+
+
+def rank_value(design):
+    """Smallest singular value after scaling each column to unit norm; 0 when the
+    matrix has fewer rows than columns or a zero column."""
+    norms = np.linalg.norm(design, axis=0)
+    if design.shape[0] < design.shape[1] or np.any(norms == 0):
+        return 0.0
+    return float(np.linalg.svd(design / norms, compute_uv=False)[-1]) if design.shape[1] else np.inf
+
+
+def geometry_ranks(s, d_basis, a_basis):
+    """rank_value of the tensor columns of the constrained-D, D_free and A designs,
+    one row block per direction with t set aside (Section 9.4).
+
+    These test the geometry alone. The nuisance columns are separate: they are
+    determined when every direction has at least two distinct magnitudes, which
+    plan and fit require. The full design would cap these values through the
+    t-t^3 correlation of the grid, whatever the directions.
+    """
+    points = [(i, 1.0) for i in range(len(s))]
+    return {"D": rank_value(spiralization_design(s, points, d_basis)[:, :len(d_basis)]),
+            "A": rank_value(stiffness_design(s, points, a_basis)[:, :len(a_basis)]),
+            "D_free": rank_value(spiralization_design(s, points, FREE_BASIS)[:, :9])}
+
+
+def choose_directions(lattice, d_basis, a_basis):
+    """Best-conditioned set of max(3, p_A) low-index q_frac directions, Section 8.2."""
     candidates = [c for c in product((-1, 0, 1), repeat=3) if c > (0, 0, 0)]
-    n = max(3, len(stiffness))
     # Symmetry-equivalent sets tie to ~1e-15; round so the first set in
     # combinations order wins on every machine.
-    best = max(combinations(candidates, n),
-               key=lambda d: round(min(conditions(lattice, d, stiffness)), 9))
+    best = max(combinations(candidates, max(3, len(a_basis))),
+               key=lambda d: round(min(geometry_ranks(unit_directions(lattice, d), d_basis, a_basis).values()), 9))
     return np.array(best, dtype=float)
 
 
@@ -256,19 +270,19 @@ def plan(seed):
     ops = symmetry.operations(lattice, seed["species"], seed["tau"], sites, seed["signs"],
                               seed["symprec"], seed["spacegroup"])
     rotations = ops["rotations"]
-    stiffness = symmetry.stiffness_basis(rotations)
-    tags = material_incar(seed)
+    d_basis, a_basis = symmetry.spiralization_basis(rotations), symmetry.stiffness_basis(rotations)
+    tags, overrides = material_incar(seed)
     directions = seed["directions"]
     if directions is None:
-        directions = choose_directions(lattice, stiffness)
-    if len(directions) < max(3, len(stiffness)):
-        raise ValueError(f"Need at least {max(3, len(stiffness))} q directions for p_A = {len(stiffness)}")
-    sigma_d, sigma_a = conditions(lattice, directions, stiffness)
-    if sigma_d < RANK_FLOOR:
-        raise ValueError(f"q directions do not determine D: sigma_D = {sigma_d:.3g} < {RANK_FLOOR}")
-    if sigma_a < RANK_FLOOR:
-        raise ValueError(f"q directions do not determine the stiffness: sigma_A = {sigma_a:.3g} "
-                         f"< {RANK_FLOOR} for p_A = {len(stiffness)}")
+        directions = choose_directions(lattice, d_basis, a_basis)
+    # Explicit directions may be fewer than three when both designs have full rank.
+    # load_seed already requires three distinct magnitudes, so every direction has two.
+    ranks = geometry_ranks(unit_directions(lattice, directions), d_basis, a_basis)
+    if ranks["D"] < RANK_FLOOR:
+        raise ValueError(f"q directions do not determine D: rank value {ranks['D']:.3g} < {RANK_FLOOR}")
+    if ranks["A"] < RANK_FLOOR:
+        raise ValueError(f"q directions do not determine the stiffness: rank value {ranks['A']:.3g} "
+                         f"< {RANK_FLOOR} for p_A = {len(a_basis)}")
     points = [{"name": "q0", "q_frac": [0.0, 0.0, 0.0]}]
     for i, d in enumerate(directions, 1):
         # q = t s and Eq (8.1) give q_frac parallel to d, so scale d directly;
@@ -279,15 +293,10 @@ def plan(seed):
             for side, sign in (("plus", 1), ("minus", -1)):
                 points.append({"name": f"d{i}_t{j}_{side}",
                                "q_frac": numbers(qspiral(sign * q_frac)).tolist()})
-    classes = None
-    if seed["exchange_grid"] is not None:
-        classes = len(symmetry.exchange_classes(lattice, seed["tau"][sites], seed["signs"], rotations,
-                                                seed["rmax"], tol=2 * seed["symprec"]))
-    return {"ops": ops, "p_D": len(symmetry.spiralization_basis(rotations)), "p_A": len(stiffness),
+    return {"ops": ops, "p_D": len(d_basis), "p_A": len(a_basis),
             "n_twist": symmetry.twist_count(rotations, ops["permutations"]),
-            "directions": directions, "sigma_D": sigma_d, "sigma_A": sigma_a,
-            "points": points, "classes": classes, "incar": tags, "symprec": seed["symprec"],
-            "unseen_tags": sorted(set(tags) - INCAR_TAGS)}
+            "directions": directions, "ranks": ranks, "points": points, "incar": tags,
+            "overrides": overrides, "symprec": seed["symprec"]}
 
 
 # ---- inputs --------------------------------------------------------------
@@ -372,7 +381,7 @@ def prepare(seed, out, job):
                    "number": summary["ops"]["number"], "total": summary["ops"]["total"],
                    "dropped": summary["ops"]["dropped"], "p_D": summary["p_D"], "p_A": summary["p_A"],
                    "n_twist": summary["n_twist"], "directions": summary["directions"].tolist(),
-                   "sigma_D": summary["sigma_D"], "sigma_A": summary["sigma_A"],
+                   "ranks": summary["ranks"],
                    "runs": summary["points"]}, out / "plan.json")
     return [out / name for name in names]
 
