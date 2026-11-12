@@ -68,7 +68,7 @@ directions = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]   # q_frac; default: code chooses
 Without `directions`, the code chooses $\max(3,p_A)$ low-index directions, so
 $\mathcal D_{\rm free}$ and its forbidden part are always evaluated. Explicit
 `directions` may be fewer than three when the constrained-$\mathcal D$ and $A$
-fit designs both have full rank (math Section 9.4). If the $\mathcal D_{\rm free}$
+fit designs pass the rank test below (math Section 9.4). If the $\mathcal D_{\rm free}$
 design then lacks full rank, `plan` says so, and `tensors.json` reports
 $\mathcal D_{\rm free}$, $\mathcal F$ and the Forbidden check as not evaluated.
 A cubic material ($p_A = 1$) can be converged from one direction this way.
@@ -98,7 +98,10 @@ user's choice and is passed through unchanged. `plan` prints `ENCUT`, `ENINI`,
 - The `plan` output starts with the group spglib found and the kept and dropped
   operation counts. This is the only protection from a wrong group when
   `spacegroup` is left out, so set `spacegroup` for production runs.
-- Check the rank conditions on `directions` before writing any input: full
-  column rank of the constrained-$\mathcal D$ and $A$ fit designs, each
-  column scaled to unit norm, with smallest singular value at least
-  `RANK_FLOOR = 0.1` (math Section 9.4).
+- Check the rank conditions on `directions` before writing any input: the
+  tensor columns of the constrained-$\mathcal D$ and $A$ fit designs, one row
+  block per direction with `t` set aside and each column scaled to unit norm,
+  need smallest singular value at least `RANK_FLOOR = 0.1`, and every direction
+  needs two or more distinct magnitudes (math Section 9.4). `plan` prints the
+  values. In `fit`, a direction with complete pairs at fewer than two
+  magnitudes is dropped.

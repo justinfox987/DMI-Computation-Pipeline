@@ -120,16 +120,27 @@ def gate_e0(e_plus: float, e_minus: float, e_zero: float, tol: float = 0.1) -> G
                       "|E(q) - E(-q)| <= tol |E(q) + E(-q) - 2 E(0)|")
 
 
-def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
-    """Section 11: the forbidden part of D_free vanishes within 3 sigma, element by element.
+# Series truncation leaves a forbidden part of order 1e-4 to 1e-3 |D| at realistic t,
+# which the parity sigma (noise only) cannot see; an axis, frame or transpose error is
+# of order |D|. The Forbidden bound therefore adds this fraction of max|D_free| (D-023).
+FORBIDDEN_FLOOR = 0.01
 
-    A relative floor of 1e-9 of D_free absorbs roundoff where sigma is exactly zero.
+
+def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
+    """Section 11: |F_ij| <= 3 sigma(F_ij) + FORBIDDEN_FLOOR max|D_free| for every element.
+
+    sigma covers noise only. With D = 0 the floor is zero and sigma alone decides.
     """
     forbidden, sigma = np.asarray(forbidden, float), np.asarray(sigma, float)
-    bound = sigmas * sigma + 1e-9 * float(np.max(np.abs(d_free)))
-    return GateResult("Forbidden", bool(np.all(np.abs(forbidden) <= bound)),
-                      {"norm": float(np.linalg.norm(forbidden)), "worst_ratio": float(np.max(np.abs(forbidden) / np.maximum(bound, 1e-300)))},
-                      sigmas, "|F_ij| <= 3 sigma(F_ij) for every element")
+    scale = float(np.max(np.abs(d_free)))
+    bound = sigmas * sigma + FORBIDDEN_FLOOR * scale
+    passed = bool(np.all(np.abs(forbidden) <= bound))
+    return GateResult("Forbidden", passed,
+                      {"norm": float(np.linalg.norm(forbidden)),
+                       "ratio_to_D_free": float(np.max(np.abs(forbidden)) / scale) if scale else None,
+                       "worst_ratio": float(np.max(np.abs(forbidden) / np.maximum(bound, 1e-300)))},
+                      sigmas, f"|F_ij| <= 3 sigma(F_ij) + {FORBIDDEN_FLOOR} max|D_free|; "
+                              "sigma covers noise only, the floor covers series truncation")
 
 
 NOT_EVALUATED = "not evaluated: no dump_C, an energies-only tree"

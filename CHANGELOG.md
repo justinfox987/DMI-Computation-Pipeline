@@ -14,6 +14,10 @@ commit reference when available. Do not use this as a command transcript.
   - **Follow-ups:** a refused fit overwrites `tensors.json`; a run with a nonzero printed `lambda` is an error.
   - **Results:** the tensors agree with the two-step fit to 3e-14 relative. The default BFO directions change to (1-10), (10-1), (111). Tests 14 -> 15.
   - **Your Fe INCAR:** `dmi plan` now runs on it.
+  - **After review (D-023 amended):**
+    - The Forbidden bound is `3 sigma + 0.01 max|D_free|` (`FORBIDDEN_FLOOR`), and `tensors.json` records `max|F| / max|D_free|`.
+    - The rank test uses the tensor columns of each design, with t set aside, plus at least two distinct magnitudes per direction used. `fit` drops a direction that has fewer.
+    - Math Sections 9.4 and 11 and D-023 are amended.
 
   No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md).
 

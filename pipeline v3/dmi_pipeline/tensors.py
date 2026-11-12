@@ -13,7 +13,7 @@ import numpy as np
 from . import manifest, spiral, symmetry
 from .gates import NOT_EVALUATED, check_tree, gate_forbidden
 from .realized import poscar
-from .spiral import FREE_BASIS, RANK_FLOOR, rank_value, spiralization_design, stiffness_design
+from .spiral import FREE_BASIS, RANK_FLOOR, geometry_ranks, spiralization_design, stiffness_design
 
 MEV = 1e3
 # Section 10.4: a meV value divided by V_m in Å^3, times these, gives SI units.
@@ -56,13 +56,16 @@ def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
     """
     points = [(p["i"], p["t"]) for p in pairs]
     traced = pairs[0]["T_plus"] is not None
+    if any(len({p["t"] for p in pairs if p["i"] == i}) < 2 for i in range(len(s))):
+        raise ValueError("Every direction used needs complete pairs at two or more distinct magnitudes")
+    ranks = geometry_ranks(s, d_basis, a_basis)
     observed = [pair_observables(p["T_plus"] if traced else 0, p["T_minus"] if traced else 0,
                                  p["E_plus"], p["E_minus"], e_zero, n_m) for p in pairs]
     y, g = np.array([o[0] for o in observed]), np.array([o[1] for o in observed])
     odd_g = np.array([(p["E_plus"] - p["E_minus"]) / (2 * n_m) for p in pairs])
     a_design = stiffness_design(s, points, a_basis)
-    if rank_value(a_design) < RANK_FLOOR:
-        raise ValueError(f"The complete pairs do not determine A: rank value {rank_value(a_design):.3g} < {RANK_FLOOR}")
+    if ranks["A"] < RANK_FLOOR:
+        raise ValueError(f"The directions used do not determine A: rank value {ranks['A']:.3g} < {RANK_FLOOR}")
     noise = {"sigma_g": float(np.sqrt(np.mean(odd_g ** 2))), "n_g": len(odd_g)}
     result = {"A": tensor_fit(a_design, g, noise["sigma_g"], a_basis), "noise": noise}
     result["A"]["eigenvalues"] = np.linalg.eigvalsh(result["A"]["tensor"])
@@ -70,13 +73,12 @@ def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
         return result
     even_y = np.array([(np.asarray(p["T_plus"]) + p["T_minus"]) / n_m for p in pairs])
     noise.update(sigma_y=float(np.sqrt(np.mean(even_y ** 2))), n_y=even_y.size)
-    d_design = spiralization_design(s, points, d_basis)
-    if rank_value(d_design) < RANK_FLOOR:
-        raise ValueError(f"The complete pairs do not determine D: rank value {rank_value(d_design):.3g} < {RANK_FLOOR}")
-    result["D"] = tensor_fit(d_design, y.ravel(), noise["sigma_y"], d_basis)
-    free_design = spiralization_design(s, points, FREE_BASIS)
-    if rank_value(free_design) >= RANK_FLOOR:              # fewer than three directions: not evaluated
-        free = result["D_free"] = tensor_fit(free_design, y.ravel(), noise["sigma_y"], FREE_BASIS)
+    if ranks["D"] < RANK_FLOOR:
+        raise ValueError(f"The directions used do not determine D: rank value {ranks['D']:.3g} < {RANK_FLOOR}")
+    result["D"] = tensor_fit(spiralization_design(s, points, d_basis), y.ravel(), noise["sigma_y"], d_basis)
+    if ranks["D_free"] >= RANK_FLOOR:                      # fewer than three directions: not evaluated
+        free = result["D_free"] = tensor_fit(spiralization_design(s, points, FREE_BASIS), y.ravel(),
+                                             noise["sigma_y"], FREE_BASIS)
         rest = np.eye(9) - result["D"]["flat"] @ result["D"]["flat"].T       # 1 - P_D, Eq (9.4)
         result["F"] = {"tensor": (rest @ free["tensor"].ravel()).reshape(3, 3), "cov": rest @ free["cov"] @ rest.T}
     if species is not None:
@@ -177,7 +179,7 @@ def observables(out, states, traces):
                 raise ValueError(f"d{i}_t{j}: |q| = {length:.6g} 1/Å differs from the seed t = {t:g}")
             rows.append({"i": len(used), "t": t, "E_plus": plus[0], "E_minus": minus[0], "T_plus": plus[1],
                          "T_minus": minus[1], "per_ion": None if plus[2] is None else plus[2] - minus[2]})
-        if not rows:
+        if len({r["t"] for r in rows}) < 2:              # slope and cubic nuisance need two magnitudes
             dropped.append(f"d{i}")
             continue
         used.append({"name": f"d{i}", "q_frac": direction, "t": [r["t"] for r in rows]})
@@ -229,7 +231,8 @@ def report_tree(out, states, traces):
             forbidden_passed = forbidden.passed
             report["D_free"] = _value(result["D_free"]["tensor"], result["D_free"]["cov"])
             report["F"] = dict(_value(f["tensor"], f["cov"]), norm=MEV * float(np.linalg.norm(f["tensor"])),
-                               passed=forbidden.passed)
+                               ratio_to_D_free=forbidden.value["ratio_to_D_free"], passed=forbidden.passed,
+                               bound=forbidden.detail)
         else:
             reason = "not evaluated: the directions do not determine D_free"
             report["D_free"], report["F"] = reason, {"passed": None, "reason": reason}
@@ -291,7 +294,8 @@ def _lines(report):
     else:
         lines.insert(0, f"D (meV A per site)  {matrix(report['D']['value'])}")
         f = report["F"]
-        lines.insert(1, f"F norm {f['norm']:.3g} meV A: {'pass' if f['passed'] else 'FAIL'}" if f["passed"] is not None
+        lines.insert(1, f"F norm {f['norm']:.3g} meV A, max|F|/max|D_free| {f['ratio_to_D_free']:.2g}: "
+                        f"{'pass' if f['passed'] else 'FAIL'}" if f["passed"] is not None
                      else f"F {f['reason']}")
         lines.append(f"sigma_y {noise['sigma_y']:.3g} eV ({noise['n_y']} samples)  "
                      f"sigma_g {noise['sigma_g']:.3g} eV ({noise['n_g']} samples)")
@@ -303,6 +307,6 @@ def _lines(report):
         else:
             lines.append(f"pitch {p['pitch_nm']:.4g} +- {p['sigma_pitch_nm']:.2g} nm, n* degeneracy {p['degeneracy']}")
     if report["dropped_directions"]:
-        lines.append(f"dropped directions (no complete pair): {', '.join(report['dropped_directions'])}")
+        lines.append(f"dropped directions (fewer than two magnitudes): {', '.join(report['dropped_directions'])}")
     lines.append(f"sign {report['sign']}")
     return lines

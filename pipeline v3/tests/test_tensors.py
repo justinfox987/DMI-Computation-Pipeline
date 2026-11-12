@@ -75,20 +75,22 @@ def test_fits_recover_spin_model_tensors():
         assert np.abs(big_d).max() > 1e-5 and np.abs(big_a).max() > 1e-3
         for tensor, exact in ((r["D_free"], big_d), (r["D"], big_d), (r["A"], big_a)):
             assert tensor["tensor"] == pytest.approx(exact, abs=1e-6 * np.abs(exact).max())
-        # Noise-free pairs give sigma = 0, so the Forbidden check would see the t^5 truncation
-        # (about 1e-7 |D| here); it is tested on the noisy model below.
-        assert np.abs(r["F"]["tensor"]).max() < 1e-6 * np.abs(big_d).max()
+        # Noise-free pairs give sigma = 0; the 1% floor covers the t^5 truncation (D-023).
+        assert np.abs(r["F"]["tensor"]).max() < 1e-6 * np.abs(big_d).max() and forbidden(r).passed
         for key in ("D", "D_free"):
             assert sum(v[key] for v in r["by_species"].values()) == pytest.approx(r[key]["tensor"], abs=1e-15)
 
-    # Noise-free BFO (3m) with a forbidden 1e-3 |D| component added to y: the check must fail.
-    # diag(1, 0, 0) has no projection on the 3m form D [z]x, so all of it is forbidden.
-    extra = 1e-3 * np.abs(big_d).max() * np.diag([1.0, 0, 0])
-    # Odd in q like a real term, so the parity residuals stay zero: y += 2 t F s with N_m = 2.
-    tainted = [dict(p, T_plus=p["T_plus"] + 2 * p["t"] * extra @ s[p["i"]],
-                    T_minus=p["T_minus"] - 2 * p["t"] * extra @ s[p["i"]]) for p in pairs]
-    bad = fit(tainted)
-    assert bad["F"]["tensor"] == pytest.approx(extra, abs=1e-6 * np.abs(big_d).max()) and not forbidden(bad).passed
+    # Noise-free BFO (3m) with a forbidden part added to y: 0.05 |D| is an error the check must
+    # catch; 0.005 |D| is within the truncation floor. diag(1, 0, 0) has no projection on the
+    # 3m form D [z]x, so all of it is forbidden.
+    for size, caught in ((0.05, True), (0.005, False)):
+        extra = size * np.abs(big_d).max() * np.diag([1.0, 0, 0])
+        # Odd in q like a real term, so the parity residuals stay zero: y += 2 t F s with N_m = 2.
+        tainted = [dict(p, T_plus=p["T_plus"] + 2 * p["t"] * extra @ s[p["i"]],
+                        T_minus=p["T_minus"] - 2 * p["t"] * extra @ s[p["i"]]) for p in pairs]
+        bad = fit(tainted)
+        assert bad["F"]["tensor"] == pytest.approx(extra, abs=1e-6 * np.abs(big_d).max())
+        assert forbidden(bad).passed is not caught
 
     # Real magnitudes with noise of known sigma: the parity residuals measure it (Eq 9.9), the
     # covariances cover the truth, and the forbidden part is within 3 sigma.
@@ -151,9 +153,7 @@ def test_command_chain(tmp_path, capsys):
     OUTCAR energies and COCC traces reproduce Eq (6.2), so fit must return the Eq (6.3)
     tensors; fit reads only these files (D-021).
     """
-    # Small t keeps the t^5 truncation in F below the Forbidden check's roundoff floor: these
-    # pairs are noise-free, so sigma_y = 0.
-    path, out, job = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.001, 0.002, 0.003")), tmp_path / "runs", tmp_path / "job.sh"
+    path, out, job = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.005, 0.01, 0.015")), tmp_path / "runs", tmp_path / "job.sh"
     assert main(["prepare", str(path), "--job", str(job), "--out", str(out)]) == 0
     structure, sites, signs, seeds = MODELS["BFO"]
     big_d, big_a, per_cell = spin_model(symmetry.operations(*structure, sites, signs)["rotations"], seeds, 2)
@@ -205,6 +205,7 @@ def test_command_chain(tmp_path, capsys):
     assert np.allclose(report["D_by_species"]["Fe"]["D"], report["D"]["value"], atol=1e-12)
     assert report["sign"] == "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"
     assert report["D_sw"]["value"] is None and report["noise"]["sigma_y"] == 0 and report["noise"]["n_g"] == 9
+    assert report["F"]["passed"] and report["F"]["ratio_to_D_free"] < 1e-6 and "noise only" in report["F"]["bound"]
     assert report["prediction"]["pitch_nm"] > 0 and report["prediction"]["degeneracy"] == 2
     traces = manifest.load(out / "traces.json")
     assert traces["passed"] and traces["checks"]["C0"]["passed"] and traces["checks"]["N0"]["passed"]
@@ -231,7 +232,16 @@ def test_command_chain(tmp_path, capsys):
     finish(out / "d1_t2_plus", energy=-50.0 + cells["d1_t2_plus"][1], reversed_site=True)
     assert main(["fit", str(out)]) == 0
     report = manifest.load(out / "tensors.json")
-    assert report["directions"][0]["t"] == [0.001, 0.003]
+    assert report["directions"][0]["t"] == [0.005, 0.015]
+    assert np.allclose(report["D"]["value"], 1e3 * big_d, atol=1e-6 * 1e3 * np.abs(big_d).max())
+    # d1 left with one magnitude is dropped; the remaining two directions still determine D and
+    # A, but not D_free, so F is not evaluated rather than passed (Section 9.4).
+    finish(out / "d1_t3_plus", energy=-50.0 + cells["d1_t3_plus"][1], reversed_site=True)
+    capsys.readouterr()
+    assert main(["fit", str(out)]) == 0
+    report = manifest.load(out / "tensors.json")
+    assert report["dropped_directions"] == ["d1"] and report["F"]["passed"] is None
+    assert report["D_free"].startswith("not evaluated")
     assert np.allclose(report["D"]["value"], 1e3 * big_d, atol=1e-6 * 1e3 * np.abs(big_d).max())
 
 

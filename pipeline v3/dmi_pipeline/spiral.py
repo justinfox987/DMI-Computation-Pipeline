@@ -16,7 +16,7 @@ import numpy as np
 from . import manifest, symmetry
 from .realized import incar, logical, numbers, poscar
 
-RANK_FLOOR = 0.1       # smallest singular value of a column-normalized fit design (Section 9.4)
+RANK_FLOOR = 0.1       # smallest singular value of the column-normalized tensor columns (Section 9.4)
 COLLAPSED = 0.1        # μB; a shorter M_int has no usable direction
 PAIR_DEG = 90.0        # a relative site phase at or above this means another sign pattern
 # Section 11 SCF-and-state checks, applied by collect.
@@ -217,40 +217,35 @@ def stiffness_design(s, points, basis):
 
 def rank_value(design):
     """Smallest singular value after scaling each column to unit norm; 0 when the
-    design has fewer rows than columns or a zero column. Full column rank needs
-    this at or above RANK_FLOOR (Section 9.4)."""
+    matrix has fewer rows than columns or a zero column."""
     norms = np.linalg.norm(design, axis=0)
     if design.shape[0] < design.shape[1] or np.any(norms == 0):
         return 0.0
     return float(np.linalg.svd(design / norms, compute_uv=False)[-1]) if design.shape[1] else np.inf
 
 
-def plan_ranks(lattice, directions, t, d_basis, a_basis):
-    """rank_value of the constrained D, A and D_free designs for every planned point."""
-    s = unit_directions(lattice, directions)
-    points = [(i, x) for i in range(len(s)) for x in t]
-    return {"D": rank_value(spiralization_design(s, points, d_basis)),
-            "A": rank_value(stiffness_design(s, points, a_basis)),
-            "D_free": rank_value(spiralization_design(s, points, FREE_BASIS))}
+def geometry_ranks(s, d_basis, a_basis):
+    """rank_value of the tensor columns of the constrained-D, D_free and A designs,
+    one row block per direction with t set aside (Section 9.4).
+
+    These test the geometry alone. The nuisance columns are separate: they are
+    determined when every direction has at least two distinct magnitudes, which
+    plan and fit require. The full design would cap these values through the
+    t-t^3 correlation of the grid, whatever the directions.
+    """
+    points = [(i, 1.0) for i in range(len(s))]
+    return {"D": rank_value(spiralization_design(s, points, d_basis)[:, :len(d_basis)]),
+            "A": rank_value(stiffness_design(s, points, a_basis)[:, :len(a_basis)]),
+            "D_free": rank_value(spiralization_design(s, points, FREE_BASIS)[:, :9])}
 
 
 def choose_directions(lattice, d_basis, a_basis):
-    """Best-conditioned set of max(3, p_A) low-index q_frac directions, Section 8.2.
-
-    Scored on the tensor columns of the three designs at one magnitude: the
-    nuisance columns depend only on the t grid and would hide the geometry.
-    """
+    """Best-conditioned set of max(3, p_A) low-index q_frac directions, Section 8.2."""
     candidates = [c for c in product((-1, 0, 1), repeat=3) if c > (0, 0, 0)]
-
-    def score(directions):
-        s = unit_directions(lattice, directions)
-        points = [(i, 1.0) for i in range(len(s))]
-        return min(rank_value(spiralization_design(s, points, d_basis)[:, :len(d_basis)]),
-                   rank_value(spiralization_design(s, points, FREE_BASIS)[:, :9]),
-                   rank_value(stiffness_design(s, points, a_basis)[:, :len(a_basis)]))
     # Symmetry-equivalent sets tie to ~1e-15; round so the first set in
     # combinations order wins on every machine.
-    best = max(combinations(candidates, max(3, len(a_basis))), key=lambda d: round(score(d), 9))
+    best = max(combinations(candidates, max(3, len(a_basis))),
+               key=lambda d: round(min(geometry_ranks(unit_directions(lattice, d), d_basis, a_basis).values()), 9))
     return np.array(best, dtype=float)
 
 
@@ -281,7 +276,8 @@ def plan(seed):
     if directions is None:
         directions = choose_directions(lattice, d_basis, a_basis)
     # Explicit directions may be fewer than three when both designs have full rank.
-    ranks = plan_ranks(lattice, directions, seed["t"], d_basis, a_basis)
+    # load_seed already requires three distinct magnitudes, so every direction has two.
+    ranks = geometry_ranks(unit_directions(lattice, directions), d_basis, a_basis)
     if ranks["D"] < RANK_FLOOR:
         raise ValueError(f"q directions do not determine D: rank value {ranks['D']:.3g} < {RANK_FLOOR}")
     if ranks["A"] < RANK_FLOOR:

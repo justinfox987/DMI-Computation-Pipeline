@@ -31,7 +31,8 @@ def plan_lines(summary) -> list[str]:
     if shown:
         lines.append("  ".join(shown))
     lines += summary["overrides"]
-    lines.append(f"directions (q_frac)  rank D {ranks['D']:.3f}  A {ranks['A']:.3f}  D_free {ranks['D_free']:.3f}")
+    shown = {k: "-" if v == float("inf") else f"{v:.3f}" for k, v in ranks.items()}   # "-": no tensor columns
+    lines.append(f"directions (q_frac)  rank D {shown['D']}  A {shown['A']}  D_free {shown['D_free']}")
     lines += [f"  d{i}  " + " ".join(f"{x:g}" for x in d) for i, d in enumerate(summary["directions"], 1)]
     if ranks["D_free"] < spiral.RANK_FLOOR:
         lines.append("D_free is not determined: the forbidden part will not be evaluated")

@@ -80,3 +80,27 @@ No DECISIONS entry. Findings for the user:
 - Files another session should read: this log, `STATUS.md`, `plans/ten-06-fe-pilot.md`.
 - Last tested commit, if available: the commit carrying this log.
 - Uncommitted/unpushed work and where it exists: see the final response of this session.
+
+## Amendment after review, 2026-11-12
+
+The user's review amended D-023. The work is on the same branch, for the same PR #20.
+
+- **Forbidden bound.** `gates.FORBIDDEN_FLOOR = 0.01`. The bound is `3 sigma + 0.01 max|D_free|`, replacing the 1e-9 roundoff floor. The gate reports `ratio_to_D_free`, and `tensors.json` records it under `F`, together with the bound text "sigma covers noise only, the floor covers series truncation".
+- **Rank test.**
+  - `spiral.geometry_ranks` replaces `plan_ranks`. It uses the tensor columns of the constrained-D, D_free and A designs, one row block per direction with t set aside. `plan`, `fit` and the chooser all use it.
+  - `fit_pairs` requires two or more distinct magnitudes in every direction used, and `observables` drops a direction with fewer. The full-design test and its 0.17 cap are gone.
+  - `plan` prints "-" for a design with no tensor columns (p_D = 0).
+- **Tests (still 15).**
+  - The "Forbidden passes" assertions are back on the noise-free models.
+  - The command chain is back at t = 0.005, 0.01 and 0.015, with the Forbidden check passing.
+  - The injected forbidden part is now 0.05 |D|, which fails; a new 0.005 |D| case passes.
+  - The chain test also drops d1 when it is left with one magnitude, and then reports D_free and F as not evaluated, a path that was untested.
+- **Documents.** The D-023 amendment, math Sections 9.4 and 11 (an unnumbered display, so no equation number moves), a dated note in the Revision 3.2 paragraph, the agent notes, `seed_file.md`, STATUS (the open item is removed), and CHANGELOG.
+
+| Exact command or evidence source | Result | Scope / limits |
+|---|---|---|
+| `cd "pipeline v3" && .venv/bin/python -m pytest -q` | PASS, 15 | Software only |
+| max\|F\| / max\|D_free\|, noise-free spin models | BFO: 7.2e-8 at t = 0.005-0.015 and 9.34e-5 at t = 0.03-0.09; FeGe: 2.9e-14 and 1.9e-15. All pass | `tests.test_tensors.model_fit` |
+| Fault injections, each reverted | 5 of 5 caught: floor back to 1e-9; floor 0.1; a one-magnitude direction kept; D rank on the full design; D_free always evaluated | Scratch edits |
+| `python -m dmi_pipeline plan materials/fe/seed.toml` | exit 0; rank D -, A 1.000, D_free 1.000; directions (001), (010), (100); one MAGMOM override line | The user's untracked files |
+| Rebuild the math PDF | NOT RUN: no LaTeX engine on this machine (no pdflatex, latexmk, xelatex, lualatex or tectonic in WSL or Windows) | Braces, environments and display delimiters checked by script; not compiled |

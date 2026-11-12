@@ -340,6 +340,12 @@ standard plan against 9 degrees of freedom. The single solve reproduces the
 current `D_free`, `D`, `F` and `A` to 1e-12 on the spin models.
 **Authority:** math Revision 3.2, Section 9.4; `plans/simplify-1.md` item 2.7.
 
+**Amended 2026-11-11, after the SIM-1b review.**
+- **Forbidden bound.** The bound is `3 sigma + 0.01 max|D_free|` (`FORBIDDEN_FLOOR` in `gates.py`). It replaces the 1e-9 roundoff floor. The parity sigma measures noise only. Truncating the series at `t^3` leaves a forbidden part of order 1e-4 to 1e-3 of `|D|` at realistic `t`, which no residual-based sigma captures: 9.3e-5 on the noise-free BFO spin model at `t = 0.03, 0.06, 0.09`. An axis, frame or transpose error is of order `|D|`. With `D = 0` the floor is zero and sigma alone decides. `tensors.json` always records `max|F| / max|D_free|`.
+- **Rank test.** The test is on the tensor columns of each design, with `t` set aside, against `RANK_FLOOR`. Separately, every direction used needs complete pairs at two or more distinct magnitudes. The full-design test is dropped: with magnitudes 1:2:3 its correlated `t` and `t^3` columns capped the value near 0.17 for `A`, whatever the geometry.
+
+**Authority:** math Sections 9.4 and 11 (amended text).
+
 ## D-024 — Anisotropy by self-consistent SOC energies, in its own module
 
 **Status:** accepted 2026-11-11; build deferred until the spiralization tensor

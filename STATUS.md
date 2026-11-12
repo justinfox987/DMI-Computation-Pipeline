@@ -55,7 +55,7 @@ and no parity (P0) measurement has been made with Patch B.
 | Cleanup 1 | Remove dead and duplicate code without changing behavior | Done, [spec](plans/cleanup-1.md) | Merged in PR #15, `b082893` | Identical outputs to `main`; tests and fault injections unchanged |
 | FIX-1 | Conjugate in the trace and its oracle, the layout test, delete the FERWE occupation checks (D-020) | Done; [spec](plans/simplify-1.md) Part 1 | Merged in PR #18, `27bfe86` | Layout test passes; the smeared fixture loads; 22 tests ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) |
 | SIM-1a | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader (D-021) | Done; [spec](plans/simplify-1.md) items 2.2, 2.3, 2.4, 2.6 | Merged in PR #19, `22a0110` | D, A, F and the pitch agree with `main` to 5e-16 meV; 14 tests ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) |
-| SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | In review; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
+| SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | In review; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; Forbidden bound with 1% floor and geometry-only rank test (D-023 amended); 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
 | TEN-06 | bcc Fe F0 pilot at lambda 0 | After SIM-1; [spec](plans/ten-06-fe-pilot.md) drafted, awaits approval; Fe inputs are in `materials/fe/` uncommitted | Unassigned | **Gate 2:** T near zero on all axes, plausible A, first wall times |
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
@@ -68,8 +68,10 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `sim-1b-incar-fit` (SIM-1b). Decide on the Forbidden-check
-   finding in its log: parity noise does not cover series-truncation bias.
+1. Review and merge `sim-1b-incar-fit` (SIM-1b), now with the D-023 amendment:
+   a 1% floor in the Forbidden bound and a geometry-only rank test. Rebuild
+   the math PDF on a machine with LaTeX: this one has none, so the amended TeX
+   has not been compiled.
 2. TEN-06 on a new branch from `main`, once its spec is approved.
 
 One cluster check can run now, because it needs no new code: one `dump_P` with
@@ -84,12 +86,6 @@ The old Fe F0 recipe used lambda 1 and is retired. Its replacement is
 added at TEN-06, and its `t` values are placeholders.
 
 ## Unresolved inputs
-
-- Whether the Forbidden check needs a truncation floor. Its sigma now comes from
-  the parity residuals (D-023), which do not see the t^5 series truncation; the
-  old pooled residual did. On noise-free synthetic data the check fails at
-  F ~ 1e-7 |D|. On real data parity noise usually dominates, but at BFO-scale t
-  the truncation can be comparable. A user decision.
 
 - Whether the remote should be public. It was served to an anonymous clone on
   2026-11-02, while earlier documents assume a private repository. No POTCAR,
