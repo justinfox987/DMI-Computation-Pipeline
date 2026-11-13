@@ -1,26 +1,27 @@
 # Current project status
 
-**Last reconciled:** 2026-11-11 UTC, at SIM-1b on branch `sim-1b-incar-fit` ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)).
+**Last reconciled:** 2026-11-13 UTC, at the TEN-06 code on branch `ten-06-fe-pilot` ([log](docs/sessions/2026-11-13_1939Z-agent-ten06-fe-pilot.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
 campaign orchestration and `step1.py` are removed. TEN-02 (`symmetry.py`) and
 TEN-03 (`spiral.py`: seed, `plan`, `prepare`, `collect`), TEN-04 (`dumps`,
 `trace`), TEN-05 (`tensors.py`, `dmi fit`), cleanup 1, FIX-1 (trace sign,
-smeared FERWE; D-020) and SIM-1a (recompute from the VASP files, M1 per build,
-handedness for T3; D-021) are merged. The full workflow exists; none of it has
-run on a spiral. SIM-1b (`sim-1b-incar-fit`, awaiting review) completes SIM-1:
-the code overrides its eleven INCAR tags and refuses only tetrahedron smearing
-(D-022), and the fit is one solve per tensor with noise from the parity
-residuals (D-023). `fit` gives A from an energies-only tree.
+smeared FERWE; D-020), SIM-1a (recompute from the VASP files, M1 per build,
+handedness for T3; D-021) and SIM-1b (INCAR overrides, single-solve fit with
+parity noise, 1% Forbidden floor; D-022, D-023) are merged. The full workflow
+exists; none of it has run on a spiral. TEN-06, the bcc Fe pilot, is approved;
+its code (the centrosymmetric null and `4A/M_total`) and the `materials/fe/`
+inputs are in review on `ten-06-fe-pilot`, and its runs wait for the user.
 
-**Integration branch / base commit:** `main` at `22a0110`, the PR #19 merge (SIM-1a). PRs #15 to #19 are merged. Tag
+**Integration branch / base commit:** `main` at `e514eed`, the PR #20 merge (SIM-1b). PRs #15 to #20 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `sim-1b-incar-fit`, D-022, D-023 and the
-exchange seed keys; done and awaiting review. One writer per branch.
+**Handoff owner / scope:** Claude / `ten-06-fe-pilot`, the TEN-06 code and
+material folder; done and awaiting review. The Perlmutter runs, the evidence
+record and the Gate 2 evaluation are the user's next step. One writer per branch.
 
 ## Established
 
@@ -55,8 +56,8 @@ and no parity (P0) measurement has been made with Patch B.
 | Cleanup 1 | Remove dead and duplicate code without changing behavior | Done, [spec](plans/cleanup-1.md) | Merged in PR #15, `b082893` | Identical outputs to `main`; tests and fault injections unchanged |
 | FIX-1 | Conjugate in the trace and its oracle, the layout test, delete the FERWE occupation checks (D-020) | Done; [spec](plans/simplify-1.md) Part 1 | Merged in PR #18, `27bfe86` | Layout test passes; the smeared fixture loads; 22 tests ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) |
 | SIM-1a | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader (D-021) | Done; [spec](plans/simplify-1.md) items 2.2, 2.3, 2.4, 2.6 | Merged in PR #19, `22a0110` | D, A, F and the pitch agree with `main` to 5e-16 meV; 14 tests ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) |
-| SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | In review; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; Forbidden bound with 1% floor and geometry-only rank test (D-023 amended); 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
-| TEN-06 | bcc Fe F0 pilot at lambda 0 | After SIM-1; [spec](plans/ten-06-fe-pilot.md) drafted, awaits approval; Fe inputs are in `materials/fe/` uncommitted | Unassigned | **Gate 2:** T near zero on all axes, plausible A, first wall times |
+| SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | Done, merged in PR #20, `e514eed`; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; Forbidden bound with 1% floor and geometry-only rank test (D-023 amended); 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
+| TEN-06 | bcc Fe F0 pilot at lambda 0 | [Spec](plans/ten-06-fe-pilot.md) approved 2026-11-13; code and `materials/fe/` in review; runs wait for the user | Claude / `ten-06-fe-pilot` (code); the user (runs) | **Gate 2:** T near zero on all axes, plausible A, first wall times |
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
@@ -68,22 +69,32 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `sim-1b-incar-fit` (SIM-1b), now with the D-023 amendment:
-   a 1% floor in the Forbidden bound and a geometry-only rank test. Rebuild
-   the math PDF on a machine with LaTeX: this one has none, so the amended TeX
-   has not been compiled.
-2. TEN-06 on a new branch from `main`, once its spec is approved.
+1. Review and merge `ten-06-fe-pilot` (the TEN-06 code and `materials/fe/`).
+2. On Perlmutter, from a checkout of `main` with the package installed
+   (`plans/ten-06-fe-pilot.md`, convergence plan and command sequence):
+   - **k series**, energies only. For `N = 12, 16, 20, 24`, make an uncommitted
+     copy of `materials/fe/` with `KPOINTS` set to `N N N` and
+     `directions = [[0, 0, 1]]` in its seed: 7 SCFs each, no dumps. Then run
+     `dmi prepare`, `sbatch submit.sh`, `dmi collect` and `dmi fit` (A alone).
+     Converged when A changes by less than 5% between the last two meshes; add
+     `N = 28` if 24 is still moving.
+   - **t series** at the chosen `N`: `t = 0.03, 0.06, 0.09` against the committed
+     `0.05, 0.10, 0.15`, energies only. Consistent when A agrees within
+     2 sigma + 5%.
+   - **Full tree** at the chosen `N` and `t`: `dmi plan`, `dmi prepare --job scf.sh`,
+     `sbatch submit.sh` (19 SCFs), `dmi collect` (all 19 ok), `dmi dumps --job
+     patchb.sh`, `sbatch submit_dumps.sh` (20 dumps), `dmi fit`. The SCFs and
+     the dumps use the same Patch B build. If it is not the 14 September build,
+     add `LDUMPCPROJ = T` to `q0/dump_P/INCAR` by hand before submitting, and
+     run `python acceptance/m1.py` on that directory afterwards.
+   - Bring back the JSON reports, `q0/dump_P/COCC.dat`, `dump_C/CSO.dat`,
+     the job scripts' resources and the wall times for the evidence record.
+3. Then the evidence record and the Gate 2 evaluation (spec "Gate 2" and
+   "Evidence record"), on a new branch.
 
-One cluster check can run now, because it needs no new code: one `dump_P` with
-`LDUMPCOCC` on and `LDUMPCPROJ` off.
-
-`dmi plan materials/fe/seed.toml` now runs on the user's INCAR as it is: one
-override line for `MAGMOM`, no stop for the missing `ENINI`, and the default
-directions (001), (010), (100).
-
-The old Fe F0 recipe used lambda 1 and is retired. Its replacement is
-[materials/fe/seed.toml](materials/fe/seed.toml); POSCAR, INCAR and KPOINTS are
-added at TEN-06, and its `t` values are placeholders.
+`dmi plan materials/fe/seed.toml` runs on the committed inputs: group 229, 96
+operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
+(001), (010), (100), 19 runs.
 
 ## Unresolved inputs
 

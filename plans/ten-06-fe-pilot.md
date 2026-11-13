@@ -5,10 +5,9 @@ Physics authority: `docs/math/heide_math_v3.tex` (Revision 3.2), Sections 3, 4,
 `plans/ten-05-tensors.md`, as merged with cleanup 1 (`b082893`). Seed format:
 `docs/seed_file.md`. Input ownership: D-019 (pending on `incar-user-settings`).
 
-Status: draft for user review, 2026-11-09, revised with the user's answers, and
-revised again on 2026-11-11 for D-020 to D-023 (`plans/simplify-1.md`). FIX-1
-and SIM-1a are merged, and SIM-1b (D-022, D-023) is in review on
-`sim-1b-incar-fit`. The trace has VASP's sign, the dump readers accept a smeared
+Status: approved by the user on 2026-11-13. Drafted 2026-11-09, revised with
+the user's answers, and revised again on 2026-11-11 for D-020 to D-023
+(`plans/simplify-1.md`). FIX-1, SIM-1a and SIM-1b are merged. The trace has VASP's sign, the dump readers accept a smeared
 metal, `dmi fit` traces and checks the tree itself, and `dmi plan
 materials/fe/seed.toml` runs on the user's INCAR with one override line.
 Nothing has run. When it is approved, and the user has added their inputs to
