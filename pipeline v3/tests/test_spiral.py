@@ -127,8 +127,12 @@ def rot_z(degrees):
     return np.array([(np.cos(turn), -np.sin(turn), 0), (np.sin(turn), np.cos(turn), 0), (0, 0, 1)])
 
 
-def finish(run, energy=-12.25, rotate_deg=37.0, reversed_site=False, twist_deg=0.0, scale=1.0, mz=0.0):
-    """A finished static run: two OSZICAR sphere tables, the last one final, and two TOTEN lines."""
+def finish(run, energy=-12.25, rotate_deg=37.0, reversed_site=False, twist_deg=0.0, scale=1.0, mz=0.0, mag=None):
+    """A finished static run: two OSZICAR sphere tables, the last one final, and two TOTEN lines.
+
+    The F= line carries mag= as VASP prints it; by default 1.1 times the summed M_int,
+    standing in for the interstitial moment the spheres miss.
+    """
     config = manifest.load(run / "config.json")
     moments = np.zeros((len(poscar(run / "POSCAR")[1]), 3))
     moments[config["sites"]] = 3.9 * scale * np.asarray(config["targets"]) @ rot_z(rotate_deg).T
@@ -138,7 +142,9 @@ def finish(run, energy=-12.25, rotate_deg=37.0, reversed_site=False, twist_deg=0
     def table(m):
         return "ion MW_int M_int\n" + "".join(
             f" {i + 1} " + " ".join(f"{v:.6f}" for v in (*0.9 * row, *row)) + "\n" for i, row in enumerate(m))
-    (run / "OSZICAR").write_text(table(-moments) + "DAV: 1 -1\nRMM: 2 -1\n" + table(moments) + " 1 F= -1 E0= -1\n")
+    mag = 1.1 * moments.sum(axis=0) if mag is None else np.asarray(mag)
+    summary = "   1 F= -.12250000E+02 E0= -.12240000E+02  d E =-.282564E-02  mag=" + "".join(f"{x:11.4f}" for x in mag)
+    (run / "OSZICAR").write_text(table(-moments) + "DAV: 1 -1\nRMM: 2 -1\n" + table(moments) + summary + "\n")
     (run / "OUTCAR").write_text("vasp.test synthetic\n" + (run / "INCAR").read_text() +
                                 "  free  energy   TOTEN  =       -11.000000 eV\n"
                                 f" free energy    TOTEN  =  {float(energy)!r} eV\n"
@@ -150,8 +156,13 @@ def test_readback(tmp_path, capsys):
     spiral.prepare(spiral.load_seed(path), out, tmp_path / "job.sh")
     names = (out / "runs.txt").read_text().split()
     for name in names:
-        finish(out / name)
+        finish(out / name, mag=(0.3, 0.4, 0.0) if name == "q0" else None)
+    oszicar = out / "q0" / "OSZICAR"                       # an earlier F= line: mag= comes from the last one
+    oszicar.write_text("   1 F= -.1E+02 E0= -.1E+02  d E =-.1E-02  mag=     9.0000     9.0000     9.0000\n"
+                       + oszicar.read_text())
     assert main(["collect", str(out)]) == 0
+    collected = manifest.load(out / "collected.json")      # M_total = |mag| / N_m, at q0 only
+    assert collected["q0"]["M_total"] == pytest.approx(0.25) and collected["d1_t1_plus"]["M_total"] is None
     state = manifest.load(out / "collected.json")["d3_t1_minus"]           # the last sphere table, not the first
     assert state["E_eV"] == -12.25 and state["theta_deg"] == pytest.approx(37, abs=1e-4)
     assert state["delta_deg"] == pytest.approx([0, 0], abs=1e-4) and state["M"] == pytest.approx([3.9, 3.9])

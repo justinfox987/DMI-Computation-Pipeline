@@ -18,7 +18,7 @@ any result as physically validated on that basis.
 | `spiral.py` | Eq. (3.1) targets; Section 3 inputs and readback; (3.2)–(3.3) phases; (8.1) and Section 8 $q$ plan; the Section 9.4 design matrices and their rank value, shared by `plan` and `fit` |
 | `trace.py` | Eqs. (4.4), (4.8) orbital matrices and trace vector, with the file-array contraction of Section 4.4 and the COCC-newer-than-OUTCAR guard |
 | `tensors.py` | Eqs. (1.3), (1.4) observables; Section 9.4 single solves with parity noise (9.9); Section 10 predictions and units |
-| `gates.py` | Section 11 checks C0 (with the Section 4.2 handedness), N0, I0, P0, E0 and the forbidden part; the tree trace that `fit` runs |
+| `gates.py` | Section 11 checks C0 (with the Section 4.2 handedness), N0, I0, P0, E0, the forbidden part and, with inversion kept, the null at every $q$ (Section 7.3); the tree trace that `fit` runs |
 | `acceptance/m1.py` | Section 11 check M1, once per build, outside the package |
 | `anisotropy.py` (later) | Section 13; spec in `plans/anisotropy-1.md` |
 

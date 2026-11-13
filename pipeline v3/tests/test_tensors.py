@@ -204,7 +204,9 @@ def test_command_chain(tmp_path, capsys):
     assert np.allclose(report["micromagnetic"]["A_pJ_per_m"], 1e3 * big_a / volume * 1.602, rtol=1e-6, atol=1e-12)
     assert np.allclose(report["D_by_species"]["Fe"]["D"], report["D"]["value"], atol=1e-12)
     assert report["sign"] == "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"
-    assert report["D_sw"]["value"] is None and report["noise"]["sigma_y"] == 0 and report["noise"]["n_g"] == 9
+    assert report["D_sw"]["M_int"]["value"] is None and report["D_sw"]["M_total"]["value"] is None   # not a ferromagnet
+    assert report["noise"]["sigma_y"] == 0 and report["noise"]["n_g"] == 9
+    assert report["null"]["passed"] is None and "not applicable" in report["null"]["detail"]           # R3c: no inversion
     assert report["F"]["passed"] and report["F"]["ratio_to_D_free"] < 1e-6 and "noise only" in report["F"]["bound"]
     assert report["prediction"]["pitch_nm"] > 0 and report["prediction"]["degeneracy"] == 2
     traces = manifest.load(out / "traces.json")
@@ -245,23 +247,61 @@ def test_command_chain(tmp_path, capsys):
     assert np.allclose(report["D"]["value"], 1e3 * big_d, atol=1e-6 * 1e3 * np.abs(big_d).max())
 
 
-def test_energies_only_tree(tmp_path, capsys):
-    """Item 2.10: FeGe (p_A = 1) from one explicit direction and no dumps gives A and D_sw;
-    D_free is not determined, and every trace quantity is not evaluated."""
-    structure, sites, signs, seeds = MODELS["FeGe"]
-    big_d, big_a, per_cell = spin_model(symmetry.operations(*structure, sites, signs)["rotations"], seeds, 4)
-    seed = "sites = [1, 2, 3, 4]\nsigns = [1, 1, 1, 1]\nmoments = [1.0, 1.0, 1.0, 1.0]\nt = [0.005, 0.01, 0.015]\n" \
-           "directions = [[1, 0, 0]]\n"
-    path, out = material(tmp_path, seed, "ISMEAR = 0\nSIGMA = 0.05\n", structure), tmp_path / "runs"
-    assert main(["prepare", str(path), "--job", str(tmp_path / "job.sh"), "--out", str(out)]) == 0
-    assert "D_free is not determined: the forbidden part will not be evaluated" in capsys.readouterr().out
+def test_bcc_fe_pilot_tree(tmp_path, capsys):
+    """The TEN-06 shape on bcc Fe (Im-3m, p_A = 1, inversion kept), one explicit direction.
+
+    Before any dump the tree is energies-only (item 2.10): A and both D_sw values, D_free
+    not determined, every trace quantity not evaluated. With dumps, the centrosymmetric
+    null (Sections 7.3 and 11) passes at T = 0 and fails when one run's T exceeds the floor.
+    """
+    a = 2.86304
+    structure = (a * np.eye(3), ["Fe", "Fe"], np.array([(0, 0, 0), (0.5, 0.5, 0.5)]))
+    rotations = symmetry.operations(*structure, [0, 1], [1, 1])["rotations"]
+    _, big_a, per_cell = spin_model(rotations, [((a / 2, a / 2, a / 2), (0, 0, 0), 0.02, 1)], 2)
+    seed = "sites = [1, 2]\nsigns = [1, 1]\nmoments = [2.2, 2.2]\nt = [0.05, 0.10, 0.15]\nspacegroup = 229\n" \
+           "directions = [[0, 0, 1]]\n"
+    path, out, job = material(tmp_path, seed, "ISMEAR = 0\nSIGMA = 0.05\n", structure), tmp_path / "runs", tmp_path / "job.sh"
+    assert main(["prepare", str(path), "--job", str(job), "--out", str(out)]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:2] == ["space group 229 (Im-3m) at symprec 0.001: 96 operations, 96 kept, 0 dropped",
+                         "p_D 0  p_A 1  n_twist 0"]
+    assert "D_free is not determined: the forbidden part will not be evaluated" in lines
     for name in spiral.run_names(out):
         q = spiral.cartesian(structure[0], manifest.load(out / name / "config.json")["q_frac"])[0]
         finish(out / name, energy=-50.0 + per_cell(q)[1])
+        for big in ("WAVECAR", "CHGCAR"):
+            (out / name / big).write_bytes(b"synthetic")
     assert main(["fit", str(out)]) == 0
     report = manifest.load(out / "tensors.json")
     assert np.allclose(report["A"]["value"], 1e3 * big_a, atol=1e-6 * 1e3 * np.abs(big_a).max())
-    assert report["D_sw"]["value"] == pytest.approx(4 * np.asarray(report["A"]["value"]) / 3.9)
+    a_xx = report["A"]["value"][0][0]
+    # 4A/M side by side: M_int = 3.9 from the sphere rows, M_total = 1.1 x 3.9 from mag= (fixture);
+    # tolerances are the fixture's printed precision (6 and 4 decimals).
+    assert report["D_sw"]["M_int"]["value"][0][0] == pytest.approx(4 * a_xx / 3.9, rel=1e-5)
+    assert report["D_sw"]["M_total"]["value"][0][0] == pytest.approx(4 * a_xx / 4.29, rel=1e-4)
+    assert "RWIGS" in report["D_sw"]["M_int"]["moment"] and report["D_sw"]["M_total"]["sigma"][0][0] == 0
     assert report["D"].startswith("not evaluated") and report["noise"]["n_g"] == 3 and "sigma_y" not in report["noise"]
+    assert report["null"]["passed"] is None and report["null"]["detail"].startswith("not evaluated")
     traces = manifest.load(out / "traces.json")
     assert traces["checks"]["C0"]["passed"] is None and traces["checks"]["E0"]["d1_t1"]["passed"]
+
+    # Dumps: zero spin density gives T = 0 on every run, so the null passes ...
+    assert main(["dumps", str(out), "--job", str(job)]) == 0
+    write_cso(out / "dump_C" / "CSO.dat", make_clean_cso(2, 3))
+    for name in spiral.run_names(out):
+        write_cocc(out / name / "dump_P" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
+    capsys.readouterr()
+    assert main(["fit", str(out)]) == 0
+    report = manifest.load(out / "tensors.json")
+    assert report["null"]["passed"] and report["null"]["threshold"] == 5e-5 and report["F"]["passed"] is None
+    # ... and one run whose COCC gives |T| = 1e-4 eV on ion 2 makes fit exit 1, naming it.
+    lam = split_operator(load_cso(out / "dump_C" / "CSO.dat"))[:, 1]
+    gram = np.einsum("aij,bij->ab", lam, lam.conj()).real
+    m = np.einsum("b,bij->ij", np.linalg.solve(gram, [0.0, 1e-4, 0.0]), lam)
+    cocc = np.zeros((4, 2, 3, 3), complex)
+    cocc[0, 1], cocc[3, 1] = m / 2, -m / 2
+    write_cocc(out / "d1_t2_minus" / "dump_P" / "COCC.dat", cocc, nelect=8.0)
+    capsys.readouterr()
+    assert main(["fit", str(out)]) == 1
+    assert "Null  FAIL: |T_y| = 1.000e-04 eV on d1_t2_minus, ion 2" in capsys.readouterr().out
+    assert manifest.load(out / "tensors.json")["failures"][-1].startswith("Null (|T_y| = 1.000e-04 eV on d1_t2_minus")

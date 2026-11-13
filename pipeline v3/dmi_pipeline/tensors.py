@@ -13,7 +13,7 @@ import numpy as np
 from . import manifest, spiral, symmetry
 from .gates import NOT_EVALUATED, check_tree, gate_forbidden
 from .realized import poscar
-from .spiral import FREE_BASIS, RANK_FLOOR, geometry_ranks, spiralization_design, stiffness_design
+from .spiral import FREE_BASIS, RANK_FLOOR, geometry_ranks, spiralization_design, stiffness_design, undetermined
 
 MEV = 1e3
 # Section 10.4: a meV value divided by V_m in Å^3, times these, gives SI units.
@@ -21,6 +21,9 @@ PJ_PER_M_FROM_MEV_PER_A = 1.602      # A: meV Å^-1 -> pJ m^-1
 MJ_PER_M2_FROM_MEV_PER_A2 = 16.02    # D: meV Å^-2 -> mJ m^-2
 DEGENERATE = 1e-9      # relative eigenvalue gap that counts as a degenerate n*
 SIGN = "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"
+# The two moments of D_sw = 4A/M (Eq 10.2), reported side by side (TEN-06 decision 7).
+MOMENTS = {"M_int": "mean |M_int| of the magnetic sites at q0: the RWIGS sphere moment",
+           "M_total": "|mag| / N_m from q0's last OSZICAR F= line: the cell moment per site, independent of RWIGS"}
 
 
 def pair_observables(t_plus, t_minus, e_plus, e_minus, e_zero, n_m):
@@ -64,7 +67,7 @@ def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
     y, g = np.array([o[0] for o in observed]), np.array([o[1] for o in observed])
     odd_g = np.array([(p["E_plus"] - p["E_minus"]) / (2 * n_m) for p in pairs])
     a_design = stiffness_design(s, points, a_basis)
-    if ranks["A"] < RANK_FLOOR:
+    if undetermined(ranks["A"]):
         raise ValueError(f"The directions used do not determine A: rank value {ranks['A']:.3g} < {RANK_FLOOR}")
     noise = {"sigma_g": float(np.sqrt(np.mean(odd_g ** 2))), "n_g": len(odd_g)}
     result = {"A": tensor_fit(a_design, g, noise["sigma_g"], a_basis), "noise": noise}
@@ -73,10 +76,10 @@ def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
         return result
     even_y = np.array([(np.asarray(p["T_plus"]) + p["T_minus"]) / n_m for p in pairs])
     noise.update(sigma_y=float(np.sqrt(np.mean(even_y ** 2))), n_y=even_y.size)
-    if ranks["D"] < RANK_FLOOR:
+    if undetermined(ranks["D"]):
         raise ValueError(f"The directions used do not determine D: rank value {ranks['D']:.3g} < {RANK_FLOOR}")
     result["D"] = tensor_fit(spiralization_design(s, points, d_basis), y.ravel(), noise["sigma_y"], d_basis)
-    if ranks["D_free"] >= RANK_FLOOR:                      # fewer than three directions: not evaluated
+    if not undetermined(ranks["D_free"]):                      # fewer than three directions: not evaluated
         free = result["D_free"] = tensor_fit(spiralization_design(s, points, FREE_BASIS), y.ravel(),
                                              noise["sigma_y"], FREE_BASIS)
         rest = np.eye(9) - result["D"]["flat"] @ result["D"]["flat"].T       # 1 - P_D, Eq (9.4)
@@ -140,18 +143,27 @@ def spin_wave_stiffness(a_matrix, cov_a_matrix, moment, signs):
 
 # ---- the run tree --------------------------------------------------------------
 
-def observables(out, states, traces):
-    """Complete pairs of the tree, from read_runs and check_tree of this call."""
+def tree_symmetry(out):
+    """Structure, magnetic sites and kept operations of a tree, from plan.json and q0."""
     out = Path(out)
     plan = manifest.load(out / "plan.json")
     seed = tomllib.loads(plan["seed"])
     lattice, species, tau = poscar(out / "q0" / "POSCAR")
     config = manifest.load(out / "q0" / "config.json")
     sites, signs = config["sites"], config["signs"]
-    n_m = len(sites)
-    if n_m != len(seed["sites"]):
-        raise ValueError(f"N_m = {n_m} from config.json, but the seed in plan.json has {len(seed['sites'])} sites")
+    if len(sites) != len(seed["sites"]):
+        raise ValueError(f"N_m = {len(sites)} from config.json, but the seed in plan.json has {len(seed['sites'])} sites")
     ops = symmetry.operations(lattice, species, tau, sites, signs, seed.get("symprec", 1e-3), seed.get("spacegroup"))
+    return {"plan": plan, "seed": seed, "lattice": lattice, "species": species, "signs": signs,
+            "n_m": len(sites), "ops": ops,
+            "inversion": any(np.allclose(R, -np.eye(3), atol=1e-8) for R in ops["rotations"])}
+
+
+def observables(out, states, traces, tree):
+    """Complete pairs of the tree, from read_runs and check_tree of this call."""
+    out = Path(out)
+    plan, seed, lattice, species = tree["plan"], tree["seed"], tree["lattice"], tree["species"]
+    n_m, signs, ops = tree["n_m"], tree["signs"], tree["ops"]
     traced = traces["traced"]
 
     def run(name):
@@ -190,16 +202,17 @@ def observables(out, states, traces):
             "s": spiral.unit_directions(lattice, [d["q_frac"] for d in used]), "directions": used,
             "dropped": dropped, "pairs": pairs, "e_zero": zero[0],
             "d_basis": symmetry.spiralization_basis(ops["rotations"]),
-            "a_basis": symmetry.stiffness_basis(ops["rotations"]), "M_q0": float(np.mean(states["q0"]["M"]))}
+            "a_basis": symmetry.stiffness_basis(ops["rotations"]), "M_q0": float(np.mean(states["q0"]["M"])),
+            "M_total_q0": states["q0"].get("M_total")}
 
 
 def _value(matrix, cov, scale=MEV):
     return {"value": (scale * matrix).tolist(), "sigma": (scale * np.sqrt(np.diag(cov)).reshape(3, 3)).tolist()}
 
 
-def report_tree(out, states, traces):
+def report_tree(out, states, traces, tree):
     """Every Section 9 and 10.1 result of a tree whose Section 11 checks passed."""
-    obs = observables(out, states, traces)
+    obs = observables(out, states, traces, tree)
     result = fit_pairs(obs["s"], obs["pairs"], obs["n_m"], obs["e_zero"], obs["d_basis"], obs["a_basis"],
                        obs["species"] if obs["traced"] else None)
     stiff, traced = result["A"], obs["traced"]
@@ -250,12 +263,17 @@ def report_tree(out, states, traces):
                 prediction.update(pitch_nm=p["pitch_A"] / 10, sigma_pitch_nm=sigma["pitch_A"] / 10,
                                   sigma_e_star_meV=MEV * sigma["e_star"])
             report["prediction"] = prediction
-    if positive:
-        d_sw, cov_sw = spin_wave_stiffness(stiff["tensor"], stiff["cov"], obs["M_q0"], obs["signs"])
-        report["D_sw"] = ({"value": None, "reason": cov_sw} if d_sw is None else
-                          dict(_value(d_sw, cov_sw), units="meV A^2", M_muB=obs["M_q0"]))
-    else:
-        report["D_sw"] = {"value": None, "reason": "A is not positive definite"}
+    report["null"] = traces["checks"]["Null"]
+    report["D_sw"] = {}
+    for key, moment, meaning in (("M_int", obs["M_q0"], MOMENTS["M_int"]), ("M_total", obs["M_total_q0"], MOMENTS["M_total"])):
+        if not positive:
+            report["D_sw"][key] = {"value": None, "reason": "A is not positive definite"}
+        elif moment is None:
+            report["D_sw"][key] = {"value": None, "reason": "not evaluated: q0's OSZICAR F= line has no mag="}
+        else:
+            d_sw, cov_sw = spin_wave_stiffness(stiff["tensor"], stiff["cov"], moment, obs["signs"])
+            report["D_sw"][key] = ({"value": None, "reason": cov_sw} if d_sw is None else
+                                   dict(_value(d_sw, cov_sw), units="meV A^2", M_muB=moment, moment=meaning))
     report["passed"] = forbidden_passed and positive
     return report
 
@@ -267,10 +285,11 @@ def fit(out):
     out = Path(out)
     try:
         states = spiral.read_runs(out)
-        traces = check_tree(out, states)
+        tree = tree_symmetry(out)
+        traces = check_tree(out, states, tree["inversion"])
         failures = traces["failures"]
         if not failures:
-            report = report_tree(out, states, traces)
+            report = report_tree(out, states, traces, tree)
             manifest.save(report, out / "tensors.json")
             report["lines"] = traces["lines"] + _lines(report)
             return report
@@ -306,6 +325,13 @@ def _lines(report):
             lines.append("D = 0: no spiral")
         else:
             lines.append(f"pitch {p['pitch_nm']:.4g} +- {p['sigma_pitch_nm']:.2g} nm, n* degeneracy {p['degeneracy']}")
+    for key, entry in report["D_sw"].items():
+        if entry["value"] is not None:
+            lines.append(f"D_sw = 4A/{key} {entry['value'][0][0]:.4g} +- {entry['sigma'][0][0]:.2g} meV A^2 "
+                         f"(xx; M = {entry['M_muB']:.4g} muB)")
+    null = report["null"]
+    lines.append(f"Null at every q: {null['detail']}" if null["passed"] is None else
+                 f"Null at every q: pass, worst |T| {null['value']['worst_eV']:.2e} eV")
     if report["dropped_directions"]:
         lines.append(f"dropped directions (fewer than two magnitudes): {', '.join(report['dropped_directions'])}")
     lines.append(f"sign {report['sign']}")
