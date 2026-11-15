@@ -36,6 +36,7 @@ LOGICAL = {"LNONCOLLINEAR", "LSPIRAL", "LSORBIT", "LZEROZ"}
 FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
 TOTEN = re.compile(r"free\s+energy\s+TOTEN\s*=\s*(" + FLOAT + ")")
 PENALTY = re.compile(r"\blambda\s*=\s*(" + FLOAT + ")", re.I)
+SUMMARY = re.compile(r"^\s*\d+\s+F=")       # the OSZICAR line closing an ionic step
 CD = re.compile(r"(?:^|[;&|])\s*cd(?:\s|$)")
 # Section 5 dump decks. A dump writes no WAVECAR or CHGCAR, so the linked parent
 # files stay untouched.
@@ -50,10 +51,12 @@ SPHERE = re.compile(r"^\s*ion\s+MW_int\s+M_int\s*$", re.I)
 
 
 def read_static(run, nions):
-    """(E, M_int) of one finished static run (Section 3.3, D-021).
+    """(E, M_int, mag) of one finished static run (Section 3.3, D-021).
 
     The OUTCAR must have reached EDIFF and printed its timing footer. M_int is the
     last OSZICAR sphere block, one row per ion; E is the last free energy TOTEN.
+    mag is the cell moment on the last F= line (three components in a
+    noncollinear run), or None when that line prints no mag=.
     A constrained run whose last printed lambda is not 0 is refused: its energy
     holds a penalty term.
     """
@@ -80,7 +83,11 @@ def read_static(run, nions):
     m = np.array([[float(x.replace("D", "E").replace("d", "e")) for x in row[4:]] for row in rows])
     if not np.all(np.isfinite(m)):
         raise ValueError("Non-finite OSZICAR M_int")
-    return float(energies[-1].replace("D", "E").replace("d", "e")), m
+    summary = [line for line in lines if SUMMARY.match(line)]
+    mag = None
+    if summary and "mag=" in summary[-1]:
+        mag = np.array([float(x.replace("D", "E").replace("d", "e")) for x in summary[-1].split("mag=")[1].split()])
+    return float(energies[-1].replace("D", "E").replace("d", "e")), m, mag
 
 
 # ---- seed ----------------------------------------------------------------
@@ -217,11 +224,19 @@ def stiffness_design(s, points, basis):
 
 def rank_value(design):
     """Smallest singular value after scaling each column to unit norm; 0 when the
-    matrix has fewer rows than columns or a zero column."""
+    matrix has fewer rows than columns or a zero column; None with no columns
+    (p_D = 0: nothing to determine)."""
+    if not design.shape[1]:
+        return None
     norms = np.linalg.norm(design, axis=0)
     if design.shape[0] < design.shape[1] or np.any(norms == 0):
         return 0.0
-    return float(np.linalg.svd(design / norms, compute_uv=False)[-1]) if design.shape[1] else np.inf
+    return float(np.linalg.svd(design / norms, compute_uv=False)[-1])
+
+
+def undetermined(value):
+    """True when a rank value fails RANK_FLOOR; None (no tensor columns) never fails."""
+    return value is not None and value < RANK_FLOOR
 
 
 def geometry_ranks(s, d_basis, a_basis):
@@ -245,7 +260,8 @@ def choose_directions(lattice, d_basis, a_basis):
     # Symmetry-equivalent sets tie to ~1e-15; round so the first set in
     # combinations order wins on every machine.
     best = max(combinations(candidates, max(3, len(a_basis))),
-               key=lambda d: round(min(geometry_ranks(unit_directions(lattice, d), d_basis, a_basis).values()), 9))
+               key=lambda d: round(min(v for v in geometry_ranks(unit_directions(lattice, d), d_basis, a_basis).values()
+                                       if v is not None), 9))
     return np.array(best, dtype=float)
 
 
@@ -278,9 +294,9 @@ def plan(seed):
     # Explicit directions may be fewer than three when both designs have full rank.
     # load_seed already requires three distinct magnitudes, so every direction has two.
     ranks = geometry_ranks(unit_directions(lattice, directions), d_basis, a_basis)
-    if ranks["D"] < RANK_FLOOR:
+    if undetermined(ranks["D"]):
         raise ValueError(f"q directions do not determine D: rank value {ranks['D']:.3g} < {RANK_FLOOR}")
-    if ranks["A"] < RANK_FLOOR:
+    if undetermined(ranks["A"]):
         raise ValueError(f"q directions do not determine the stiffness: rank value {ranks['A']:.3g} "
                          f"< {RANK_FLOOR} for p_A = {len(a_basis)}")
     points = [{"name": "q0", "q_frac": [0.0, 0.0, 0.0]}]
@@ -392,7 +408,7 @@ def read_run(run):
     """E and M_int of one finished run, with the Eq (3.3) phase relaxation."""
     run = Path(run)
     config = manifest.load(run / "config.json")
-    energy, m_int = read_static(run, len(poscar(run / "POSCAR")[1]))
+    energy, m_int, mag = read_static(run, len(poscar(run / "POSCAR")[1]))
     m = m_int[config["sites"]]                            # lab vectors; never the targets
     length = np.linalg.norm(m, axis=1)
     if np.any(length < COLLAPSED):
@@ -410,6 +426,8 @@ def read_run(run):
     theta = np.angle(np.sum(z))                           # Eq (3.3)
     delta = np.degrees(np.angle(z * np.exp(-1j * theta)))
     return {"E_eV": energy, "M_int": m.tolist(), "M": length.tolist(),
+            # Total cell moment per magnetic site: meaningful at q0 only, where it enters D_sw.
+            "M_total": None if mag is None or run.name != "q0" else float(np.linalg.norm(mag)) / len(m),
             "theta_deg": float(np.degrees(theta)), "delta_deg": delta.tolist()}
 
 

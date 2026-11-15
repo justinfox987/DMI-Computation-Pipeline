@@ -25,7 +25,8 @@ cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires
 dmi collect RUNS                     # one state per run; safe to rerun
 dmi dumps   RUNS --job patchb.sh     # one z-axis dump_C and each ok run's dump_P
 cd RUNS && sbatch submit_dumps.sh    # the user submits
-dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0, then D, F, A, the pitch and units
+dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0 and, with inversion, the null at every q;
+                                     # then D, F, A, the pitch, 4A/M_int and 4A/M_total, and units
                                      # with no dump_C yet: A, D_sw and E0 only (energies-only)
 ```
 

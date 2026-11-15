@@ -120,6 +120,24 @@ def gate_e0(e_plus: float, e_minus: float, e_zero: float, tol: float = 0.1) -> G
                       "|E(q) - E(-q)| <= tol |E(q) + E(-q) - 2 E(0)|")
 
 
+def gate_null(runs) -> GateResult:
+    """Centrosymmetric null (Sections 7.3 and 11): with inversion kept, D = 0 and
+    y_a(q) = 0 at every q, so every |T_a| of every traced run and ion is below
+    N0_FLOOR_EV, not only the slope. runs: name -> per-ion T, shape (nions, 3)."""
+    worst = (0.0, None, None, None)
+    for name, per_ion in runs.items():
+        t = np.abs(np.asarray(per_ion, float))
+        ion, axis = np.unravel_index(np.argmax(t), t.shape)
+        if t[ion, axis] >= worst[0]:
+            worst = (float(t[ion, axis]), name, int(ion) + 1, "xyz"[axis])
+    value = {"worst_eV": worst[0], "run": worst[1], "ion": worst[2], "axis": worst[3]}
+    passed = worst[0] < conventions.N0_FLOOR_EV
+    detail = "|T_a| of every traced run, ion and axis below the N0 floor"
+    if not passed:
+        detail = f"|T_{worst[3]}| = {worst[0]:.3e} eV on {worst[1]}, ion {worst[2]}, at or above the N0 floor"
+    return GateResult("Null", passed, value, conventions.N0_FLOOR_EV, detail)
+
+
 # Series truncation leaves a forbidden part of order 1e-4 to 1e-3 |D| at realistic t,
 # which the parity sigma (noise only) cannot see; an axis, frame or transpose error is
 # of order |D|. The Forbidden bound therefore adds this fraction of max|D_free| (D-023).
@@ -146,8 +164,9 @@ def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
 NOT_EVALUATED = "not evaluated: no dump_C, an energies-only tree"
 
 
-def check_tree(out, states) -> dict:
-    """Trace every ok run from its files, then C0, N0, I0, P0 and E0 (Section 11).
+def check_tree(out, states, inversion=False) -> dict:
+    """Trace every ok run from its files, then C0, N0, I0, P0, E0 and, when the kept
+    operations contain inversion, the centrosymmetric null (Section 11).
 
     states is spiral.read_runs(out), q0 first. A tree with no dump_C directory is
     energies-only (item 2.10): only E0 applies and every trace check is not
@@ -212,10 +231,20 @@ def check_tree(out, states) -> dict:
                 failures.append(f"{name} {direction}")
     if checks["N0"]["passed"] is False:
         failures.append("N0")
+    if not traced:
+        checks["Null"] = {"name": "Null", "passed": None, "detail": NOT_EVALUATED}
+    elif not inversion:
+        checks["Null"] = {"name": "Null", "passed": None, "detail": "not applicable: inversion is not kept"}
+    else:
+        checks["Null"] = gate_null({n: r["per_ion_eV"] for n, r in runs.items() if "error" not in r}).to_dict()
+        if not checks["Null"]["passed"]:
+            failures.append(f"Null ({checks['Null']['detail']})")
     report = {"traced": traced, "runs": runs, "checks": checks, "passed": not failures, "failures": failures}
     manifest.save(report, out / "traces.json")
     if traced:
         lines.append(f"N0  {'pass' if checks['N0']['passed'] else 'FAIL'}")
+        null = checks["Null"]
+        lines.append(f"Null  {null['detail'] if null['passed'] is None else ('pass' if null['passed'] else 'FAIL: ' + null['detail'])}")
     lines += [f"{name}  {pair:12} {'pass' if g['passed'] else 'FAIL'}" for name in ("P0", "E0")
               for pair, g in checks[name].items()]
     report["lines"] = lines
