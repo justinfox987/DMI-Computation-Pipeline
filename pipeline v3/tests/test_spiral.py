@@ -97,6 +97,24 @@ def test_prepare_writes_paired_f0_inputs(tmp_path, capsys):
     submit = (out / "submit.sh").read_text()
     assert f"#SBATCH --array=1-{len(names)}\n" in submit and submit.index("#SBATCH -t") < submit.index("cd ")
     assert subprocess.run(["bash", "-n", str(out / "submit.sh")]).returncode == 0
+    sequence = (out / "run.sh").read_text()
+    assert sequence.startswith("#!/bin/bash\n#SBATCH -N 1\n#SBATCH -t 00:30:00\n") and "--array" not in sequence
+    assert 'done 3< "$root/runs.txt"' in sequence and "srun vasp_ncl" in sequence and spiral.FINISHED in sequence
+
+    # run.sh on a small tree: b has finished, c fails, and the rest still run in list order.
+    # The body reads stdin, as srun does, which must not consume the list.
+    tree = tmp_path / "tree"
+    for name in "abcd":
+        (tree / name).mkdir(parents=True)
+    (tree / "runs.txt").write_text("a\nb\nc\nd\n")
+    (tree / "b" / "OUTCAR").write_text("General timing and accounting\n")
+    (tmp_path / "marker.sh").write_text('#!/bin/bash\n#SBATCH -N 1\ncat > /dev/null\n'
+                                        'basename "$PWD" >> ../order.txt\n[ "$(basename "$PWD")" != c ]\n')
+    spiral.write_sequence(tree, "runs.txt", "run.sh", spiral.read_job(tmp_path / "marker.sh"), "test")
+    done = subprocess.run(["bash", "run.sh"], cwd=tree, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    assert (tree / "order.txt").read_text().split() == ["a", "c", "d"] and done.returncode == 1
+    assert done.stdout.splitlines() == ["run a", "skip b: finished", "run c", "failed c: exit 1", "run d"]
+    assert subprocess.run(["bash", str(tree / "run.sh")], cwd=tmp_path, capture_output=True).returncode == 1
 
     # D-022: the code owns eleven tags and overrides the user's value with one line each.
     capsys.readouterr()

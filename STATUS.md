@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-13 UTC, at the TEN-06 code on branch `ten-06-fe-pilot` ([log](docs/sessions/2026-11-13_1939Z-agent-ten06-fe-pilot.md)).
+**Last reconciled:** 2026-11-16 UTC, at SEQ-1 on branch `seq-1-run-sequence` ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)), merged with `main` at `2e0ec61` (TEN-06, PR #21).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -12,16 +12,19 @@ handedness for T3; D-021) and SIM-1b (INCAR overrides, single-solve fit with
 parity noise, 1% Forbidden floor; D-022, D-023) are merged. The full workflow
 exists; none of it has run on a spiral. TEN-06, the bcc Fe pilot, is approved;
 its code (the centrosymmetric null and `4A/M_total`) and the `materials/fe/`
-inputs are in review on `ten-06-fe-pilot`, and its runs wait for the user.
+inputs are merged (PR #21), and its runs wait for the user. SEQ-1 (`run.sh`,
+`run_dumps.sh`) is in review on `seq-1-run-sequence`.
 
-**Integration branch / base commit:** `main` at `e514eed`, the PR #20 merge (SIM-1b). PRs #15 to #20 are merged. Tag
+**Integration branch / base commit:** `main` at `2e0ec61`, the PR #21 merge (TEN-06 code). PRs #15 to #21 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `ten-06-fe-pilot`, the TEN-06 code and
-material folder; done and awaiting review. The Perlmutter runs, the evidence
-record and the Gate 2 evaluation are the user's next step. One writer per branch.
+**Handoff owner / scope:** Claude / `seq-1-run-sequence`, the sequential
+launch scripts `run.sh` and `run_dumps.sh`; done and awaiting review.
+TEN-06's code and `materials/fe/` are merged (PR #21); the Perlmutter runs,
+the evidence record and the Gate 2 evaluation are the user's next step.
+One writer per branch.
 
 ## Established
 
@@ -57,10 +60,11 @@ and no parity (P0) measurement has been made with Patch B.
 | FIX-1 | Conjugate in the trace and its oracle, the layout test, delete the FERWE occupation checks (D-020) | Done; [spec](plans/simplify-1.md) Part 1 | Merged in PR #18, `27bfe86` | Layout test passes; the smeared fixture loads; 22 tests ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) |
 | SIM-1a | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader (D-021) | Done; [spec](plans/simplify-1.md) items 2.2, 2.3, 2.4, 2.6 | Merged in PR #19, `22a0110` | D, A, F and the pitch agree with `main` to 5e-16 meV; 14 tests ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) |
 | SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | Done, merged in PR #20, `e514eed`; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; Forbidden bound with 1% floor and geometry-only rank test (D-023 amended); 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
-| TEN-06 | bcc Fe F0 pilot at lambda 0 | [Spec](plans/ten-06-fe-pilot.md) approved 2026-11-13; code and `materials/fe/` in review; runs wait for the user | Claude / `ten-06-fe-pilot` (code); the user (runs) | **Gate 2:** T near zero on all axes, plausible A, first wall times |
+| TEN-06 | bcc Fe F0 pilot at lambda 0 | [Spec](plans/ten-06-fe-pilot.md) approved 2026-11-13; code and `materials/fe/` merged in PR #21, `2e0ec61`; runs wait for the user | Claude / `ten-06-fe-pilot` (code); the user (runs) | **Gate 2:** T near zero on all axes, plausible A, first wall times |
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
+| SEQ-1 | `run.sh` and `run_dumps.sh`: the same run list one directory at a time in one allocation, skipping finished runs | Done, [spec](plans/seq-1-run-sequence.md) approved 2026-11-16; awaiting review | Claude / `seq-1-run-sequence` | 15 tests; `run.sh` executed on a small tree: finished run skipped, failure does not stop the loop, list order kept ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)) |
 | ANI-1 | Anisotropy module (D-024) | Deferred until the spiralization tensor works; [spec](plans/anisotropy-1.md) approved | Unassigned | Known surface recovered; A1 to A5 on a first real tree |
 | TEN-10 | Literature check and paper draft | Pending | Unassigned | Draft with reproducible data |
 
@@ -69,7 +73,10 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `ten-06-fe-pilot` (the TEN-06 code and `materials/fe/`).
+1. Review and merge `seq-1-run-sequence` (SEQ-1). It adds `run.sh` and
+   `run_dumps.sh`, which may replace `submit.sh` and `submit_dumps.sh` below
+   when one allocation is wanted. The time limit then covers every run, and a
+   run cut off mid-SCF restarts from scratch.
 2. On Perlmutter, from a checkout of `main` with the package installed
    (`plans/ten-06-fe-pilot.md`, convergence plan and command sequence):
    - **k series**, energies only. For `N = 12, 16, 20, 24`, make an uncommitted

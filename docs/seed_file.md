@@ -21,14 +21,29 @@ to the public repo. The Slurm template is passed on the command line:
 ```bash
 dmi plan    materials/fe/seed.toml
 dmi prepare materials/fe/seed.toml --job job.sh --out RUNS
-cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires
+cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires (or run.sh, below)
 dmi collect RUNS                     # one state per run; safe to rerun
 dmi dumps   RUNS --job patchb.sh     # one z-axis dump_C and each ok run's dump_P
-cd RUNS && sbatch submit_dumps.sh    # the user submits
+cd RUNS && sbatch submit_dumps.sh    # the user submits (or run_dumps.sh, below)
 dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0 and, with inversion, the null at every q;
                                      # then D, F, A, the pitch, 4A/M_int and 4A/M_total, and units
                                      # with no dump_C yet: A, D_sw and E0 only (energies-only)
 ```
+
+`prepare` writes two launch scripts over `runs.txt`, and `dumps` the same two
+over `dumps.txt`. Both keep the job script's `#SBATCH` header and run its body
+in each listed directory:
+
+| Script | Runs | Start it from the run directory with |
+|---|---|---|
+| `submit.sh`, `submit_dumps.sh` | a Slurm array, one task per directory | `sbatch submit.sh` |
+| `run.sh`, `run_dumps.sh` | one directory at a time in one allocation | `sbatch run.sh`, or `bash run.sh` inside `salloc` |
+
+`run.sh` skips a directory whose OUTCAR has VASP's timing footer, so starting it
+again resumes the list; a failed run does not stop the others, and the script
+exits 1 if any run failed. Its limits: the time limit covers the whole sequence;
+a run cut off mid-SCF is redone from scratch on the next start; and one slow run
+delays the rest.
 
 `--out` is required because the seed holds no paths. There is no `status`
 command: `collect` prints one line per run (D-013). Every command reads the VASP
