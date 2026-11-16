@@ -7,6 +7,15 @@ commit reference when available. Do not use this as a command transcript.
 
 - SEQ-1: `dmi prepare` also writes `run.sh`, and `dmi dumps` also writes `run_dumps.sh`. Each runs the same list as the array script, one directory at a time in one allocation (`sbatch run.sh`, or `bash run.sh` inside `salloc`). It skips a directory whose OUTCAR has the timing footer, keeps going after a failed run, and exits 1 if any run failed. The array scripts and the job.sh rules are unchanged. Limits: the time limit covers the whole sequence, a run cut off mid-SCF is redone from scratch, and one slow run delays the rest. The OUTCAR footer string is now one constant, `spiral.FINISHED`. Tests stay at 15. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md).
 
+- TEN-06 code (spec approved 2026-11-13).
+  - **Centrosymmetric null.** When the kept operations contain inversion, `dmi fit` requires every \|T_a\| of every traced run, ion and axis below `N0_FLOOR_EV` (`gates.gate_null`, math Sections 7.3 and 11). On a failure it exits 1 and names the worst run, ion and axis. The check is "not applicable" without inversion and "not evaluated" in an energies-only tree, and is recorded in `traces.json` and `tensors.json`.
+  - **Total moment.** The static reader also returns `mag=` from OSZICAR's last `F=` line. `collect` stores `M_total = |mag| / N_m` for q0, and `fit` reports `D_sw` as `4A/M_int` and `4A/M_total` side by side, each with its sigma and the moment it uses.
+  - **Fix.** `prepare` no longer fails for `p_D = 0` (bcc Fe): the D rank value of a design with no tensor columns is null, not infinity.
+  - **`materials/fe/`.** The user's POSCAR, INCAR and KPOINTS are committed unchanged. `POTCAR.spec` gives `PAW_PBE Fe_pv 02Aug2007` and the SHA-256. The seed has `t = 0.05, 0.10, 0.15`. `job.sh` stays untracked.
+  - **Tests.** Still 15: the energies-only test became the bcc Fe pilot test.
+
+  No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-13_1939Z-agent-ten06-fe-pilot.md).
+
 - SIM-1b (D-022, D-023), which completes SIM-1.
   - **INCAR:** the code overrides the eleven tags it owns and prints one `override` line each. It refuses only tetrahedron smearing. The INCAR_TAGS warning, the ISMEAR allowlist, the SIGMA floor, `min_sigma`, the required ENCUT, ENINI, RWIGS, ISMEAR and SIGMA, and the KSPACING rejection are removed.
   - **Fit:** one linear solve per tensor, with cubic and quartic nuisances (math Section 9.4). Noise comes from the parity residuals, and both sigmas and their sample counts are in `tensors.json`. The rank condition is the smallest singular value of each column-normalized design, shared by `plan` and `fit`. The per-direction fits, pooled variance, MIN_PAIRS and the poorly-determined flag are removed.
