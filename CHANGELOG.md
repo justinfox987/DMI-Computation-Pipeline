@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- SEQ-1: `dmi prepare` also writes `run.sh`, and `dmi dumps` also writes `run_dumps.sh`. Each runs the same list as the array script, one directory at a time in one allocation (`sbatch run.sh`, or `bash run.sh` inside `salloc`). It skips a directory whose OUTCAR has the timing footer, keeps going after a failed run, and exits 1 if any run failed. The array scripts and the job.sh rules are unchanged. Limits: the time limit covers the whole sequence, a run cut off mid-SCF is redone from scratch, and one slow run delays the rest. The OUTCAR footer string is now one constant, `spiral.FINISHED`. Tests stay at 15. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md).
+
 - SIM-1b (D-022, D-023), which completes SIM-1.
   - **INCAR:** the code overrides the eleven tags it owns and prints one `override` line each. It refuses only tetrahedron smearing. The INCAR_TAGS warning, the ISMEAR allowlist, the SIGMA floor, `min_sigma`, the required ENCUT, ENINI, RWIGS, ISMEAR and SIGMA, and the KSPACING rejection are removed.
   - **Fit:** one linear solve per tensor, with cubic and quartic nuisances (math Section 9.4). Noise comes from the parity residuals, and both sigmas and their sample counts are in `tensors.json`. The rank condition is the smallest singular value of each column-normalized design, shared by `plan` and `fit`. The per-direction fits, pooled variance, MIN_PAIRS and the poorly-determined flag are removed.

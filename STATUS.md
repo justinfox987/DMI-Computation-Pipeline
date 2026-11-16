@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-11 UTC, at SIM-1b on branch `sim-1b-incar-fit` ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)).
+**Last reconciled:** 2026-11-16 UTC, at SEQ-1 on branch `seq-1-run-sequence` ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)). This branch starts from `main` at `e514eed`; the TEN-06 entries on `ten-06-fe-pilot` are newer than the TEN-06 text below and win at integration.
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -19,8 +19,9 @@ residuals (D-023). `fit` gives A from an energies-only tree.
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `sim-1b-incar-fit`, D-022, D-023 and the
-exchange seed keys; done and awaiting review. One writer per branch.
+**Handoff owner / scope:** Claude / `seq-1-run-sequence`, the sequential
+launch scripts `run.sh` and `run_dumps.sh`; done and awaiting review. Claude /
+`ten-06-fe-pilot` (TEN-06 code) is also awaiting review. One writer per branch.
 
 ## Established
 
@@ -60,6 +61,7 @@ and no parity (P0) measurement has been made with Patch B.
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
+| SEQ-1 | `run.sh` and `run_dumps.sh`: the same run list one directory at a time in one allocation, skipping finished runs | Done, [spec](plans/seq-1-run-sequence.md) approved 2026-11-16; awaiting review | Claude / `seq-1-run-sequence` | 15 tests; `run.sh` executed on a small tree: finished run skipped, failure does not stop the loop, list order kept ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)) |
 | ANI-1 | Anisotropy module (D-024) | Deferred until the spiralization tensor works; [spec](plans/anisotropy-1.md) approved | Unassigned | Known surface recovered; A1 to A5 on a first real tree |
 | TEN-10 | Literature check and paper draft | Pending | Unassigned | Draft with reproducible data |
 
@@ -68,6 +70,8 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
+0. Review and merge `seq-1-run-sequence` (SEQ-1). For a sequence, the time
+   limit covers every run; a run cut off mid-SCF restarts from scratch.
 1. Review and merge `sim-1b-incar-fit` (SIM-1b), now with the D-023 amendment:
    a 1% floor in the Forbidden bound and a geometry-only rank test. Rebuild
    the math PDF on a machine with LaTeX: this one has none, so the amended TeX

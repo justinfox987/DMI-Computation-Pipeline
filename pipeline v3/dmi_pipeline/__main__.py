@@ -12,9 +12,9 @@ from . import spiral, tensors
 
 COMMANDS = {
     "plan": "Print the symmetry summary and the checked q plan; writes nothing",
-    "prepare": "Write every F0 run, runs.txt and submit.sh; submits nothing",
+    "prepare": "Write every F0 run, runs.txt, submit.sh and run.sh; submits nothing",
     "collect": "Print one status line per run; writes collected.json as a report",
-    "dumps": "Write dump_C and every ok run's dump_P; submits nothing",
+    "dumps": "Write dump_C, every ok run's dump_P, submit_dumps.sh and run_dumps.sh; submits nothing",
     "fit": "Trace every ok run, apply C0, N0, I0, P0 and E0, fit D and A, check the forbidden "
            "part and predict the spiral; writes traces.json and tensors.json",
 }
@@ -47,7 +47,7 @@ def run(args) -> int:
         print("\n".join(plan_lines(spiral.plan(seed))))
         if args.command == "prepare":
             runs = spiral.prepare(seed, args.out, args.job)
-            print(f"wrote {len(runs)} runs; submit from {args.out} with: sbatch submit.sh")
+            print(f"wrote {len(runs)} runs; submit from {args.out} with: sbatch submit.sh (array) or sbatch run.sh (one at a time)")
         return 0
     if args.command == "collect":
         results = spiral.collect(args.out)
@@ -58,7 +58,7 @@ def run(args) -> int:
         dumps, skipped = spiral.prepare_dumps(args.out, args.job)
         for name, error in skipped.items():
             print(f"{name:16} no dump: {error}")
-        print(f"wrote {len(dumps)} dumps; submit from {args.out} with: sbatch submit_dumps.sh")
+        print(f"wrote {len(dumps)} dumps; submit from {args.out} with: sbatch submit_dumps.sh (array) or sbatch run_dumps.sh (one at a time)")
         return 0
     report = tensors.fit(args.out)
     print("\n".join(report["lines"]))
