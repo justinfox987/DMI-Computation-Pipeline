@@ -376,3 +376,26 @@ until that task.
 **Reason:** two different documents were both called Revision 3.1, with
 different equation numbers, and the Markdown edition was kept in step by hand.
 **Authority:** `plans/simplify-1.md` items 2.1 and 2.9.
+
+## D-026 — Fit check on the residual of each tensor solve
+
+**Status:** accepted 2026-11-17 (FIT-1).  
+After each tensor solve (`A` always; `D` and `D_free` when traced), `dmi fit`
+requires every residual row `r = data - design @ x` to satisfy
+`|r_i| <= 3 sigma + 0.01 max|data|`, with sigma the parity sigma of that solve
+(`sigma_g` for `A`, `sigma_y` for `D` and `D_free`). The floor is
+`FORBIDDEN_FLOOR`, shared with the Forbidden bound (D-023 amended). A solve with
+no residual degrees of freedom is "not evaluated: exactly determined", never a
+pass. As with Forbidden, the tensor is still solved and reported; a failure
+names the worst row (the pair, and the axis for `D`), sets `passed` false and
+makes `dmi fit` exit 1. `tensors.json` records each solve's check and residual
+vector under `fit_check`.
+
+**Reason:** the parity sigma sees SCF noise only, never model error. The Fe
+pilot at 12x12x12 reported `A = 433 +- 0.04 meV A^2` while `g/t^2` fell from
+519 to 282 meV A^2 over `t = 0.05` to `0.15`: the `t^2 + t^4` series missed
+`t = 0.05` by 0.26 meV, about 1000 sigma_g and four times the bound. Nothing in
+`fit` flagged it.
+**Authority:** math Revision 3.2, Sections 9.4 and 11 (amended 17 November
+2026); `plans/fit-1-model-check.md`.
+

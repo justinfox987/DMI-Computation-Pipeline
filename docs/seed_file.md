@@ -26,9 +26,24 @@ dmi collect RUNS                     # one state per run; safe to rerun
 dmi dumps   RUNS --job patchb.sh     # one z-axis dump_C and each ok run's dump_P
 cd RUNS && sbatch submit_dumps.sh    # the user submits (or run_dumps.sh, below)
 dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0 and, with inversion, the null at every q;
-                                     # then D, F, A, the pitch, 4A/M_int and 4A/M_total, and units
-                                     # with no dump_C yet: A, D_sw and E0 only (energies-only)
+                                     # then D, F, A, the pitch, 4A/M_int and 4A/M_total, and units,
+                                     # and the Fit check of each solve
+                                     # with no dump_C yet: A, D_sw, E0 and Fit A only (energies-only)
 ```
+
+After the tensors, `fit` prints one Fit line per solve (`A`, and `D` and
+`D_free` when traced; math Section 11, D-026). It tests whether the series in `t`
+describes the data, which the parity sigma cannot see:
+
+```text
+Fit A  pass, worst residual 0.0012 meV of bound 0.063 meV
+Fit A  FAIL: d1_t1 residual +0.258 meV, bound 0.0641 meV
+Fit A  not evaluated: exactly determined
+```
+
+A FAIL names the worst pair (and the axis for `D`). The tensors are still
+reported, but `fit` exits 1 and `tensors.json` has `passed` false. Each solve's
+check and residual vector are under `fit_check` in `tensors.json`.
 
 `prepare` writes two launch scripts over `runs.txt`, and `dumps` the same two
 over `dumps.txt`. Both keep the job script's `#SBATCH` header and run its body

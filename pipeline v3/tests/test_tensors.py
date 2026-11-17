@@ -55,12 +55,12 @@ def model_fit(name, t, noise=0.0, rng=None):
     share = np.linspace(1, 2, len(species)) / np.linspace(1, 2, len(species)).sum()   # T split over ions
     pairs = []
     for i, s_i in enumerate(s):
-        for t_j in t:
+        for j, t_j in enumerate(t, 1):
             (t_plus, e_plus), (t_minus, e_minus) = per_cell(t_j * s_i), per_cell(-t_j * s_i)
             if noise:
                 t_plus, t_minus = t_plus + rng.normal(0, noise, 3), t_minus + rng.normal(0, noise, 3)
                 e_plus, e_minus = e_plus + rng.normal(0, noise), e_minus + rng.normal(0, noise)
-            pairs.append({"i": i, "t": t_j, "E_plus": e_plus, "E_minus": e_minus, "T_plus": t_plus,
+            pairs.append({"name": f"d{i + 1}_t{j}", "i": i, "t": t_j, "E_plus": e_plus, "E_minus": e_minus, "T_plus": t_plus,
                           "T_minus": t_minus, "per_ion": share[:, None] * (t_plus - t_minus)})
     fit = lambda p: tensors.fit_pairs(s, p, len(sites), 0.0, d_basis, a_basis, species)   # noqa: E731
     return big_d, big_a, fit(pairs), fit, pairs, s
@@ -77,6 +77,7 @@ def test_fits_recover_spin_model_tensors():
             assert tensor["tensor"] == pytest.approx(exact, abs=1e-6 * np.abs(exact).max())
         # Noise-free pairs give sigma = 0; the 1% floor covers the t^5 truncation (D-023).
         assert np.abs(r["F"]["tensor"]).max() < 1e-6 * np.abs(big_d).max() and forbidden(r).passed
+        assert all(r[key]["check"].passed for key in ("A", "D", "D_free"))     # Fit (D-026): the series fits
         for key in ("D", "D_free"):
             assert sum(v[key] for v in r["by_species"].values()) == pytest.approx(r[key]["tensor"], abs=1e-15)
 
@@ -99,7 +100,7 @@ def test_fits_recover_spin_model_tensors():
     assert r["noise"]["n_y"] == 27 and 0.5 < r["noise"]["sigma_y"] / (np.sqrt(2) * noise / n_m) < 2
     for tensor, exact in ((r["D"], big_d), (r["A"], big_a)):
         assert np.all(np.abs(tensor["tensor"] - exact) <= 3 * np.sqrt(np.diag(tensor["cov"])).reshape(3, 3) + 1e-12)
-    assert forbidden(r).passed
+    assert forbidden(r).passed and all(r[key]["check"].passed for key in ("A", "D", "D_free"))
     # Calibration of Eq (9.9): over repeated noise draws the spread of D and A matches the reported sigma.
     _, _, _, fit, exact, _ = model_fit("BFO", [0.03, 0.06, 0.09])
     rng, draws = np.random.default_rng(7), []
@@ -257,7 +258,7 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
     not determined, every trace quantity not evaluated. With dumps, the centrosymmetric
     null (Sections 7.3 and 11) passes at T = 0 and fails when one run's T exceeds the floor.
     """
-    a = 2.86304
+    a = 2.8630354989499160                                  # materials/fe/POSCAR
     structure = (a * np.eye(3), ["Fe", "Fe"], np.array([(0, 0, 0), (0.5, 0.5, 0.5)]))
     rotations = symmetry.operations(*structure, [0, 1], [1, 1])["rotations"]
     _, big_a, per_cell = spin_model(rotations, [((a / 2, a / 2, a / 2), (0, 0, 0), 0.02, 1)], 2)
@@ -277,6 +278,7 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
     assert main(["fit", str(out)]) == 0
     report = manifest.load(out / "tensors.json")
     assert np.allclose(report["A"]["value"], 1e3 * big_a, atol=1e-6 * 1e3 * np.abs(big_a).max())
+    assert report["fit_check"]["A"]["passed"] and len(report["fit_check"]["A"]["residual"]) == 3
     a_xx = report["A"]["value"][0][0]
     # 4A/M side by side: M_int = 3.9 from the sphere rows, M_total = 1.1 x 3.9 from mag= (fixture);
     # tolerances are the fixture's printed precision (6 and 4 decimals).
@@ -308,3 +310,28 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
     assert main(["fit", str(out)]) == 1
     assert "Null  FAIL: |T_y| = 1.000e-04 eV on d1_t2_minus, ion 2" in capsys.readouterr().out
     assert manifest.load(out / "tensors.json")["failures"][-1].startswith("Null (|T_y| = 1.000e-04 eV on d1_t2_minus")
+
+    # Fit (D-026) on the real fe-k12 energies (eV per cell, Perlmutter, 12x12x12): A = 433.04
+    # meV A^2 with sigma_g = 2.4e-7 eV, but g/t^2 = 519, 355, 282, so A t^2 + b t^4 misses
+    # d1_t1 by 0.258 meV against a bound of 0.064 meV. fit still reports A and exits 1.
+    energies = {"q0": -16.53056019, "d1_t1_plus": -16.52796441, "d1_t1_minus": -16.52796483,
+                "d1_t2_plus": -16.52346031, "d1_t2_minus": -16.52345879,
+                "d1_t3_plus": -16.5178941, "d1_t3_minus": -16.5178947}
+    for name, energy in energies.items():
+        finish(out / name, energy=energy)
+        write_cocc(out / name / "dump_P" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
+    capsys.readouterr()
+    assert main(["fit", str(out)]) == 1
+    output = capsys.readouterr().out
+    assert "Fit A  FAIL: d1_t1 residual +0.258 meV, bound 0.0641 meV" in output and "Fit D  pass" in output
+    report = manifest.load(out / "tensors.json")
+    assert report["A"]["value"][0][0] == pytest.approx(433.04, abs=0.005) and not report["passed"]
+    check = report["fit_check"]["A"]
+    assert check["row"] == "d1_t1" and check["residual"] == pytest.approx([0.2575, -0.1030, 0.0172], abs=1e-4)
+    # Two magnitudes left: A and b are exactly determined, so the check is not evaluated, never a pass.
+    finish(out / "d1_t3_plus", energy=energies["d1_t3_plus"], reversed_site=True)
+    write_cocc(out / "d1_t3_plus" / "dump_P" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
+    assert main(["fit", str(out)]) == 0
+    assert manifest.load(out / "tensors.json")["fit_check"]["A"] == {
+        "passed": None, "units": "meV per magnetic site (g)", "residual": pytest.approx([0, 0], abs=1e-9),
+        "reason": "not evaluated: exactly determined"}
