@@ -5,6 +5,8 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- FIX-2: `dmi fit` crashed in `trace.trace_run` with `TypeError` on the Fe pilot's real `dump_C/CSO.dat`, because the Patch B CSO header has no NELECT line and `trace_run` compared it with COCC's. The NELECT comparison is removed; the NIONS, LMDIM and NCDIJ checks against each other and the POSCAR stay. `tests/fixtures.write_cso` no longer writes NELECT (and takes no `nelect`), so the CSO fixtures match the real writer; COCC fixtures keep NELECT. The command-chain and bcc Fe pilot tests now run `fit` on such a CSO. Tests stay at 15. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md).
+
 - SEQ-1: `dmi prepare` also writes `run.sh`, and `dmi dumps` also writes `run_dumps.sh`. Each runs the same list as the array script, one directory at a time in one allocation (`sbatch run.sh`, or `bash run.sh` inside `salloc`). It skips a directory whose OUTCAR has the timing footer, keeps going after a failed run, and exits 1 if any run failed. The array scripts and the job.sh rules are unchanged. Limits: the time limit covers the whole sequence, a run cut off mid-SCF is redone from scratch, and one slow run delays the rest. The OUTCAR footer string is now one constant, `spiral.FINISHED`. Tests stay at 15. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md).
 
 - TEN-06 code (spec approved 2026-11-13).

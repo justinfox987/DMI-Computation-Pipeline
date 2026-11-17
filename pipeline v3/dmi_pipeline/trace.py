@@ -51,8 +51,6 @@ def trace_run(run: Path, cso: MatrixDump) -> dict:
     shapes = {(m.nions, m.lmdim, m.ncdij) for m in (cso.metadata, cocc.metadata)}
     if len(shapes) != 1 or cso.metadata.nions != nions:
         raise ValueError(f"CSO and COCC dimensions differ or do not match the {nions} POSCAR ions")
-    if cocc.metadata.nelect is None or not np.isclose(cso.metadata.nelect, cocc.metadata.nelect, atol=1e-6, rtol=0):
-        raise ValueError("CSO and COCC NELECT differ")
     t = trace_vector(cocc, split_operator(cso))
     return {"q_frac": manifest.load(run / "config.json")["q_frac"], "T_eV": t.real.sum(axis=0).tolist(),
             "per_ion_eV": t.real.tolist(), "imag_eV": t.imag.tolist()}
