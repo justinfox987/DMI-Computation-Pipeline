@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-16 UTC, at SEQ-1 on branch `seq-1-run-sequence` ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)), merged with `main` at `2e0ec61` (TEN-06, PR #21).
+**Last reconciled:** 2026-11-17 UTC, at FIX-2 on branch `fix-2-cso-nelect` ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -12,16 +12,17 @@ handedness for T3; D-021) and SIM-1b (INCAR overrides, single-solve fit with
 parity noise, 1% Forbidden floor; D-022, D-023) are merged. The full workflow
 exists; none of it has run on a spiral. TEN-06, the bcc Fe pilot, is approved;
 its code (the centrosymmetric null and `4A/M_total`) and the `materials/fe/`
-inputs are merged (PR #21), and its runs wait for the user. SEQ-1 (`run.sh`,
-`run_dumps.sh`) is in review on `seq-1-run-sequence`.
+inputs are merged (PR #21), and SEQ-1 (`run.sh`, `run_dumps.sh`) is merged
+(PR #22). The first Fe runs found that `dmi fit` crashed on a real `CSO.dat`,
+which has no NELECT line; FIX-2 is in review on `fix-2-cso-nelect`.
 
-**Integration branch / base commit:** `main` at `2e0ec61`, the PR #21 merge (TEN-06 code). PRs #15 to #21 are merged. Tag
+**Integration branch / base commit:** `main` at `9a9fc2b`, the PR #22 merge (SEQ-1). PRs #15 to #22 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `seq-1-run-sequence`, the sequential
-launch scripts `run.sh` and `run_dumps.sh`; done and awaiting review.
+**Handoff owner / scope:** Claude / `fix-2-cso-nelect`, the CSO NELECT crash
+in `trace_run`; done and awaiting review.
 TEN-06's code and `materials/fe/` are merged (PR #21); the Perlmutter runs,
 the evidence record and the Gate 2 evaluation are the user's next step.
 One writer per branch.
@@ -64,7 +65,8 @@ and no parity (P0) measurement has been made with Patch B.
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
-| SEQ-1 | `run.sh` and `run_dumps.sh`: the same run list one directory at a time in one allocation, skipping finished runs | Done, [spec](plans/seq-1-run-sequence.md) approved 2026-11-16; awaiting review | Claude / `seq-1-run-sequence` | 15 tests; `run.sh` executed on a small tree: finished run skipped, failure does not stop the loop, list order kept ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)) |
+| SEQ-1 | `run.sh` and `run_dumps.sh`: the same run list one directory at a time in one allocation, skipping finished runs | Done, [spec](plans/seq-1-run-sequence.md) approved 2026-11-16; merged in PR #22, `9a9fc2b` | Claude / `seq-1-run-sequence` | 15 tests; `run.sh` executed on a small tree: finished run skipped, failure does not stop the loop, list order kept ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)) |
+| FIX-2 | `trace_run` no longer compares NELECT, which the real Patch B `CSO.dat` does not print; `write_cso` fixtures match the real header | Done; found by the Fe pilot 2026-11-17; awaiting review | Claude / `fix-2-cso-nelect` | 15 tests; the command-chain and Fe pilot tests run `dmi fit` on a CSO with no NELECT line and failed with the field `TypeError` before the fix ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)) |
 | ANI-1 | Anisotropy module (D-024) | Deferred until the spiralization tensor works; [spec](plans/anisotropy-1.md) approved | Unassigned | Known surface recovered; A1 to A5 on a first real tree |
 | TEN-10 | Literature check and paper draft | Pending | Unassigned | Draft with reproducible data |
 
@@ -73,10 +75,10 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `seq-1-run-sequence` (SEQ-1). It adds `run.sh` and
-   `run_dumps.sh`, which may replace `submit.sh` and `submit_dumps.sh` below
-   when one allocation is wanted. The time limit then covers every run, and a
-   run cut off mid-SCF restarts from scratch.
+1. Review and merge `fix-2-cso-nelect` (FIX-2), then rerun `dmi fit` on the
+   Fe tree; no VASP run needs repeating. `run.sh` and `run_dumps.sh` (SEQ-1)
+   may replace `submit.sh` and `submit_dumps.sh` below when one allocation is
+   wanted; the time limit then covers every run.
 2. On Perlmutter, from a checkout of `main` with the package installed
    (`plans/ten-06-fe-pilot.md`, convergence plan and command sequence):
    - **k series**, energies only. For `N = 12, 16, 20, 24`, make an uncommitted

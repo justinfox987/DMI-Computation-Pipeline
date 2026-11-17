@@ -31,7 +31,7 @@ def _fixed(value: str, width: int) -> bytes:
     return encoded.ljust(width, b" ")
 
 
-def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float,
+def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float | None = None,
                   saxis: tuple[float, float, float] = (0.0, 0.0, 1.0)) -> None:
     ncdij, nions, lmdim, second_lmdim = matrix.shape
     if lmdim != second_lmdim:
@@ -46,8 +46,7 @@ def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float,
                 "# LSORBIT= T LNONCOLLINEAR= T LSPIRAL= F",
                 "# QSPIRAL  0.0000000000000000E+00  0.0000000000000000E+00  0.0000000000000000E+00",
                 "# SAXIS " + "".join(f"{x:24.16E}" for x in saxis),
-                f"# NELECT {nelect:24.16E}",
-            ]
+            ]  # no NELECT: the Patch B CSO writer does not print one; only COCC.dat has it
         )
     else:
         lines.extend(
@@ -233,10 +232,11 @@ def make_clean_cso(nions: int, lmdim: int) -> np.ndarray:
     return matrix
 
 
-def write_cso(path: str | Path, matrix: np.ndarray, *, nelect: float = 8.0,
+def write_cso(path: str | Path, matrix: np.ndarray, *,
               saxis: tuple[float, float, float] = (0.0, 0.0, 1.0)) -> Path:
+    """A CSO.dat with the real Patch B header, which has no NELECT line."""
     output = Path(path)
-    _write_matrix(output, matrix, "cso", nelect=nelect, saxis=saxis)
+    _write_matrix(output, matrix, "cso", saxis=saxis)
     return output
 
 
