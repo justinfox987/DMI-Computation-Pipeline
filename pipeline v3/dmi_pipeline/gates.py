@@ -161,6 +161,25 @@ def gate_forbidden(forbidden, sigma, d_free, sigmas: float = 3.0) -> GateResult:
                               "sigma covers noise only, the floor covers series truncation")
 
 
+def gate_fit(residual, sigma, data, rows, dof, sigmas: float = 3.0) -> GateResult:
+    """Section 11 Fit (D-026): |r_i| <= 3 sigma + FORBIDDEN_FLOOR max|data| for every row.
+
+    The parity sigma sees SCF noise, never model error, so a series that does not
+    describe the data still gives a small sigma; this residual test is what sees it.
+    The floor is the Forbidden one: series truncation, and noise-free model data pass.
+    With no residual degrees of freedom the residual is zero by construction.
+    """
+    residual = np.asarray(residual, float)
+    if dof <= 0:
+        return GateResult("Fit", None, None, sigmas, "not evaluated: exactly determined")
+    bound = sigmas * sigma + FORBIDDEN_FLOOR * float(np.max(np.abs(data)))
+    worst = int(np.argmax(np.abs(residual)))
+    passed = bool(np.all(np.abs(residual) <= bound))
+    return GateResult("Fit", passed, {"worst": float(residual[worst]), "row": rows[worst], "bound": bound},
+                      sigmas, f"|r_i| <= 3 sigma + {FORBIDDEN_FLOOR} max|data|; "
+                              "sigma covers noise only, the floor covers series truncation")
+
+
 NOT_EVALUATED = "not evaluated: no dump_C, an energies-only tree"
 
 

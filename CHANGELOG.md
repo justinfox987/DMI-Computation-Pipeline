@@ -5,6 +5,15 @@ commit reference when available. Do not use this as a command transcript.
 
 ## Unreleased
 
+- FIT-1 (D-026), with the TEN-06 evidence record.
+  - **Fit check.** Every tensor solve (`A` always; `D` and `D_free` when traced) now checks its residual: each row within `3 sigma + 0.01 max|data|`, with that solve's parity sigma and the Forbidden floor (`gates.gate_fit`, applied in `tensors.tensor_fit`). A failure names the worst pair (and axis for D), keeps the tensor in the report, sets `passed` false and makes `dmi fit` exit 1. An exactly determined solve is "not evaluated", never a pass. `tensors.json` gains `fit_check` with each solve's residual vector; `fit` prints one `Fit` line per solve.
+  - **Why.** On the Fe pilot at 12x12x12, `fit` reported `A = 433 +- 0.04 meV A^2` while `A t^2 + b t^4` missed t = 0.05 by 0.26 meV (about 1000 sigma_g). The parity sigma does not see model error.
+  - **Math.** Revision 3.2 amended 17 November 2026: the Fit check in Section 11 (unnumbered display) and one sentence in Section 9.4. D-026.
+  - **Tests.** Still 15: the spin-model test asserts the check passes; the Fe pilot test runs the real fe-k12 energies (Fit A fails at d1_t1, exit 1) and an exactly determined A (not evaluated).
+  - **Evidence.** `evidence/2026-11-17-fe-ten06-pilot/README.md`: the k series, the fe-k12 hand check, Gate 2 per item and the verdict, all user-reported (the JSON reports and dump files are not yet in the record), with a placeholder for the 24x24x24 diagnostic. The TEN-06 convergence plan is amended to what was run.
+
+  No VASP or cluster jobs from this session. See the [session log](docs/sessions/2026-11-17_1855Z-agent-fit-1-model-check.md).
+
 - FIX-2: `dmi fit` crashed in `trace.trace_run` with `TypeError` on the Fe pilot's real `dump_C/CSO.dat`, because the Patch B CSO header has no NELECT line and `trace_run` compared it with COCC's. The NELECT comparison is removed; the NIONS, LMDIM and NCDIJ checks against each other and the POSCAR stay. `tests/fixtures.write_cso` no longer writes NELECT (and takes no `nelect`), so the CSO fixtures match the real writer; COCC fixtures keep NELECT. The command-chain and bcc Fe pilot tests now run `fit` on such a CSO. Tests stay at 15. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md).
 
 - SEQ-1: `dmi prepare` also writes `run.sh`, and `dmi dumps` also writes `run_dumps.sh`. Each runs the same list as the array script, one directory at a time in one allocation (`sbatch run.sh`, or `bash run.sh` inside `salloc`). It skips a directory whose OUTCAR has the timing footer, keeps going after a failed run, and exits 1 if any run failed. The array scripts and the job.sh rules are unchanged. Limits: the time limit covers the whole sequence, a run cut off mid-SCF is redone from scratch, and one slow run delays the rest. The OUTCAR footer string is now one constant, `spiral.FINISHED`. Tests stay at 15. No VASP or cluster jobs. See the [session log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md).

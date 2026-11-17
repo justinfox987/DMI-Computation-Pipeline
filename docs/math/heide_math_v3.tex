@@ -92,7 +92,9 @@ correction rests on the VASP source and a bookkeeping test, not on a VASP run.
 Amended 12 November 2026 (D-023): the forbidden-part bound of
 Section~\ref{sec:checks} gains a floor of $1\%$ of $\max|\Dt_{\rm free}|$, and
 the rank test of Section~\ref{sec:fit} is on the geometry alone, with two
-magnitudes per direction.
+magnitudes per direction. Amended 17 November 2026 (D-026): Section~\ref{sec:checks}
+gains the Fit check on the residual of each tensor solve, and
+Section~\ref{sec:fit} states that the parity $\sigma$ does not measure model error.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -793,7 +795,9 @@ The whole design is not tested as one matrix, because with magnitudes in the
 ratio $1{:}2{:}3$ its $t$ and $t^3$ columns are so correlated that its smallest
 normalized singular value stays below about $0.17$ for any directions. The
 noise in $E(0)$ is common to every $g$ and is not in $\hat\sigma_g$; the fit
-residual shows it.
+residual shows it. Neither parity $\sigma$ measures model error: data that the
+series in $t$ does not describe still give a small $\sigma$ and a small
+covariance, so the Fit check of Section~\ref{sec:checks} tests the residual itself.
 
 \subsection{Element-resolved spiralization}
 
@@ -945,6 +949,24 @@ $0.09$~\AA$^{-1}$. An axis, frame or transpose error is of order $|\Dt|$. The
 $1\%$ floor separates the two. With $\Dt=0$ the floor vanishes and $\sigma$
 alone decides. Report $\max|\mathcal F|/\max|\Dt_{\rm free}|$ in every case. Also
 test directions with a symmetry-required zero, such as $y$ along a polar axis.
+
+\item[Fit: does the series describe the data?]
+For each tensor solve ($A$ always; $\Dt$ and $\Dt_{\rm free}$ when traced), with
+design $X$, data $\vct d$ and solution $\hat{\vct x}$, require every row of the
+residual $\vct r=\vct d-X\hat{\vct x}$ to satisfy
+\[
+ |r_i|\le3\sigma+0.01\max_j|d_j|,
+\]
+with $\sigma=\hat\sigma_g$ for $A$ and $\hat\sigma_y$ for $\Dt$ and
+$\Dt_{\rm free}$, from Eq.~\eqref{eq:cov}. The bound has the form of the forbidden
+bound: $\sigma$ covers noise, and the $1\%$ floor covers series truncation, so
+noise-free spin-model data pass. A solve with no residual degrees of freedom
+(rows not more than columns) is not evaluated, never passed. On failure the
+worst row is named: the pair of runs and, for $\Dt$, the axis. The tensor is
+still reported. On the bcc Fe pilot at $12^3$ $k$ points, $g/t^2$ was $519$,
+$355$ and $282$~meV\,\AA$^2$ at $t=0.05$, $0.10$, $0.15$~\AA$^{-1}$; the fit gave
+$A=433.04\pm0.04$~meV\,\AA$^2$ while missing the smallest $t$ by $0.26$~meV,
+four times the bound of $0.064$~meV.
 
 \item[Cross-check: do the two stiffness routes agree?]
 Compare Eq.~\eqref{eq:afit} with Eq.~\eqref{eq:acheck}, once exchange classes

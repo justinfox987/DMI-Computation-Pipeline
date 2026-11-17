@@ -11,7 +11,7 @@ import tomllib
 import numpy as np
 
 from . import manifest, spiral, symmetry
-from .gates import NOT_EVALUATED, check_tree, gate_forbidden
+from .gates import NOT_EVALUATED, check_tree, gate_fit, gate_forbidden
 from .realized import poscar
 from .spiral import FREE_BASIS, RANK_FLOOR, geometry_ranks, spiralization_design, stiffness_design, undetermined
 
@@ -35,8 +35,9 @@ def pair_observables(t_plus, t_minus, e_plus, e_minus, e_zero, n_m):
 
 # ---- single solves, Section 9.4 ------------------------------------------------
 
-def tensor_fit(design, data, sigma, basis):
-    """One least-squares solve x = X^+ d with Cov(x) = sigma^2 (X^T X)^+ (Eq 9.9).
+def tensor_fit(design, data, sigma, basis, rows):
+    """One least-squares solve x = X^+ d with Cov(x) = sigma^2 (X^T X)^+ (Eq 9.9),
+    and the Section 11 Fit check on its residual (D-026); rows label the data rows.
 
     The first len(basis) unknowns are the basis coefficients; the rest are nuisances.
     "solver" maps any data of the same row layout to coefficients (Section 9.5).
@@ -44,16 +45,18 @@ def tensor_fit(design, data, sigma, basis):
     nb = len(basis)
     solver = np.linalg.pinv(design)
     x, cov = solver @ data, sigma ** 2 * solver @ solver.T
+    residual = data - design @ x
     flat = np.reshape(basis, (nb, 9)).T                      # vec(tensor) = flat @ coefficients
     return {"coef": x[:nb], "cov_coef": cov[:nb, :nb], "nuisance": x[nb:],
             "tensor": (flat @ x[:nb]).reshape(3, 3), "cov": flat @ cov[:nb, :nb] @ flat.T,
-            "solver": solver[:nb], "flat": flat}
+            "solver": solver[:nb], "flat": flat, "residual": residual,
+            "check": gate_fit(residual, sigma, data, rows, design.shape[0] - design.shape[1])}
 
 
 def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
     """Every Section 9 result from the complete pairs.
 
-    pairs: dicts with i (row of s), t, E_plus, E_minus, and T_plus, T_minus and
+    pairs: dicts with name (d1_t1), i (row of s), t, E_plus, E_minus, and T_plus, T_minus and
     per_ion = per-ion T(q) - T(-q) (all None in an energies-only tree). Noise comes from the parity
     residuals (Eq 9.9): sigma_y from [T(q) + T(-q)]/N_m, sigma_g from [E(q) - E(-q)]/2N_m.
     """
@@ -70,7 +73,8 @@ def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
     if undetermined(ranks["A"]):
         raise ValueError(f"The directions used do not determine A: rank value {ranks['A']:.3g} < {RANK_FLOOR}")
     noise = {"sigma_g": float(np.sqrt(np.mean(odd_g ** 2))), "n_g": len(odd_g)}
-    result = {"A": tensor_fit(a_design, g, noise["sigma_g"], a_basis), "noise": noise}
+    names = [p["name"] for p in pairs]
+    result = {"A": tensor_fit(a_design, g, noise["sigma_g"], a_basis, names), "noise": noise}
     result["A"]["eigenvalues"] = np.linalg.eigvalsh(result["A"]["tensor"])
     if not traced:
         return result
@@ -78,10 +82,11 @@ def fit_pairs(s, pairs, n_m, e_zero, d_basis, a_basis, species=None):
     noise.update(sigma_y=float(np.sqrt(np.mean(even_y ** 2))), n_y=even_y.size)
     if undetermined(ranks["D"]):
         raise ValueError(f"The directions used do not determine D: rank value {ranks['D']:.3g} < {RANK_FLOOR}")
-    result["D"] = tensor_fit(spiralization_design(s, points, d_basis), y.ravel(), noise["sigma_y"], d_basis)
+    axes = [f"{name} {axis}" for name in names for axis in "xyz"]   # rows (point, axis) of y.ravel()
+    result["D"] = tensor_fit(spiralization_design(s, points, d_basis), y.ravel(), noise["sigma_y"], d_basis, axes)
     if not undetermined(ranks["D_free"]):                      # fewer than three directions: not evaluated
         free = result["D_free"] = tensor_fit(spiralization_design(s, points, FREE_BASIS), y.ravel(),
-                                             noise["sigma_y"], FREE_BASIS)
+                                             noise["sigma_y"], FREE_BASIS, axes)
         rest = np.eye(9) - result["D"]["flat"] @ result["D"]["flat"].T       # 1 - P_D, Eq (9.4)
         result["F"] = {"tensor": (rest @ free["tensor"].ravel()).reshape(3, 3), "cov": rest @ free["cov"] @ rest.T}
     if species is not None:
@@ -189,7 +194,7 @@ def observables(out, states, traces, tree):
             length = np.linalg.norm(spiral.cartesian(lattice, plus[3]))
             if not np.isclose(length, t, rtol=1e-9, atol=0):
                 raise ValueError(f"d{i}_t{j}: |q| = {length:.6g} 1/Å differs from the seed t = {t:g}")
-            rows.append({"i": len(used), "t": t, "E_plus": plus[0], "E_minus": minus[0], "T_plus": plus[1],
+            rows.append({"name": f"d{i}_t{j}", "i": len(used), "t": t, "E_plus": plus[0], "E_minus": minus[0], "T_plus": plus[1],
                          "T_minus": minus[1], "per_ion": None if plus[2] is None else plus[2] - minus[2]})
         if len({r["t"] for r in rows}) < 2:              # slope and cubic nuisance need two magnitudes
             dropped.append(f"d{i}")
@@ -208,6 +213,16 @@ def observables(out, states, traces, tree):
 
 def _value(matrix, cov, scale=MEV):
     return {"value": (scale * matrix).tolist(), "sigma": (scale * np.sqrt(np.diag(cov)).reshape(3, 3)).tolist()}
+
+
+def _fit_check(solve, units):
+    """tensors.json entry of one solve's Fit check (D-026), in meV like every reported value."""
+    check = solve["check"]
+    entry = {"passed": check.passed, "units": units, "residual": (MEV * solve["residual"]).tolist()}
+    if check.value is None:
+        return dict(entry, reason=check.detail)
+    return dict(entry, row=check.value["row"], worst=MEV * check.value["worst"],
+                bound=MEV * check.value["bound"], rule=check.detail)
 
 
 def report_tree(out, states, traces, tree):
@@ -229,6 +244,7 @@ def report_tree(out, states, traces, tree):
                         positive=positive),
               "micromagnetic": {"A_pJ_per_m": (MEV * stiff["tensor"] / volume * PJ_PER_M_FROM_MEV_PER_A).tolist()},
               "sign": SIGN}
+    checks = {"A": _fit_check(stiff, "meV per magnetic site (g)")}
     forbidden_passed = True
     if not traced:
         for name in ("D", "D_free", "F", "D_by_species", "prediction"):
@@ -237,12 +253,14 @@ def report_tree(out, states, traces, tree):
         d = result["D"]
         report["D"] = dict(_value(d["tensor"], d["cov"]), d=d["coef"].tolist(), cov_d=d["cov_coef"].tolist())
         report["micromagnetic"]["D_mJ_per_m2"] = (MEV * d["tensor"] / volume * MJ_PER_M2_FROM_MEV_PER_A2).tolist()
+        checks["D"] = _fit_check(d, "meV per magnetic site (y)")
         report["D_by_species"] = {k: {n: (MEV * m).tolist() for n, m in v.items()} for k, v in result["by_species"].items()}
         if "D_free" in result:
             f = result["F"]
             forbidden = gate_forbidden(f["tensor"], np.sqrt(np.diag(f["cov"])).reshape(3, 3), result["D_free"]["tensor"])
             forbidden_passed = forbidden.passed
             report["D_free"] = _value(result["D_free"]["tensor"], result["D_free"]["cov"])
+            checks["D_free"] = _fit_check(result["D_free"], "meV per magnetic site (y)")
             report["F"] = dict(_value(f["tensor"], f["cov"]), norm=MEV * float(np.linalg.norm(f["tensor"])),
                                ratio_to_D_free=forbidden.value["ratio_to_D_free"], passed=forbidden.passed,
                                bound=forbidden.detail)
@@ -274,7 +292,8 @@ def report_tree(out, states, traces, tree):
             d_sw, cov_sw = spin_wave_stiffness(stiff["tensor"], stiff["cov"], moment, obs["signs"])
             report["D_sw"][key] = ({"value": None, "reason": cov_sw} if d_sw is None else
                                    dict(_value(d_sw, cov_sw), units="meV A^2", M_muB=moment, moment=meaning))
-    report["passed"] = forbidden_passed and positive
+    report["fit_check"] = checks
+    report["passed"] = forbidden_passed and positive and all(c["passed"] is not False for c in checks.values())
     return report
 
 
@@ -329,6 +348,13 @@ def _lines(report):
         if entry["value"] is not None:
             lines.append(f"D_sw = 4A/{key} {entry['value'][0][0]:.4g} +- {entry['sigma'][0][0]:.2g} meV A^2 "
                          f"(xx; M = {entry['M_muB']:.4g} muB)")
+    for name, c in report["fit_check"].items():
+        if c["passed"] is None:
+            lines.append(f"Fit {name}  {c['reason']}")
+        elif c["passed"]:
+            lines.append(f"Fit {name}  pass, worst residual {abs(c['worst']):.3g} meV of bound {c['bound']:.3g} meV")
+        else:
+            lines.append(f"Fit {name}  FAIL: {c['row']} residual {c['worst']:+.3g} meV, bound {c['bound']:.3g} meV")
     null = report["null"]
     lines.append(f"Null at every q: {null['detail']}" if null["passed"] is None else
                  f"Null at every q: pass, worst |T| {null['value']['worst_eV']:.2e} eV")

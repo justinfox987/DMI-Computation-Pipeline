@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-17 UTC, at FIX-2 on branch `fix-2-cso-nelect` ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)).
+**Last reconciled:** 2026-11-17 UTC, at FIT-1 on branch `fit-1-model-check` ([log](docs/sessions/2026-11-17_1855Z-agent-fit-1-model-check.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -9,22 +9,21 @@ TEN-03 (`spiral.py`: seed, `plan`, `prepare`, `collect`), TEN-04 (`dumps`,
 `trace`), TEN-05 (`tensors.py`, `dmi fit`), cleanup 1, FIX-1 (trace sign,
 smeared FERWE; D-020), SIM-1a (recompute from the VASP files, M1 per build,
 handedness for T3; D-021) and SIM-1b (INCAR overrides, single-solve fit with
-parity noise, 1% Forbidden floor; D-022, D-023) are merged. The full workflow
-exists; none of it has run on a spiral. TEN-06, the bcc Fe pilot, is approved;
-its code (the centrosymmetric null and `4A/M_total`) and the `materials/fe/`
-inputs are merged (PR #21), and SEQ-1 (`run.sh`, `run_dumps.sh`) is merged
-(PR #22). The first Fe runs found that `dmi fit` crashed on a real `CSO.dat`,
-which has no NELECT line; FIX-2 is in review on `fix-2-cso-nelect`.
+parity noise, 1% Forbidden floor; D-022, D-023) are merged, as are the TEN-06
+code (PR #21), SEQ-1 (PR #22) and FIX-2 (PR #23). The bcc Fe pilot has run on
+Perlmutter: on fe-k12 the machinery passes Gate 2 on real VASP files, but `A`
+is not converged in the k mesh and the series `A t^2 + b t^4` does not describe
+the energies ([evidence](evidence/2026-11-17-fe-ten06-pilot/README.md)). FIT-1 (`fit-1-model-check`, in review) adds the
+Fit check that flags such a misfit (D-026) and the evidence record.
 
-**Integration branch / base commit:** `main` at `9a9fc2b`, the PR #22 merge (SEQ-1). PRs #15 to #22 are merged. Tag
+**Integration branch / base commit:** `main` at `2ceb27f`, the PR #23 merge (FIX-2). PRs #15 to #23 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `fix-2-cso-nelect`, the CSO NELECT crash
-in `trace_run`; done and awaiting review.
-TEN-06's code and `materials/fe/` are merged (PR #21); the Perlmutter runs,
-the evidence record and the Gate 2 evaluation are the user's next step.
+**Handoff owner / scope:** Claude / `fit-1-model-check`, the Fit check (D-026)
+and the TEN-06 evidence record; done and awaiting review. The 24x24x24 Fe
+diagnostic is the user's, running on Perlmutter.
 One writer per branch.
 
 ## Established
@@ -42,10 +41,12 @@ One writer per branch.
 
 | Trace sign and CSO layout (D-020) | VASP source (`relativistic.F`, `us.F`, `csodump.F`); the layout test `test_vasp_file_layout_fixes_the_trace_sign` on `fix-1-trace-sign`; handedness -0.707 (O), -0.523 (Fe), -0.440 (Bi) on the real BFO `CSO.dat` ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) | Source reading and a repository test. Not a VASP run; TEN-07 confirms |
 | Current readers on real dumps | On `pipeline v3/noq/` (BFO, q = 0): `load_cso`, `load_cocc`, C0 with h = -0.523 (Fe), -0.440 (Bi), -0.707 (O), and N0 on all three axes pass; total T = (+2.1e-8, +4.3e-8, +5.2e-8) eV; `acceptance/m1.py` gives 5.3e-15, as recorded. The new OSZICAR reader returns the old `M_int` on `Fe_q0_test/q0` and `reader_test_2` ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) | One collinear state; says nothing about finite q |
+| Gate 2 machinery on real VASP files (TEN-06, fe-k12) | `dmi fit` after FIX-2 exits 0 with C0 (including `h < 0`), N0, the null at every q (worst \|T\| 2.02e-7 eV), I0, P0 and E0 passing; `dump_P` without `LDUMPCPROJ` gives `COCC.dat`, and the `LSORBIT = T` CSO dump accepts `q0`'s spiral `CHGCAR` ([evidence](evidence/2026-11-17-fe-ten06-pilot/README.md)) | User-reported output; the JSON reports and dump files are not yet in the record. Not covered: trace sign, Forbidden, M1 for this build, the accuracy of `A` |
 | Single-solve fit and parity noise (D-023) | Reproduces `D_free`, `D`, `F`, `A` to 1e-12 on the FeGe and BFO spin models; parity sigma 1.32e-6 against a true 1.41e-6 ([log](docs/sessions/2026-11-11_1600Z-agent-simplify-decisions.md)) | Prototype in a scratch copy, not repository code |
 
-No VASP calculation has tested Revision 3.2. There is no finite-q trace evidence,
-and no parity (P0) measurement has been made with Patch B.
+The bcc Fe pilot (fe-k12) is the first VASP test of Revision 3.2: finite-q
+traces and P0 with Patch B on a centrosymmetric metal, where T should vanish.
+No trace with D ≠ 0 has been measured, so the sign is untested.
 
 ## Work queue
 
@@ -61,12 +62,13 @@ and no parity (P0) measurement has been made with Patch B.
 | FIX-1 | Conjugate in the trace and its oracle, the layout test, delete the FERWE occupation checks (D-020) | Done; [spec](plans/simplify-1.md) Part 1 | Merged in PR #18, `27bfe86` | Layout test passes; the smeared fixture loads; 22 tests ([log](docs/sessions/2026-11-11_1946Z-agent-fix-1-trace-sign.md)) |
 | SIM-1a | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader (D-021) | Done; [spec](plans/simplify-1.md) items 2.2, 2.3, 2.4, 2.6 | Merged in PR #19, `22a0110` | D, A, F and the pitch agree with `main` to 5e-16 meV; 14 tests ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) |
 | SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | Done, merged in PR #20, `e514eed`; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; Forbidden bound with 1% floor and geometry-only rank test (D-023 amended); 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
-| TEN-06 | bcc Fe F0 pilot at lambda 0 | [Spec](plans/ten-06-fe-pilot.md) approved 2026-11-13; code and `materials/fe/` merged in PR #21, `2e0ec61`; runs wait for the user | Claude / `ten-06-fe-pilot` (code); the user (runs) | **Gate 2:** T near zero on all axes, plausible A, first wall times |
+| TEN-06 | bcc Fe F0 pilot at lambda 0 | [Spec](plans/ten-06-fe-pilot.md) approved 2026-11-13; code and `materials/fe/` merged in PR #21, `2e0ec61`; k series run to 12x12x12; Gate 2 on fe-k12: machinery passes, `A` not converged and the model does not fit; 24x24x24 diagnostic running ([evidence](evidence/2026-11-17-fe-ten06-pilot/README.md)) | Claude / `ten-06-fe-pilot` (code); the user (runs) | **Gate 2:** T near zero on all axes, plausible A, first wall times |
 | TEN-07 | BFO pairs and strained zincblende control with a supercell check | Pending Gate 2 | Unassigned | **Gate 3:** parity, forbidden terms and sign pass |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
 | SEQ-1 | `run.sh` and `run_dumps.sh`: the same run list one directory at a time in one allocation, skipping finished runs | Done, [spec](plans/seq-1-run-sequence.md) approved 2026-11-16; merged in PR #22, `9a9fc2b` | Claude / `seq-1-run-sequence` | 15 tests; `run.sh` executed on a small tree: finished run skipped, failure does not stop the loop, list order kept ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)) |
-| FIX-2 | `trace_run` no longer compares NELECT, which the real Patch B `CSO.dat` does not print; `write_cso` fixtures match the real header | Done; found by the Fe pilot 2026-11-17; awaiting review | Claude / `fix-2-cso-nelect` | 15 tests; the command-chain and Fe pilot tests run `dmi fit` on a CSO with no NELECT line and failed with the field `TypeError` before the fix ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)) |
+| FIX-2 | `trace_run` no longer compares NELECT, which the real Patch B `CSO.dat` does not print; `write_cso` fixtures match the real header | Done; found by the Fe pilot 2026-11-17; merged in PR #23, `2ceb27f` | Claude / `fix-2-cso-nelect` | 15 tests; the command-chain and Fe pilot tests run `dmi fit` on a CSO with no NELECT line and failed with the field `TypeError` before the fix ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)) |
+| FIT-1 | Fit check on every tensor solve (D-026); TEN-06 evidence record | Done, [spec](plans/fit-1-model-check.md) approved 2026-11-17; awaiting review | Claude / `fit-1-model-check` | 15 tests; the real fe-k12 energies fail `Fit A` at d1_t1 (+0.258 meV against 0.064 meV) and `fit` exits 1; spin models pass; 3 mutations caught ([log](docs/sessions/2026-11-17_1855Z-agent-fit-1-model-check.md)) |
 | ANI-1 | Anisotropy module (D-024) | Deferred until the spiralization tensor works; [spec](plans/anisotropy-1.md) approved | Unassigned | Known surface recovered; A1 to A5 on a first real tree |
 | TEN-10 | Literature check and paper draft | Pending | Unassigned | Draft with reproducible data |
 
@@ -75,31 +77,21 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `fix-2-cso-nelect` (FIX-2), then rerun `dmi fit` on the
-   Fe tree; no VASP run needs repeating. `run.sh` and `run_dumps.sh` (SEQ-1)
-   may replace `submit.sh` and `submit_dumps.sh` below when one allocation is
-   wanted; the time limit then covers every run.
-2. On Perlmutter, from a checkout of `main` with the package installed
-   (`plans/ten-06-fe-pilot.md`, convergence plan and command sequence):
-   - **k series**, energies only. For `N = 12, 16, 20, 24`, make an uncommitted
-     copy of `materials/fe/` with `KPOINTS` set to `N N N` and
-     `directions = [[0, 0, 1]]` in its seed: 7 SCFs each, no dumps. Then run
-     `dmi prepare`, `sbatch submit.sh`, `dmi collect` and `dmi fit` (A alone).
-     Converged when A changes by less than 5% between the last two meshes; add
-     `N = 28` if 24 is still moving.
-   - **t series** at the chosen `N`: `t = 0.03, 0.06, 0.09` against the committed
-     `0.05, 0.10, 0.15`, energies only. Consistent when A agrees within
-     2 sigma + 5%.
-   - **Full tree** at the chosen `N` and `t`: `dmi plan`, `dmi prepare --job scf.sh`,
-     `sbatch submit.sh` (19 SCFs), `dmi collect` (all 19 ok), `dmi dumps --job
-     patchb.sh`, `sbatch submit_dumps.sh` (20 dumps), `dmi fit`. The SCFs and
-     the dumps use the same Patch B build. If it is not the 14 September build,
-     add `LDUMPCPROJ = T` to `q0/dump_P/INCAR` by hand before submitting, and
-     run `python acceptance/m1.py` on that directory afterwards.
-   - Bring back the JSON reports, `q0/dump_P/COCC.dat`, `dump_C/CSO.dat`,
-     the job scripts' resources and the wall times for the evidence record.
-3. Then the evidence record and the Gate 2 evaluation (spec "Gate 2" and
-   "Evidence record"), on a new branch.
+1. Review and merge `fit-1-model-check` (FIT-1).
+2. Fe, on Perlmutter: finish the 24x24x24 diagnostic (q0 and the plus side) and
+   fill its placeholder in the [evidence record](evidence/2026-11-17-fe-ten06-pilot/README.md). If `g/t^2` stops
+   falling with t at 24x24x24, k sampling was the cause; continue the k series
+   at the meshes that the diagnostic suggests, with `dmi fit` (now with the Fit
+   check) on each. If it does not, the misfit is physics or settings, and the
+   pilot needs a decision before more runs.
+3. For the evidence record, bring back the fe-k12 JSON reports,
+   `q0/dump_P/COCC.dat`, `dump_C/CSO.dat`, `hashes.txt`, the job scripts'
+   resources, the wall times and the build identity (M1).
+4. TEN-07 (BFO pairs and the supercell control) for the trace sign and the
+   Forbidden check, which this pilot cannot test.
+
+`run.sh` and `run_dumps.sh` (SEQ-1) may replace `submit.sh` and
+`submit_dumps.sh` when one allocation is wanted.
 
 `dmi plan materials/fe/seed.toml` runs on the committed inputs: group 229, 96
 operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
@@ -112,7 +104,6 @@ operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
   WAVECAR or VASP source files are tracked.
 - Perlmutter executable path, hash and source identity. The Sep 14 builds differ
   between runs, and the campaign executable needs reconciling.
-- Whether `LDUMPCOCC` works without `LDUMPCPROJ` on a real run.
 - Finite-q parity noise, and the k mesh and q magnitudes that control it.
 - DFT+U with LSPIRAL at finite q. Check against one commensurate supercell.
 - RWIGS, ENCUT and ENINI for each material; the earlier Fe cutoff warning.
@@ -120,8 +111,9 @@ operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
 - Mn2RhSn: suitability as a single-pattern ferrimagnet, and any reference values.
 - The assumption that VASP magnetization follows the spin expectation. Only the
   magnon sign depends on it.
-- Whether VASP accepts `q0`'s `LSPIRAL = T` `CHGCAR` with `ICHARG = 11` in the
-  `LSORBIT = T` CSO dump (fallback: a separate `LSPIRAL`-free reference SCF).
+- Why `A` in bcc Fe does not follow `A t^2 + b t^4` and does not converge with the
+  k mesh (fe-k12: `g/t^2` = 519, 355, 282 meV Å²). k sampling is the leading
+  suspect, not established.
 - A VASP confirmation of the trace sign (D-020): the TEN-07 supercell control.
 - Whether M1 must be rerun: only if the production executable is not the
   14 September build.

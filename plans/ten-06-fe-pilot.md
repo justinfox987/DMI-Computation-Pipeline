@@ -100,6 +100,15 @@ and `t`:
 2. **t series** at the chosen `N`: `t = 0.03, 0.06, 0.09` against
    `0.05, 0.10, 0.15`. Consistent when `A` agrees within `2 sigma + 5%`.
 
+**As run (amended 2026-11-17, FIT-1).** The k series ran on energies-only
+trees along [001] at `t = 0.05, 0.10, 0.15`, with `NBANDS` reduced by the user:
+meshes 5 to 8 at ENCUT 550 (no ENINI), then 8, 10, 11 and 12 at ENINI 600 and
+ENCUT 700. `A` did not converge, and on fe-k12 the series `A t^2 + b t^4` does
+not describe `g` (D-026). The meshes 16, 20 and 24 and the t series were not run
+as full trees. A 24x24x24 diagnostic (q0 and the plus side only) is running.
+Gate 2 was evaluated on fe-k12 with dumps, not on a converged tree. Results:
+[evidence/2026-11-17-fe-ten06-pilot/](../evidence/2026-11-17-fe-ten06-pilot/README.md).
+
 Variants differ only in `KPOINTS` or `t`. On the cluster, each variant is an
 uncommitted copy of the material folder (`fe-k12/`, `fe-t03/`, ...) next to the
 run trees. Only the chosen `t` is committed to `materials/fe/seed.toml`. If the
