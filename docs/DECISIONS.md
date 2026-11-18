@@ -416,11 +416,14 @@ Mechanism, the reviewer's inference: VASP's noncollinear GGA is locally
 collinear, with gradients of |m| only. Where m changes sign in space, a spiral
 adds a transverse m_perp proportional to q and grad|m| collapses in a thin
 layer, which adds an energy linear in |q|. LDA depends on |m|^2 and has no such
-term. Confirmed for Fe by the LDA control; not yet tested for BFO. Whether D
-under PBE is affected is open (the artifact is even in q).
+term. Confirmed for Fe by the LDA control, and for BFO by the LDA+U
+two-direction tree of 2026-11-18
+([`evidence/2026-11-18-bfo-lda-diagnostic/README.md`](../evidence/2026-11-18-bfo-lda-diagnostic/README.md)),
+where Fit A and Fit D pass. Whether D under PBE is affected is open (the
+artifact is even in q); D under LDA+U is clean.
 
-The functional for production is the user's decision (D-019) and is not yet
-made. The options, in no order of preference:
+The functional for production is the user's decision (D-019); it was made on
+2026-11-18 as D-028. The options as recorded, in no order of preference:
 
 - LSDA+U throughout;
 - PBE for D, with LDA for A;
@@ -433,3 +436,25 @@ control removes the misfit.
 [`evidence/2026-11-17-fe-ten06-pilot/README.md`](../evidence/2026-11-17-fe-ten06-pilot/README.md),
 "18 November: the cause"; math Revision 3.2, Section 11 (amended 18 November
 2026).
+
+## D-028 — Production runs use LSDA+U throughout
+
+**Status:** accepted 2026-11-18, the user's decision (D-019). Chooses among the
+options listed in D-027.  
+Production runs use LSDA+U for the spiral energies and the dumps alike. One
+functional supplies both `A` and `D`.
+
+The inputs it needs are the user's (D-019); none is chosen by the code or a
+spec, and each is open until the user supplies it:
+
+- the potpaw_LDA datasets, recorded in `POTCAR.spec` (never the POTCAR);
+- U, J and `LDAUTYPE`;
+- the structure;
+- the cutoffs (`ENCUT`, `ENINI`);
+- the k mesh.
+
+**Reason:** D-027: PBE spiral energies in VASP cannot give `A` at small q. The
+BFO LDA+U diagnostic of 2026-11-18 passes Fit A and Fit D, with sigma_g 80
+times smaller than the same tree under PBE+U
+([`evidence/2026-11-18-bfo-lda-diagnostic/README.md`](../evidence/2026-11-18-bfo-lda-diagnostic/README.md)).
+**Authority:** user decision, 2026-11-18.

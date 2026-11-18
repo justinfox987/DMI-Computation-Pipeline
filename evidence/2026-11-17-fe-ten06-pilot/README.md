@@ -6,7 +6,9 @@ on branch `fit-1-model-check` (spec: [plans/ten-06-fe-pilot.md](../../plans/ten-
 final verdict were added the same day on branch `ten-06-evidence`. The runs of
 18 November (a 10x10x10 PBE scan, an LDA control and a BFO scan), the
 reviewer's analysis of the cause, the revised open question and the revised
-verdict were added on 2026-11-18 on the same branch.
+verdict were added on 2026-11-18 on the same branch. The BFO LDA+U result, the
+M1 build confirmation and the user's functional decision (D-028) were added on
+2026-11-18 on branch `bfo-ev1`.
 
 **This record is partial.** Every number below was reported by the user or by the
 reviewer's hand check and transcribed here. None was copied from a JSON file in
@@ -20,7 +22,7 @@ the record. Items marked "not supplied" are unknown, not passed.
 | Item | Value |
 |---|---|
 | Code commit of the runs | not supplied. The Gate 2 fit ran after FIX-2 (PR #23, `2ceb27f` on `main`) |
-| Patch B executable: build banner, SHA-256 | not supplied; the user is to confirm the build (M1, below) |
+| Patch B executable: build banner, SHA-256 | banner and SHA-256 not supplied; the user confirmed on 2026-11-17 that the build is the 14 September build, so M1 is covered (below) |
 | POTCAR TITEL and SHA-256 | not supplied for the runs; the committed inputs name `PAW_PBE Fe_pv 02Aug2007` ([POTCAR.spec](../../materials/fe/POTCAR.spec)) |
 | Run-tree path on the cluster | not supplied |
 | Structure | `materials/fe/POSCAR`: cubic, a = 2.8630354989499160 Å, 2 Fe, N_m = 2 |
@@ -79,7 +81,7 @@ This fit ran before FIT-1, so it printed no Fit line.
 | Item | Result | Basis |
 |---|---|---|
 | 2.1 Tree health | pass | `fit` used all three pairs, so `collect` passed every run; `collected.json` not in the record |
-| 2.2 Dumps | pass, except M1 | every `dump_P` gave a `COCC.dat` that `fit` traced; C0 passed on the real `dump_C/CSO.dat`, including `h < 0` on every ion. M1 for this build: not evaluated (the user is to confirm the build) |
+| 2.2 Dumps | pass | every `dump_P` gave a `COCC.dat` that `fit` traced; C0 passed on the real `dump_C/CSO.dat`, including `h < 0` on every ion. M1: covered; the user confirmed on 2026-11-17 that the build is the 14 September build, on which M1 passed at 5.3e-15 |
 | 2.3 Null at every q | pass | worst \|T\| 2.02e-7 eV against `N0_FLOOR_EV` 5e-5 eV |
 | 2.4 N0, P0, E0, I0 | pass | `fit` output above |
 | 2.5 Noise | recorded | sigma_y 6.5e-8 eV (9 samples), sigma_g 2.44e-7 eV (3 samples) |
@@ -256,7 +258,8 @@ linear in |q|. Fe: 4A/M ≈ 335 meV Å² (experiment about 280 to 314). BFO: the
 experimental J = 4.4 meV with S = 5/2 gives about 215 meV Å² (the reviewer's
 estimate).
 
-**Explanation.** Confirmed for Fe by run 2; **not yet tested for BFO**. The
+**Explanation.** Confirmed for Fe by run 2, and for BFO by the LDA+U tree of
+2026-11-18 ([BFO LDA+U diagnostic](../2026-11-18-bfo-lda-diagnostic/README.md)). The
 mechanism is the reviewer's inference: no paper was found that reports this |q|
 artifact in spiral energies.
 
@@ -299,9 +302,10 @@ It accounts for:
 ## Open question
 
 Resolved for Fe: the non-quadratic term is an artifact of PBE in VASP's locally
-collinear treatment. Open: the same test for BFO (an LDA+U two-direction tree),
-and whether D under PBE is affected (the artifact is even in q; the BFO dumps
-and Fit D will show).
+collinear treatment. Confirmed for BFO: the LDA+U two-direction tree passes
+Fit A, and its D is clean (Fit D pass) ([BFO LDA+U diagnostic](../2026-11-18-bfo-lda-diagnostic/README.md)). Open: whether D under PBE is
+affected (the artifact is even in q). The user has chosen LSDA+U for production
+(D-028).
 
 ## Verdict
 
@@ -317,7 +321,6 @@ Not covered by this pilot:
 
 - the trace sign, which needs D ≠ 0 (TEN-07);
 - Forbidden, which needs three directions;
-- M1 for this build, until the user confirms the build;
 - a converged A for Fe.
 
 ## Implication for other materials
@@ -325,8 +328,8 @@ Not covered by this pilot:
 The 18 November BFO scan shows the misfit in an insulator, so it is not limited
 to metals. By the mechanism above, any material where m changes sign in space
 can show it under PBE, so FeGe and Mn2RhSn (TEN-08, TEN-09) may be affected
-too; this is untested. The Fit check is the guard; which functional is used in
-production is the user's decision (D-027, D-019).
+too; this is untested. The Fit check is the guard. The user has chosen LSDA+U
+for production (D-028).
 
 ## Bugs found by the pilot
 
