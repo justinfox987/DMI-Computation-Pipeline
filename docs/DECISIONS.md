@@ -399,3 +399,37 @@ pilot at 12x12x12 reported `A = 433 +- 0.04 meV A^2` while `g/t^2` fell from
 **Authority:** math Revision 3.2, Sections 9.4 and 11 (amended 17 November
 2026); `plans/fit-1-model-check.md`.
 
+
+## D-027 — PBE spiral energies in VASP cannot give A at small q (finding)
+
+**Status:** recorded 2026-11-18 (TEN-06-EV2). A finding, not a choice of
+functional.  
+PBE spiral energies in VASP cannot give `A` at small q. Every PBE scan so far
+(bcc Fe at 8x8x8, 12x12x12, 18x18x18 and 10x10x10; BFO, an insulator, with
+PBE+U) fails the Fit check (D-026) with `g/t^2` rising as t falls. The reviewer's
+fits describe each scan as a quadratic term plus a term linear in |q|. On bcc
+Fe at 10x10x10 with the same cutoffs and t, PBE fails (residual +0.0764 meV,
+bound 0.0419 meV) and LDA passes (worst residual 0.00249 meV, bound 0.0173 meV,
+`A = 182.5 meV A^2`), with 800 times smaller parity noise.
+
+Mechanism, the reviewer's inference: VASP's noncollinear GGA is locally
+collinear, with gradients of |m| only. Where m changes sign in space, a spiral
+adds a transverse m_perp proportional to q and grad|m| collapses in a thin
+layer, which adds an energy linear in |q|. LDA depends on |m|^2 and has no such
+term. Confirmed for Fe by the LDA control; not yet tested for BFO. Whether D
+under PBE is affected is open (the artifact is even in q).
+
+The functional for production is the user's decision (D-019) and is not yet
+made. The options, in no order of preference:
+
+- LSDA+U throughout;
+- PBE for D, with LDA for A;
+- PBE, with a |q| nuisance column in the A fit.
+
+**Reason:** the Fe and BFO runs of 2026-11-17 and 2026-11-18 rule out k mesh,
+FFT precision, cutoffs, bands, smearing and metallicity as the cause, and the LDA
+control removes the misfit.
+**Authority:** evidence record
+[`evidence/2026-11-17-fe-ten06-pilot/README.md`](../evidence/2026-11-17-fe-ten06-pilot/README.md),
+"18 November: the cause"; math Revision 3.2, Section 11 (amended 18 November
+2026).

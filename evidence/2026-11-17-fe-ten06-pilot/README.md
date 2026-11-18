@@ -3,7 +3,10 @@
 Production VASP evidence from the user's Perlmutter runs, recorded 2026-11-17
 on branch `fit-1-model-check` (spec: [plans/ten-06-fe-pilot.md](../../plans/ten-06-fe-pilot.md),
 "Evidence record"). The diagnostics run after FIT-1, the open question and the
-final verdict were added the same day on branch `ten-06-evidence`.
+final verdict were added the same day on branch `ten-06-evidence`. The runs of
+18 November (a 10x10x10 PBE scan, an LDA control and a BFO scan), the
+reviewer's analysis of the cause, the revised open question and the revised
+verdict were added on 2026-11-18 on the same branch.
 
 **This record is partial.** Every number below was reported by the user or by the
 reviewer's hand check and transcribed here. None was copied from a JSON file in
@@ -109,6 +112,7 @@ sigma_g 2.44e-7 eV.
 | A jump at q = 0 | fe-k12 settings, QSPIRAL = 0 0 0.0001 (\|q\| ≈ 2.2e-4 1/Å) | free energy -16.53056495 eV against q0's -16.53056019 eV, a difference of -4.8 μeV. A jump at q = 0 would have given about +0.9 meV per cell. **No jump** |
 | Empty bands | fe-k12 q0 and d1_t3_plus, NBANDS 40 | the largest top-band occupation is 0 at every k point. **Enough empty bands** |
 | Smearing width and scheme | the seven-point t scan at 8x8x8 with ISMEAR 0, SIGMA 0.05 and with ISMEAR 1 (Methfessel-Paxton), SIGMA 0.2 (tables below) | a 4x wider smearing in a different scheme leaves the shape nearly unchanged: g/t² still rises from about 215 to 855 meV Å² as t falls, and only the smallest-t point moved (956 to 855). **The smearing does not set the crossover** |
+| Functional: PBE vs LDA | 10x10x10, ENINI 900, ENCUT 1000, t = 0.02, 0.03, 0.05, 0.10, with PBE and with LDA (18 November, below) | PBE: Fit A FAIL, residual +0.0764 meV, bound 0.0419 meV. LDA: Fit A PASS, worst residual 0.00249 meV, bound 0.0173 meV. **LDA removes the misfit** |
 
 The trees after FIT-1 report sigma_g of about 2e-6 eV, against 2.44e-7 eV on
 fe-k12; the bounds are set by the 1% floor, not by sigma_g.
@@ -169,41 +173,160 @@ Reviewer's model comparison (worst residual):
 | c + A t² + B t⁴ | 0.32 | 298 |
 | c\|t\| + A t² + B t⁴ | 0.08 | 199 |
 
+## 18 November: the cause
+
+Three energies-only trees run by the user on 2026-11-18. The `dmi fit` values
+are from the user's output; g is per magnetic site. Identity items (commit,
+build, POTCAR hashes, run paths, wall times) are not supplied, as above.
+
+### Run 1: Fe, PBE, 10x10x10
+
+PBE, 10x10x10, ENINI 900, ENCUT 1000, ISMEAR 0, SIGMA 0.05, direction [001].
+
+| t (1/Å) | g (meV) | g/t² (meV Å²) |
+|---|---|---|
+| 0.02 | 0.3081 | 770.3 |
+| 0.03 | 0.5958 | 662.0 |
+| 0.05 | 1.3115 | 524.6 |
+| 0.10 | 3.8884 | 388.8 |
+
+`dmi fit`: A = 595.7 meV Å²; Fit A FAIL at d1_t2 (t = 0.03), residual
++0.0764 meV, bound 0.0419 meV; sigma_g 1.0e-6 eV; M_int(q0) 2.313 μB,
+M_total 2.251 μB.
+
+Both the mesh and the cutoffs differ from the 8x8x8 scan, so the effect of the
+higher cutoffs is not separated from that of the mesh. The shape persists: g/t²
+still rises as t falls.
+
+### Run 2: Fe, LDA, 10x10x10
+
+The same mesh, cutoffs, smearing and direction as run 1; t = 0.02, 0.03, 0.05,
+0.10 1/Å (from the g table). LDA was set by `GGA = CA` on the `PAW_PBE Fe_pv`
+POTCAR, at the PBE lattice constant of `materials/fe/POSCAR` (**to confirm**:
+the INCAR and POTCAR of this run are not in the record).
+
+| t (1/Å) | g (meV) | g/t² (meV Å²) |
+|---|---|---|
+| 0.02 | 0.0707 | 176.9 |
+| 0.03 | 0.1610 | 178.9 |
+| 0.05 | 0.4519 | 180.8 |
+| 0.10 | 1.7315 | 173.2 |
+
+`dmi fit`: A = 182.5 meV Å²; Fit A PASS, worst residual 0.00249 meV, bound
+0.0173 meV; sigma_g 1.25e-9 eV (4 pairs); M_int(q0) 2.174 μB, M_total
+2.144 μB; D_sw = 335.8 meV Å² (4A/M_int) and 340.4 meV Å² (4A/M_total).
+
+Against run 1, the Fit residual is 30 times smaller and the parity noise 800
+times smaller. g/t² is flat within 4% from t = 0.02 to 0.10.
+
+### Run 3: BFO, PBE+U, 7x7x7
+
+R3c, 10-atom cell, G-type, PBE+U (**to confirm**: the U values were not
+supplied); 7x7x7, ENINI 600, ENCUT 700, ISMEAR 0, SIGMA 0.08. Directions
+d1 = [1 1 1] (the polar axis) and d2 = [1 -1 0] (basal). `dmi plan`: group 161,
+6 of 6 operations kept, `p_D 1  p_A 2  n_twist 0`.
+
+| Direction | t (1/Å) | g (meV per Fe) | g/t² (meV Å²) |
+|---|---|---|---|
+| d1 | 0.03 | 0.4332 | 481.4 |
+| d1 | 0.06 | 1.1901 | 330.6 |
+| d1 | 0.09 | 2.2628 | 279.4 |
+| d2 | 0.03 | 0.3653 | 405.9 |
+| d2 | 0.06 | 1.0246 | 284.6 |
+| d2 | 0.09 | 1.9177 | 236.8 |
+
+`dmi fit`: A eigenvalues 337.7, 337.7, 390.7 meV Å² (the form symmetry
+requires); Fit A FAIL at d1_t1, residual +0.0928 meV, bound 0.0234 meV;
+sigma_g 2.66e-7 eV (6 pairs). An insulator shows the same misfit as Fe, so it
+is not a metal effect.
+
+### Reviewer's analysis
+
+**Model fits.** Least squares of g = c t + A t² (+ B t⁴):
+
+| Data | c (meV Å) | A (meV Å²) | B (meV Å⁴) | Worst residual (meV) |
+|---|---|---|---|---|
+| Fe 8x8x8, Gaussian 0.05 (7 points) | 16.7 | 192 | -388 | 0.04 |
+| Fe 8x8x8, Methfessel-Paxton 0.2 (7 points) | 17.0 | 199 | -451 | 0.08 |
+| BFO d1, from t = 0.03 and 0.06 | 9.0 | 180 | — | predicts g(0.09) = 2.268 meV against 2.2628 measured |
+| BFO d2 | about 7 | about 165 | — | about 0.06 |
+
+So every PBE scan is a physically sensible quadratic term plus a spurious term
+linear in |q|. Fe: 4A/M ≈ 335 meV Å² (experiment about 280 to 314). BFO: the
+experimental J = 4.4 meV with S = 5/2 gives about 215 meV Å² (the reviewer's
+estimate).
+
+**Explanation.** Confirmed for Fe by run 2; **not yet tested for BFO**. The
+mechanism is the reviewer's inference: no paper was found that reports this |q|
+artifact in spiral energies.
+
+VASP's noncollinear GGA is locally collinear: n_up/down = (n ± |m|)/2, with
+gradients of |m| only. Where m changes sign in space (the interstitial of Fe;
+between the sublattices of an antiferromagnet), a spiral adds a transverse
+component m_perp proportional to q, and grad|m| collapses in a thin layer. With
+m_x = γz, the integral of [γ² - (d|m|/dz)²] dz is π γ |m_perp|, linear in |q|.
+LDA depends on |m|², which is smooth, and has no such term.
+
+It accounts for:
+
+- the same misfit in a metal and an insulator;
+- independence of the k mesh, the smearing and the number of bands;
+- small shifts with PREC and the cutoffs, largest at the smallest t, where the
+  layer is thinner than the FFT grid spacing;
+- no excess at 2.2e-4 1/Å;
+- E(q) = E(-q);
+- the direction dependence in BFO.
+
+**Literature** (as supplied by the reviewer; not checked in this session):
+
+- arXiv 2608.22464: VASP's locally collinear GGA does "not capture the
+  transverse spin gradients".
+- arXiv 2110.09897: the direction of m at m = 0 is "ill-defined, causing
+  numerical singularities"; "a general cure within the locally collinear
+  approach is unknown".
+- arXiv cond-mat/0612604 (Peralta, Scuseria, Frisch).
+- arXiv 2510.11603: VASP spirals for Fe use LDA, D = 220, smallest q about
+  0.2 1/Å.
+
+**Two side findings.**
+
+1. The parity sigma cannot detect SCF non-convergence, because the +q and -q
+   runs follow mirror-image iteration paths. The September sample OSZICARs stop
+   while the energy still drifts by about 1e-7 eV per step.
+2. The VASP wiki's spiral recipe restarts every q from one converged density
+   (`ICHARG = 1`); this pipeline starts each run from scratch.
+
 ## Open question
 
-g/t² rises without levelling off as t falls from 0.30 to 0.02 1/Å, and g grows
-with an exponent near 1.3 at the smallest t. The excess over a quadratic is
-independent of the k mesh, the FFT precision, the spiral cutoffs, the number
-of bands and the smearing, and it is absent at 2.2e-4 1/Å (no jump at q = 0).
-For the cutoffs the evidence is A only, at 8x8x8; the residuals at the old
-cutoffs were not recorded.
-
-The cause is not identified. One untested physical candidate is non-analytic
-structure of E(q) at small q in a metal with exchange-split Fermi surfaces.
-This has not been checked against the literature.
+Resolved for Fe: the non-quadratic term is an artifact of PBE in VASP's locally
+collinear treatment. Open: the same test for BFO (an LDA+U two-direction tree),
+and whether D under PBE is affected (the artifact is even in q; the BFO dumps
+and Fit D will show).
 
 ## Verdict
 
 - **Gate 2 machinery: pass** (unchanged). The dumps, the readers, the trace,
   C0 handedness, N0, the null at every q, I0, P0 and E0 pass on real VASP files.
-- **A for Fe: non-quadratic over the accessible q range; not understood; not
-  usable.** The Fit check (D-026) flags it on every tree.
-- The Fe investigation is closed by the user's decision of 2026-11-17. Next is
-  TEN-07 (BFO, an insulator), where the Fit check shows directly whether E(q)
-  is quadratic.
+- **A for Fe with LDA at 10x10x10: 182.5 meV Å², Fit A pass.** The absolute
+  value is not final: the mesh is not converged, the functional is LDA on a PBE
+  POTCAR, and the lattice constant is PBE's.
+- **A for Fe with PBE: not usable**, for the reason above (D-027). The Fit
+  check (D-026) flags it on every PBE tree.
 
 Not covered by this pilot:
 
 - the trace sign, which needs D ≠ 0 (TEN-07);
 - Forbidden, which needs three directions;
 - M1 for this build, until the user confirms the build;
-- A for Fe (above).
+- a converged A for Fe.
 
-## Implication for metals
+## Implication for other materials
 
-FeGe and Mn2RhSn (TEN-08, TEN-09) are metals, so the quadratic model may fail
-there too. The Fit check is the guard, and the t range and the settings need
-care.
+The 18 November BFO scan shows the misfit in an insulator, so it is not limited
+to metals. By the mechanism above, any material where m changes sign in space
+can show it under PBE, so FeGe and Mn2RhSn (TEN-08, TEN-09) may be affected
+too; this is untested. The Fit check is the guard; which functional is used in
+production is the user's decision (D-027, D-019).
 
 ## Bugs found by the pilot
 
