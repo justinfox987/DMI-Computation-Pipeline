@@ -5,7 +5,12 @@ Physics authority: `docs/math/heide_math_v3.tex` (Revision 3.2), Sections 3, 4,
 `plans/ten-05-tensors.md`, as merged with cleanup 1 (`b082893`). Seed format:
 `docs/seed_file.md`. Input ownership: D-019 (pending on `incar-user-settings`).
 
-Status: approved by the user on 2026-11-13. Drafted 2026-11-09, revised with
+Status: done 2026-11-17. Gate 2 machinery passed on fe-k12. A for Fe under PBE
+is non-quadratic in q, an artifact of VASP's locally collinear GGA (D-027,
+2026-11-18); an LDA control gives A = 182.5 meV Å² with Fit A passing, not
+final. The 24x24x24 diagnostic in "As run" gave no recorded result
+([evidence](../evidence/2026-11-17-fe-ten06-pilot/README.md)).
+Approved by the user on 2026-11-13. Drafted 2026-11-09, revised with
 the user's answers, and revised again on 2026-11-11 for D-020 to D-023
 (`plans/simplify-1.md`). FIX-1, SIM-1a and SIM-1b are merged. The trace has VASP's sign, the dump readers accept a smeared
 metal, `dmi fit` traces and checks the tree itself, and `dmi plan

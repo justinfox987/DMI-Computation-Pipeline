@@ -95,6 +95,9 @@ the rank test of Section~\ref{sec:fit} is on the geometry alone, with two
 magnitudes per direction. Amended 17 November 2026 (D-026): Section~\ref{sec:checks}
 gains the Fit check on the residual of each tensor solve, and
 Section~\ref{sec:fit} states that the parity $\sigma$ does not measure model error.
+Amended 18 November 2026 (D-027): Section~\ref{sec:checks} warns that VASP's
+locally collinear GGA adds a term linear in $|q|$ to $g$ wherever $\vct m$
+changes sign, so the quadratic model fails under PBE.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -967,6 +970,22 @@ still reported. On the bcc Fe pilot at $12^3$ $k$ points, $g/t^2$ was $519$,
 $355$ and $282$~meV\,\AA$^2$ at $t=0.05$, $0.10$, $0.15$~\AA$^{-1}$; the fit gave
 $A=433.04\pm0.04$~meV\,\AA$^2$ while missing the smallest $t$ by $0.26$~meV,
 four times the bound of $0.064$~meV.
+
+\emph{Locally collinear GGA} (amended 18 November 2026, D-027). VASP evaluates
+the noncollinear GGA in the local spin frame, $n_{\uparrow,\downarrow}=(n\pm|\vct m|)/2$,
+with gradients of $|\vct m|$ only. Where $\vct m$ changes sign in space (the
+interstitial of Fe, between the sublattices of an antiferromagnet), a spiral
+adds a transverse component $m_\perp\propto q$, and $\nabla|\vct m|$ collapses in
+a thin layer. For $m_x=\gamma z$,
+\[
+ \int\Bigl[\gamma^2-\bigl(\partial_z|\vct m|\bigr)^2\Bigr]dz=\pi\gamma\,|m_\perp|,
+\]
+so $g$ gains a term linear in $|q|$ and the series of Section~\ref{sec:fit} fails
+under PBE in VASP. LDA depends on $|\vct m|^2$, which is smooth, and has no such
+term. The Fit check detects it: on bcc Fe at $10^3$ $k$ points, PBE fails
+(residual $0.076$~meV, bound $0.042$~meV) and LDA passes (worst residual
+$0.0025$~meV, bound $0.017$~meV, $A=182.5$~meV\,\AA$^2$). The mechanism is an
+inference, confirmed for Fe by that LDA control and not yet tested for BFO.
 
 \item[Cross-check: do the two stiffness routes agree?]
 Compare Eq.~\eqref{eq:afit} with Eq.~\eqref{eq:acheck}, once exchange classes
