@@ -985,7 +985,8 @@ under PBE in VASP. LDA depends on $|\vct m|^2$, which is smooth, and has no such
 term. The Fit check detects it: on bcc Fe at $10^3$ $k$ points, PBE fails
 (residual $0.076$~meV, bound $0.042$~meV) and LDA passes (worst residual
 $0.0025$~meV, bound $0.017$~meV, $A=182.5$~meV\,\AA$^2$). The mechanism is an
-inference, confirmed for Fe by that LDA control and not yet tested for BFO.
+inference, confirmed for Fe by that LDA control and for BFO by an LDA$+U$
+control, where the Fit check passes for $A$ and $\Dt$.
 
 \item[Cross-check: do the two stiffness routes agree?]
 Compare Eq.~\eqref{eq:afit} with Eq.~\eqref{eq:acheck}, once exchange classes
