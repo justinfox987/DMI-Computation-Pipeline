@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-18 UTC, at BFO-EV1 on branch `bfo-ev1` ([log](docs/sessions/2026-11-18_1922Z-agent-bfo-ev1.md)).
+**Last reconciled:** 2026-11-19 UTC, at TEN-07 approval on branch `ten-07-approve` ([log](docs/sessions/2026-11-19_2011Z-agent-ten-07-approve.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -18,16 +18,16 @@ Fit check with `A = 182.5 meV A^2` (not final)
 ([evidence](evidence/2026-11-17-fe-ten06-pilot/README.md)). A BFO LDA+U
 diagnostic confirms the artifact for BFO and passes Fit A and Fit D, with D
 antisymmetric, 2.3446 meV Å per Fe ([evidence](evidence/2026-11-18-bfo-lda-diagnostic/README.md)). The user chose LSDA+U throughout for
-production (D-028). The TEN-07 spec is drafted and awaits approval.
+production (D-028). The TEN-07 spec was approved on 2026-11-19; it waits for
+the user's LSDA+U inputs.
 
-**Integration branch / base commit:** `main` at `138c3c0`, the PR #24 merge (FIT-1). PRs #15 to #24 are merged. Tag
+**Integration branch / base commit:** `main` at `96a6c96`, the PR #26 merge (BFO-EV1). PRs #15 to #26 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `bfo-ev1` (stacked on `ten-06-evidence`,
-PR #25), the BFO LDA+U evidence record, D-028, the M1 confirmation and the
-TEN-07 draft spec (BFO-EV1, docs only); done and awaiting review.
+**Handoff owner / scope:** Claude / `ten-07-approve`, the TEN-07 spec status
+and Gate 3 tolerance (docs only); done and awaiting review.
 One writer per branch.
 
 ## Established
@@ -70,7 +70,7 @@ No trace with D ≠ 0 has been measured, so the sign is untested.
 | SIM-1a | Recompute from VASP files, M1 to `acceptance/m1.py`, handedness in C0, lean OSZICAR reader (D-021) | Done; [spec](plans/simplify-1.md) items 2.2, 2.3, 2.4, 2.6 | Merged in PR #19, `22a0110` | D, A, F and the pitch agree with `main` to 5e-16 meV; 14 tests ([log](docs/sessions/2026-11-11_2109Z-agent-sim-1a-recompute.md)) |
 | SIM-1b | INCAR overrides and the tetrahedron rule (D-022); single-solve fit with parity noise (D-023); `exchange_grid` and `rmax` out of the seed (D-025); energies-only trees | Done, merged in PR #20, `e514eed`; [spec](plans/simplify-1.md) items 2.5, 2.7, 2.9, 2.10 | Claude / `sim-1b-incar-fit` | D_free, D, F and A agree with the two-step fit to 3e-14 relative on the spin models and 1e-15 on the old chain tree; Forbidden bound with 1% floor and geometry-only rank test (D-023 amended); 15 tests ([log](docs/sessions/2026-11-11_2255Z-agent-sim-1b-incar-fit.md)) |
 | TEN-06 | bcc Fe F0 pilot at lambda 0 | Done 2026-11-17. [Spec](plans/ten-06-fe-pilot.md); code merged in PR #21, `2e0ec61`. Gate 2 machinery passes on fe-k12; the non-quadratic PBE `A` is a locally collinear GGA artifact (D-027); LDA gives 182.5 meV Å² with Fit A pass, not final ([evidence](evidence/2026-11-17-fe-ten06-pilot/README.md)) | Claude / `ten-06-fe-pilot` (code), `ten-06-evidence` (record); the user (runs) | **Gate 2:** T near zero on all axes, plausible A, first wall times |
-| TEN-07 | BFO production tree with LSDA+U (D-028): Stage A three directions, Stage B mesh check of D, Stage C U sensitivity | [Spec](plans/ten-07-bfo.md) drafted 2026-11-18, awaiting approval | Unassigned | **Gate 3:** Stage A passes (C0, N0, I0, P0, E0, Fit A, Fit D, Forbidden) and Stage B changes D within the user's tolerance |
+| TEN-07 | BFO production tree with LSDA+U (D-028): Stage A three directions, Stage B mesh check of D, Stage C U sensitivity | [Spec](plans/ten-07-bfo.md) approved by the user 2026-11-19; waits for the LSDA+U inputs | Unassigned | **Gate 3:** Stage A passes (C0, N0, I0, P0, E0, Fit A, Fit D, Forbidden) and Stage B changes D by less than 5% |
 | TEN-07b | Sign anchor: strained CrSb supercell control (D-020) | Spec to write | Unassigned | Supercell SOC energies confirm the sign and magnitude of D |
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
@@ -85,18 +85,22 @@ separate a code fault from physics before spending more runs.
 
 ## Immediate next action
 
-1. Review and merge `ten-06-evidence` (PR #25), then `bfo-ev1`.
-2. The user prepares the LSDA+U production inputs under `materials/bfo/`
-   (D-028): potpaw_LDA datasets with `POTCAR.spec`, U, J and `LDAUTYPE`,
-   structure, cutoffs, mesh.
-3. The user approves or revises the [TEN-07 spec](plans/ten-07-bfo.md),
-   including the Stage B tolerance and how Stages B and C are built.
-4. Stage A (the user runs it).
-5. Add the BFO diagnostic's `tensors.json`, `traces.json`, `collected.json`,
-   `plan.json` and `fit.log` to its evidence folder.
-6. Optional, for the Fe record: the fe-k12 JSON reports, `q0/dump_P/COCC.dat`,
-   `dump_C/CSO.dat`, `hashes.txt`, the job resources, the wall times and the
-   build banner and SHA-256.
+1. The user supplies the LSDA+U production inputs for `materials/bfo/`
+   (D-028): POSCAR, INCAR, KPOINTS, `seed.toml`, and the POTCAR TITELs and
+   SHA-256 sums for `POTCAR.spec`. They are committed as given, with no POTCAR,
+   and `dmi plan materials/bfo/seed.toml` must show group 161, 6 of 6 kept,
+   `p_D 1  p_A 2`, 19 runs.
+2. Stage A of [TEN-07](plans/ten-07-bfo.md) on Perlmutter (the user runs it).
+
+Also outstanding, for the records:
+
+- How Stages B and C are built (hand-made decks or full trees; TEN-07 spec,
+  "Known limit"), before Stage B.
+- Add the BFO diagnostic's `tensors.json`, `traces.json`, `collected.json`,
+  `plan.json` and `fit.log` to its evidence folder.
+- Optional, for the Fe record: the fe-k12 JSON reports, `q0/dump_P/COCC.dat`,
+  `dump_C/CSO.dat`, `hashes.txt`, the job resources, the wall times and the
+  build banner and SHA-256.
 
 `run.sh` and `run_dumps.sh` (SEQ-1) may replace `submit.sh` and
 `submit_dumps.sh` when one allocation is wanted.
