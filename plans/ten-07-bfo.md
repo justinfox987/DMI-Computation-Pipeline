@@ -1,7 +1,7 @@
 # TEN-07 spec: BFO production tree with LSDA+U (Gate 3)
 
-**Status: DRAFT for the user's approval** (written 2026-11-18 on branch
-`bfo-ev1`). No code in this task.
+**Status: Approved by the user 2026-11-19.** Drafted 2026-11-18 on branch
+`bfo-ev1`; approved with the Gate 3 tolerance set to 5%. No code in this task.
 
 Physics authority: `docs/math/heide_math_v3.tex` (Revision 3.2, amended
 18 November 2026), Sections 3, 4, 8, 9, 10 and 11. Functional: D-028 (LSDA+U
@@ -54,8 +54,8 @@ directions are not coplanar. The production POSCAR must give the same result.
 
 ## Gate 3
 
-Stage A passes, and Stage B changes D by less than **[tolerance: the user
-sets it]**.
+Stage A passes, and Stage B changes D by less than 5% (the user's tolerance,
+2026-11-19).
 
 ## TEN-07b: sign anchor (separate task)
 
@@ -75,7 +75,8 @@ The code writes whole trees only:
 
 So Stages B and C need either hand-made decks copied from Stage A's run
 directories, with y and g compared outside `fit`, or a full tree at the
-denser mesh or other U. **Open for the user:** which of the two.
+denser mesh or other U. **Open for the user:** which of the two (not settled
+by the approval of 2026-11-19).
 
 ## Evidence record
 
