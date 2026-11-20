@@ -60,6 +60,66 @@ exits 1 if any run failed. Its limits: the time limit covers the whole sequence;
 a run cut off mid-SCF is redone from scratch on the next start; and one slow run
 delays the rest.
 
+### Several runs at once in one job (`--slots`, PACK-1)
+
+```bash
+dmi prepare materials/fe/seed.toml --job scf.sh --out RUNS --slots 4 [--max-time HH:MM:SS]
+dmi dumps   RUNS --job patchb.sh --slots 4 [--max-time HH:MM:SS]
+```
+
+With `--slots`, `prepare` also writes `pack.sh` and `dumps` writes
+`pack_dumps.sh`, over the same list. Without it nothing changes. Start it from
+the run directory with `sbatch pack.sh`.
+
+**The job script describes one run.** Its `#SBATCH` header must set `--nodes`
+and `--time` for one run, and may set `--gpus`. Its body must size `srun` from
+`$DMI_RUN_NODES` and pass `--exact`, for example:
+
+```bash
+gpus=$((4 * DMI_RUN_NODES))
+srun --nodes="$DMI_RUN_NODES" --gpus="$gpus" --ntasks="$gpus" --exact ... "$vasp" &> output.log
+```
+
+A body that sizes `srun` from `SLURM_JOB_NUM_NODES` would take the whole
+allocation, so a body that does not mention `DMI_RUN_NODES` and `--exact` is
+refused.
+
+**The pack header.** `--nodes` and `--gpus` are multiplied by the slots. `--time`
+is the per-run time multiplied by the rounds, ceil(runs / slots). For example,
+31 runs at `--nodes=4 --gpus=16 --time=00:30:00` with 4 slots give
+`--nodes=16 --gpus=64 --time=04:00:00`.
+
+- Every other header line is copied unchanged. A per-allocation total such as
+  `--ntasks` or `--mem` is not scaled, so give it per node or leave it out.
+- Times may be written `MM`, `MM:SS`, `HH:MM:SS` or `D-HH:MM:SS`.
+- `--max-time` refuses a pack whose total time exceeds it.
+- More slots than runs uses one slot per run.
+
+**The pack body.** For each listed directory in order, it skips a finished run
+(the same OUTCAR footer rule as `run.sh`). Otherwise it starts the job body
+there in the background, with stdin from `/dev/null`. When all slots are busy
+it waits for one to finish, and it starts runs 1 s apart. It prints `run`,
+`skip`, `done` and `failed <name> (exit N)`. It waits for every run, and exits 1
+if any failed. Slurm places each `srun` step; no node names are passed. It needs
+bash 4.3 or later (`wait -n`).
+
+**Which script to use:**
+
+| Script | Suits |
+|---|---|
+| `submit.sh` (array) | a queue that starts small jobs quickly; each run waits in the queue on its own |
+| `run.sh` (sequence) | a few runs, or an interactive `salloc`; no idle nodes, but the runs take turns |
+| `pack.sh` (pack) | many similar runs in one queued job, several at a time |
+
+**Limits of the pack.**
+
+- The time limit is the rounds times the per-run limit, so the per-run
+  `--time` must cover the slowest run.
+- Idle slots in the last round are still charged.
+- A run cut off by the limit is redone from scratch on the next submission.
+- Concurrent GPU steps with `--exact` inside one allocation are untested on
+  Perlmutter until the first real pack runs.
+
 `--out` is required because the seed holds no paths. There is no `status`
 command: `collect` prints one line per run (D-013). Every command reads the VASP
 files again; `collected.json`, `traces.json` and `tensors.json` are reports that

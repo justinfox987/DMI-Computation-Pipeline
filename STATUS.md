@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-19 UTC, at TEN-07 approval on branch `ten-07-approve` ([log](docs/sessions/2026-11-19_2011Z-agent-ten-07-approve.md)).
+**Last reconciled:** 2026-11-20 UTC, at PACK-1 on branch `pack-1` ([log](docs/sessions/2026-11-20_2122Z-agent-pack-1.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -21,13 +21,13 @@ antisymmetric, 2.3446 meV Å per Fe ([evidence](evidence/2026-11-18-bfo-lda-diag
 production (D-028). The TEN-07 spec was approved on 2026-11-19; it waits for
 the user's LSDA+U inputs.
 
-**Integration branch / base commit:** `main` at `96a6c96`, the PR #26 merge (BFO-EV1). PRs #15 to #26 are merged. Tag
+**Integration branch / base commit:** `main` at `a1735be`, the PR #27 merge (TEN-07 approval). PRs #15 to #27 are merged. Tag
 `archive/bond-dmi-v3` marks `490a4e1`, the last pre-pivot commit. From TEN-02 on,
 each task gets its own branch from `main`, and the user merges each pull request.
 `feat/spiral-tensors` is retired once this handoff merges.
 
-**Handoff owner / scope:** Claude / `ten-07-approve`, the TEN-07 spec status
-and Gate 3 tolerance (docs only); done and awaiting review.
+**Handoff owner / scope:** Claude / `pack-1`, `--slots` and the pack scripts
+(PACK-1, code, tests and docs); done and awaiting review.
 One writer per branch.
 
 ## Established
@@ -75,6 +75,7 @@ No trace with D ≠ 0 has been measured, so the sign is untested.
 | TEN-08 | BFO FLEUR match, FeGe k series, twist test | Pending Gate 3 | Unassigned | **Gate 4:** agreement with FLEUR within stated error |
 | TEN-09 | Mn2RhSn, exchange grids, BFO U scan | Pending Gate 4 | Unassigned | Tensor and prediction table |
 | SEQ-1 | `run.sh` and `run_dumps.sh`: the same run list one directory at a time in one allocation, skipping finished runs | Done, [spec](plans/seq-1-run-sequence.md) approved 2026-11-16; merged in PR #22, `9a9fc2b` | Claude / `seq-1-run-sequence` | 15 tests; `run.sh` executed on a small tree: finished run skipped, failure does not stop the loop, list order kept ([log](docs/sessions/2026-11-16_1921Z-agent-seq-1-run-sequence.md)) |
+| PACK-1 | `--slots` on `prepare` and `dumps`: `pack.sh` and `pack_dumps.sh` keep several runs going in one batch job | Done on `pack-1`, [spec](plans/pack-1.md), design approved 2026-11-20; awaiting review | Claude / `pack-1` | 15 tests; `pack.sh` executed on a small tree (never more than 2 slots, finished run skipped, failure does not stop the others, each unfinished run once); mutations of the slot limit and the skip caught ([log](docs/sessions/2026-11-20_2122Z-agent-pack-1.md)). Concurrent GPU steps with `--exact` untested on Perlmutter |
 | FIX-2 | `trace_run` no longer compares NELECT, which the real Patch B `CSO.dat` does not print; `write_cso` fixtures match the real header | Done; found by the Fe pilot 2026-11-17; merged in PR #23, `2ceb27f` | Claude / `fix-2-cso-nelect` | 15 tests; the command-chain and Fe pilot tests run `dmi fit` on a CSO with no NELECT line and failed with the field `TypeError` before the fix ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)) |
 | FIT-1 | Fit check on every tensor solve (D-026); TEN-06 evidence record | Done, [spec](plans/fit-1-model-check.md) approved 2026-11-17; merged in PR #24, `138c3c0` | Claude / `fit-1-model-check` | 15 tests; the real fe-k12 energies fail `Fit A` at d1_t1 (+0.258 meV against 0.064 meV) and `fit` exits 1; spin models pass; 3 mutations caught ([log](docs/sessions/2026-11-17_1855Z-agent-fit-1-model-check.md)) |
 | ANI-1 | Anisotropy module (D-024) | Deferred until the spiralization tensor works; [spec](plans/anisotropy-1.md) approved | Unassigned | Known surface recovered; A1 to A5 on a first real tree |
@@ -103,7 +104,11 @@ Also outstanding, for the records:
   build banner and SHA-256.
 
 `run.sh` and `run_dumps.sh` (SEQ-1) may replace `submit.sh` and
-`submit_dumps.sh` when one allocation is wanted.
+`submit_dumps.sh` when one allocation is wanted, and `pack.sh` and
+`pack_dumps.sh` (PACK-1, `--slots`) run several at once in one job. The pack
+needs a one-run job script whose `srun` uses `$DMI_RUN_NODES` and `--exact`
+(`docs/seed_file.md`). The local, untracked `materials/fe/job.sh` sizes `srun`
+from `SLURM_JOB_NUM_NODES`, so `--slots` refuses it as it stands.
 
 `dmi plan materials/fe/seed.toml` runs on the committed inputs: group 229, 96
 operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
@@ -111,6 +116,9 @@ operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
 
 ## Unresolved inputs
 
+- Concurrent GPU `srun` steps with `--exact` inside one allocation (PACK-1):
+  untested until the user runs a `pack.sh` on Perlmutter. The Perlmutter bash
+  version (the pack needs 4.3 or later for `wait -n`) is also unchecked.
 - Whether the remote should be public. It was served to an anonymous clone on
   2026-11-02, while earlier documents assume a private repository. No POTCAR,
   WAVECAR or VASP source files are tracked.
