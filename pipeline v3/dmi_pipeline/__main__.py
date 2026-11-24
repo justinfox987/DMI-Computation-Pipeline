@@ -12,9 +12,10 @@ from . import spiral, tensors
 
 COMMANDS = {
     "plan": "Print the symmetry summary and the checked q plan; writes nothing",
-    "prepare": "Write every F0 run, runs.txt, submit.sh and run.sh; submits nothing",
+    "prepare": "Write every F0 run, runs.txt, submit.sh and run.sh (and pack.sh with --slots); submits nothing",
     "collect": "Print one status line per run; writes collected.json as a report",
-    "dumps": "Write dump_C, every ok run's dump_P, submit_dumps.sh and run_dumps.sh; submits nothing",
+    "dumps": "Write dump_C, every ok run's dump_P, submit_dumps.sh and run_dumps.sh "
+             "(and pack_dumps.sh with --slots); submits nothing",
     "fit": "Trace every ok run, apply C0, N0, I0, P0 and E0, fit D and A, check the forbidden "
            "part and predict the spiral; writes traces.json and tensors.json",
 }
@@ -42,12 +43,16 @@ def plan_lines(summary) -> list[str]:
 
 def run(args) -> int:
     """Run one command; the exit code is 1 when any run or check fails."""
+    if getattr(args, "max_time", None) is not None and args.slots is None:
+        raise ValueError("--max-time applies to the pack script; give --slots too")
+    pack = "" if getattr(args, "slots", None) is None else " or sbatch {} ({} at a time)"
     if args.command in ("plan", "prepare"):
         seed = spiral.load_seed(args.seed)
         print("\n".join(plan_lines(spiral.plan(seed))))
         if args.command == "prepare":
-            runs = spiral.prepare(seed, args.out, args.job)
-            print(f"wrote {len(runs)} runs; submit from {args.out} with: sbatch submit.sh (array) or sbatch run.sh (one at a time)")
+            runs = spiral.prepare(seed, args.out, args.job, args.slots, args.max_time)
+            print(f"wrote {len(runs)} runs; submit from {args.out} with: sbatch submit.sh (array) or "
+                  f"sbatch run.sh (one at a time)" + pack.format("pack.sh", args.slots))
         return 0
     if args.command == "collect":
         results = spiral.collect(args.out)
@@ -55,10 +60,11 @@ def run(args) -> int:
             print(f"{name:16} {value.get('error', 'ok')}")
         return 0 if all("error" not in value for value in results.values()) else 1
     if args.command == "dumps":
-        dumps, skipped = spiral.prepare_dumps(args.out, args.job)
+        dumps, skipped = spiral.prepare_dumps(args.out, args.job, args.slots, args.max_time)
         for name, error in skipped.items():
             print(f"{name:16} no dump: {error}")
-        print(f"wrote {len(dumps)} dumps; submit from {args.out} with: sbatch submit_dumps.sh (array) or sbatch run_dumps.sh (one at a time)")
+        print(f"wrote {len(dumps)} dumps; submit from {args.out} with: sbatch submit_dumps.sh (array) or "
+              f"sbatch run_dumps.sh (one at a time)" + pack.format("pack_dumps.sh", args.slots))
         return 0
     report = tensors.fit(args.out)
     print("\n".join(report["lines"]))
@@ -74,6 +80,9 @@ def main(argv=None) -> int:
         if name in ("prepare", "dumps"):
             sub.add_argument("--job", type=Path, required=True,
                              help="Slurm template that runs VASP in its directory (Patch B build for dumps)")
+            sub.add_argument("--slots", type=int,
+                             help="also write a pack script that keeps this many runs going in one job")
+            sub.add_argument("--max-time", help="refuse a pack whose total --time exceeds this")
         if name == "prepare":
             sub.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)

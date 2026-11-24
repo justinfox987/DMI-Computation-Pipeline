@@ -166,7 +166,7 @@ def test_command_chain(tmp_path, capsys):
         for big in ("WAVECAR", "CHGCAR"):
             (out / name / big).write_bytes(b"synthetic " + name.encode())
     assert main(["collect", str(out)]) == 0
-    assert main(["dumps", str(out), "--job", str(job)]) == 0
+    assert main(["dumps", str(out), "--job", str(job), "--slots", "4"]) == 0
 
     # Section 5 decks: one z-axis CSO dump from q0's CHGCAR, and a COCC-only dump_P per run.
     assert (out / "dumps.txt").read_text().split() == ["dump_C"] + [f"{n}/dump_P" for n in names]
@@ -174,6 +174,9 @@ def test_command_chain(tmp_path, capsys):
     sequence = (out / "run_dumps.sh").read_text()
     assert "--array" not in sequence and 'done 3< "$root/dumps.txt"' in sequence and spiral.FINISHED in sequence
     assert subprocess.run(["bash", "-n", str(out / "run_dumps.sh")]).returncode == 0
+    packed = (out / "pack_dumps.sh").read_text()                 # 20 dumps in 4 slots: 5 rounds
+    assert packed.startswith("#!/bin/bash\n#SBATCH -N 4\n#SBATCH -t 02:30:00\n") and 'names < "$root/dumps.txt"' in packed
+    assert subprocess.run(["bash", "-n", str(out / "pack_dumps.sh")]).returncode == 0
     tags = incar(out / "dump_C" / "INCAR")
     assert (tags["LSORBIT"], tags["ISTART"], tags["ICHARG"], tags["SAXIS"]) == ("T", "0", "11", "0 0 1")
     assert not set(tags) & set(spiral.SPIRAL_ONLY) and tags["MAGMOM"] == incar(out / "q0" / "INCAR")["MAGMOM"]
