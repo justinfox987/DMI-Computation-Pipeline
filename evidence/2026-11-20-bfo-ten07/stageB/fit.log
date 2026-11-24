@@ -1,0 +1,9 @@
+C0  pass
+q0                       T = +1.161e-08 +2.873e-09 -9.833e-08 eV
+d2_t3_plus               T = +2.600e-04 +1.501e-04 -5.962e-07 eV
+d2_t3_minus              T = -2.600e-04 -1.501e-04 +2.467e-07 eV
+N0  pass
+Null  not applicable: inversion is not kept
+P0  d2_t3        pass
+E0  d2_t3        pass
+fit refused: failed P0 d2, E0 d2

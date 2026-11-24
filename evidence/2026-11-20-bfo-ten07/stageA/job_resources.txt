@@ -1,0 +1,8 @@
+#SBATCH --job-name=fe
+#SBATCH --qos=regular
+#SBATCH --constraint=gpu
+#SBATCH --nodes=4
+#SBATCH --exclusive
+#SBATCH --gpus=16
+#SBATCH --time=00:30:00
+#SBATCH --cpus-per-task=32

@@ -39,6 +39,7 @@ WAVECAR*
 CHGCAR*
 POTCAR*
 !POTCAR.spec
+!POTCAR.info
 !POTCAR.sha256
 !POTCAR.hashes
 vasp_std

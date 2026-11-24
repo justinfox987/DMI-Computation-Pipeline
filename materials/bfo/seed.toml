@@ -1,0 +1,6 @@
+sites = [1,2]        # POSCAR indices of the two Fe
+signs = [1, -1]                 # G-type
+moments = [4.14, 4.14]            # your call
+t = [0.03, 0.05, 0.07, 0.09, 0.12]          # 1/Å, TEN-07 Stage A (five magnitudes)
+spacegroup = 161                # R3c
+directions = [[1, 1, 1], [1, -1, 0],[1,0,0]]   # axis, basal, oblique (rhombohedral setting)
