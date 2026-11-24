@@ -12,7 +12,8 @@ import numpy as np
 import pytest
 
 from dmi_pipeline.dumpio import load_cocc, load_cso
-from tests.fixtures import make_clean_cso, write_cocc, write_cso, write_fake_dump
+from dmi_pipeline.trace import trace_run
+from tests.fixtures import COCC_PRE, make_clean_cso, write_cocc, write_cso, write_fake_dump
 
 M1 = Path(__file__).resolve().parents[2] / "acceptance" / "m1.py"
 _spec = importlib.util.spec_from_file_location("m1", M1)
@@ -27,6 +28,10 @@ def test_cso_and_cocc_readers(tmp_path):
     assert load_cso(write_cso(tmp_path / "CSO.dat", cso)).matrix == pytest.approx(cso, abs=0)
     with pytest.raises(ValueError, match="SAXIS"):            # dump_C is the z dump only
         load_cso(write_cso(tmp_path / "CSO_x.dat", cso, saxis=(1.0, 0.0, 0.0)))
+    # A dump_P COCC loads (M1 needs it), but the trace takes only the SCF's own dump (D-030).
+    assert load_cocc(paths.cocc_path).metadata.label == COCC_PRE
+    with pytest.raises(ValueError, match="needs the SCF's own 'POST_LOOP final CPROJ' dump"):
+        trace_run(tmp_path, load_cso(tmp_path / "CSO.dat"))
 
 
 def test_m1_script(tmp_path):
@@ -37,10 +42,10 @@ def test_m1_script(tmp_path):
 
     matrix = paths.cocc.copy()
     matrix[[1, 2]] = matrix[[2, 1]]                          # flip blocks in the wrong order
-    write_cocc(paths.cocc_path, matrix, nelect=4.0)
+    write_cocc(paths.cocc_path, matrix, nelect=4.0, label=COCC_PRE)
     assert m1.m1(tmp_path)[0] > m1.TOL
 
-    write_cocc(paths.cocc_path, paths.cocc, nelect=4.0)
+    write_cocc(paths.cocc_path, paths.cocc, nelect=4.0, label=COCC_PRE)
     data = paths.cproj_paths[0].read_bytes()
     record = 3 * 4 + 4 * 8 + 2 * 2 * 3 * 16                  # (NK, BAND, ISP), W, EIG (complex), F, CPROJ
     paths.cproj_paths[0].write_bytes(data + data[-record:])

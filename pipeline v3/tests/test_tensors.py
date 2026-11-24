@@ -151,8 +151,8 @@ def test_predictions():
 def test_command_chain(tmp_path, capsys):
     """prepare, collect, dumps and fit on a BFO tree whose VASP files hold spin-model values.
 
-    OUTCAR energies and COCC traces reproduce Eq (6.2), so fit must return the Eq (6.3)
-    tensors; fit reads only these files (D-021).
+    OUTCAR energies and each run's own COCC reproduce Eq (6.2), so fit must return the
+    Eq (6.3) tensors; fit reads only these files (D-021, D-030).
     """
     path, out, job = material(tmp_path, SEED.replace("0.03, 0.06, 0.09", "0.005, 0.01, 0.015")), tmp_path / "runs", tmp_path / "job.sh"
     assert main(["prepare", str(path), "--job", str(job), "--out", str(out)]) == 0
@@ -166,28 +166,22 @@ def test_command_chain(tmp_path, capsys):
         for big in ("WAVECAR", "CHGCAR"):
             (out / name / big).write_bytes(b"synthetic " + name.encode())
     assert main(["collect", str(out)]) == 0
-    assert main(["dumps", str(out), "--job", str(job), "--slots", "4"]) == 0
+    assert main(["dumps", str(out), "--job", str(job)]) == 0
 
-    # Section 5 decks: one z-axis CSO dump from q0's CHGCAR, and a COCC-only dump_P per run.
-    assert (out / "dumps.txt").read_text().split() == ["dump_C"] + [f"{n}/dump_P" for n in names]
+    # Section 5: the one dump is the z-axis CSO from q0's CHGCAR. No run gets a dump_P.
+    assert (out / "dumps.txt").read_text().split() == ["dump_C"] and not list(out.glob("*/dump_P"))
     assert subprocess.run(["bash", "-n", str(out / "submit_dumps.sh")]).returncode == 0
     sequence = (out / "run_dumps.sh").read_text()
     assert "--array" not in sequence and 'done 3< "$root/dumps.txt"' in sequence and spiral.FINISHED in sequence
     assert subprocess.run(["bash", "-n", str(out / "run_dumps.sh")]).returncode == 0
-    packed = (out / "pack_dumps.sh").read_text()                 # 20 dumps in 4 slots: 5 rounds
-    assert packed.startswith("#!/bin/bash\n#SBATCH -N 4\n#SBATCH -t 02:30:00\n") and 'names < "$root/dumps.txt"' in packed
-    assert subprocess.run(["bash", "-n", str(out / "pack_dumps.sh")]).returncode == 0
     tags = incar(out / "dump_C" / "INCAR")
     assert (tags["LSORBIT"], tags["ISTART"], tags["ICHARG"], tags["SAXIS"]) == ("T", "0", "11", "0 0 1")
-    assert not set(tags) & set(spiral.SPIRAL_ONLY) and tags["MAGMOM"] == incar(out / "q0" / "INCAR")["MAGMOM"]
+    # The SCFs carry LDUMPCOCC_POST; dump_C is an LSORBIT = T deck, where the patch refuses it.
+    assert all(incar(out / name / "INCAR")["LDUMPCOCC_POST"] == "T" for name in names)
+    assert "LDUMPCOCC_POST" not in tags and not set(tags) & set(spiral.SCF_ONLY) and tags["MAGMOM"] == incar(out / "q0" / "INCAR")["MAGMOM"]
     assert os.readlink(out / "dump_C" / "CHGCAR") == "../q0/CHGCAR" and not (out / "dump_C" / "WAVECAR").exists()
-    for name in ("q0", "d2_t1_minus"):
-        tags = incar(out / name / "dump_P" / "INCAR")
-        assert (tags["ISTART"], tags["ICHARG"], tags["LDUMPCOCC"]) == ("1", "11", "T") and "LDUMPCPROJ" not in tags
-        assert tags["QSPIRAL"] == incar(out / name / "INCAR")["QSPIRAL"]
-        assert os.readlink(out / name / "dump_P" / "WAVECAR") == "../WAVECAR"
 
-    # Dump outputs. Per ion, COCC_uu - COCC_dd = sum_b c_b Lambda_b, with c chosen so
+    # VASP outputs. Per ion, COCC_uu - COCC_dd = sum_b c_b Lambda_b, with c chosen so
     # that the trace gives 0.7 and 0.3 of the spin-model T(q) on the two Fe ions.
     cso = make_clean_cso(10, 3)
     write_cso(out / "dump_C" / "CSO.dat", cso)
@@ -198,7 +192,7 @@ def test_command_chain(tmp_path, capsys):
             gram = np.einsum("aij,bij->ab", lam[:, ion], lam[:, ion].conj()).real
             m = np.einsum("b,bij->ij", np.linalg.solve(gram, share * cells[name][0]), lam[:, ion])
             cocc[0, ion], cocc[3, ion] = m / 2, -m / 2
-        write_cocc(out / name / "dump_P" / "COCC.dat", cocc, nelect=8.0)
+        write_cocc(out / name / "COCC.dat", cocc, nelect=8.0)
 
     capsys.readouterr()
     assert main(["fit", str(out)]) == 0
@@ -226,12 +220,13 @@ def test_command_chain(tmp_path, capsys):
         output = capsys.readouterr().out
         assert all(message in output for message in messages), output
 
-    # The one guard: a COCC.dat older than its parent OUTCAR belongs to an earlier state.
-    cocc_path, outcar = out / "d2_t3_minus" / "dump_P" / "COCC.dat", out / "d2_t3_minus" / "OUTCAR"
-    stamp = os.stat(outcar).st_mtime_ns
-    os.utime(cocc_path, ns=(stamp - 10**9, stamp - 10**9))
-    refused("d2_t3_minus", "older than the run's OUTCAR", "fit refused")
-    os.utime(cocc_path, ns=(stamp + 10**9, stamp + 10**9))
+    # An ok run with no COCC.dat came from a build that does not write it. An old dump_P
+    # file in its own directory is not read.
+    cocc_path, old = out / "d2_t3_minus" / "COCC.dat", out / "d2_t3_minus" / "dump_P" / "COCC.dat"
+    old.parent.mkdir()
+    cocc_path.rename(old)
+    refused("d2_t3_minus", "no COCC.dat; the SCF must run on the POST-1 build", "fit refused")
+    old.rename(cocc_path)
     # Exchanged flip blocks keep C0's Hermiticity but reverse the handedness (Section 4.2).
     write_cso(out / "dump_C" / "CSO.dat", cso[[0, 2, 1, 3]])
     refused("C0  FAIL", "handedness h >= 0", "fit refused: failed C0")
@@ -257,7 +252,7 @@ def test_command_chain(tmp_path, capsys):
 def test_bcc_fe_pilot_tree(tmp_path, capsys):
     """The TEN-06 shape on bcc Fe (Im-3m, p_A = 1, inversion kept), one explicit direction.
 
-    Before any dump the tree is energies-only (item 2.10): A and both D_sw values, D_free
+    Before dump_C the tree is energies-only (item 2.10): A and both D_sw values, D_free
     not determined, every trace quantity not evaluated. With dumps, the centrosymmetric
     null (Sections 7.3 and 11) passes at T = 0 and fails when one run's T exceeds the floor.
     """
@@ -293,11 +288,11 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
     traces = manifest.load(out / "traces.json")
     assert traces["checks"]["C0"]["passed"] is None and traces["checks"]["E0"]["d1_t1"]["passed"]
 
-    # Dumps: zero spin density gives T = 0 on every run, so the null passes ...
+    # With dump_C: zero spin density gives T = 0 on every run, so the null passes ...
     assert main(["dumps", str(out), "--job", str(job)]) == 0
     write_cso(out / "dump_C" / "CSO.dat", make_clean_cso(2, 3))
     for name in spiral.run_names(out):
-        write_cocc(out / name / "dump_P" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
+        write_cocc(out / name / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
     capsys.readouterr()
     assert main(["fit", str(out)]) == 0
     report = manifest.load(out / "tensors.json")
@@ -308,7 +303,7 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
     m = np.einsum("b,bij->ij", np.linalg.solve(gram, [0.0, 1e-4, 0.0]), lam)
     cocc = np.zeros((4, 2, 3, 3), complex)
     cocc[0, 1], cocc[3, 1] = m / 2, -m / 2
-    write_cocc(out / "d1_t2_minus" / "dump_P" / "COCC.dat", cocc, nelect=8.0)
+    write_cocc(out / "d1_t2_minus" / "COCC.dat", cocc, nelect=8.0)
     capsys.readouterr()
     assert main(["fit", str(out)]) == 1
     assert "Null  FAIL: |T_y| = 1.000e-04 eV on d1_t2_minus, ion 2" in capsys.readouterr().out
@@ -322,7 +317,7 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
                 "d1_t3_plus": -16.5178941, "d1_t3_minus": -16.5178947}
     for name, energy in energies.items():
         finish(out / name, energy=energy)
-        write_cocc(out / name / "dump_P" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
+        write_cocc(out / name / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
     capsys.readouterr()
     assert main(["fit", str(out)]) == 1
     output = capsys.readouterr().out
@@ -333,7 +328,7 @@ def test_bcc_fe_pilot_tree(tmp_path, capsys):
     assert check["row"] == "d1_t1" and check["residual"] == pytest.approx([0.2575, -0.1030, 0.0172], abs=1e-4)
     # Two magnitudes left: A and b are exactly determined, so the check is not evaluated, never a pass.
     finish(out / "d1_t3_plus", energy=energies["d1_t3_plus"], reversed_site=True)
-    write_cocc(out / "d1_t3_plus" / "dump_P" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
+    write_cocc(out / "d1_t3_plus" / "COCC.dat", np.zeros((4, 2, 3, 3), complex), nelect=8.0)
     assert main(["fit", str(out)]) == 0
     assert manifest.load(out / "tensors.json")["fit_check"]["A"] == {
         "passed": None, "units": "meV per magnetic site (g)", "residual": pytest.approx([0, 0], abs=1e-9),

@@ -1,6 +1,6 @@
 # Current project status
 
-**Last reconciled:** 2026-11-24 UTC, at REC-1 on branch `rec-1` ([log](docs/sessions/2026-11-24_0021Z-agent-rec-1.md)).
+**Last reconciled:** 2026-11-24 UTC, at REC-1 on branch `rec-1` ([log](docs/sessions/2026-11-24_0021Z-agent-rec-1.md)). POST-1 entries added on `post-1` ([log](docs/sessions/2026-11-24_1740Z-agent-post-1.md)).
 
 **Project state:** pivoting from bond-resolved DMI vectors to the spiralization
 tensor, stiffness tensor and exchange classes ([D-007](docs/DECISIONS.md)). The
@@ -33,7 +33,8 @@ each task gets its own branch from `main`, and the user merges each pull request
 
 **Handoff owner / scope:** Claude / `rec-1`, the TEN-07 Stages A to C and
 TEN-07b records, `materials/bfo/`, D-029 (docs and data only); done and awaiting
-review.
+review. Claude / `post-1`: each SCF writes its own COCC (D-030), pipeline and
+docs; code done, awaiting review, the new build and the acceptance runs.
 One writer per branch.
 
 ## Established
@@ -85,6 +86,7 @@ No trace with D ≠ 0 has been measured, so the sign is untested.
 | PACK-1 | `--slots` on `prepare` and `dumps`: `pack.sh` and `pack_dumps.sh` keep several runs going in one batch job | Done, [spec](plans/pack-1.md) design approved 2026-11-20; merged in PR #28, `66e35e1` | Claude / `pack-1` | 15 tests; `pack.sh` executed on a small tree (never more than 2 slots, finished run skipped, failure does not stop the others, each unfinished run once); mutations of the slot limit and the skip caught ([log](docs/sessions/2026-11-20_2122Z-agent-pack-1.md)). Concurrent GPU steps with `--exact` untested on Perlmutter |
 | FIX-2 | `trace_run` no longer compares NELECT, which the real Patch B `CSO.dat` does not print; `write_cso` fixtures match the real header | Done; found by the Fe pilot 2026-11-17; merged in PR #23, `2ceb27f` | Claude / `fix-2-cso-nelect` | 15 tests; the command-chain and Fe pilot tests run `dmi fit` on a CSO with no NELECT line and failed with the field `TypeError` before the fix ([log](docs/sessions/2026-11-17_1827Z-agent-fix-2-cso-nelect.md)) |
 | FIT-1 | Fit check on every tensor solve (D-026); TEN-06 evidence record | Done, [spec](plans/fit-1-model-check.md) approved 2026-11-17; merged in PR #24, `138c3c0` | Claude / `fit-1-model-check` | 15 tests; the real fe-k12 energies fail `Fit A` at d1_t1 (+0.258 meV against 0.064 meV) and `fit` exits 1; spin models pass; 3 mutations caught ([log](docs/sessions/2026-11-17_1855Z-agent-fit-1-model-check.md)) |
+| POST-1 | Each spiral SCF writes its own `COCC.dat` (`LDUMPCOCC_POST`); `dmi dumps` writes `dump_C` only; `LDUMPONLY` removed; the patch stops on `NCORE > 1`, `ISYM` other than -1 and SOC-contaminated dumps (D-030) | Code done 2026-11-24, [spec](plans/post-1.md) approved the same day. **Not built and not run:** the Fortran is uncompiled, Step 0 (hash comparison with the Perlmutter tree) and acceptance A0 to A7 are pending | Claude / `post-1` (code); the user (build, runs) | 15 tests; four mutations caught; both patch validators exit 0 ([log](docs/sessions/2026-11-24_1740Z-agent-post-1.md)). **Gate:** A2 (new dump equals an old-style `dump_P` to 1e-6) and A3 to A7 on the new build |
 | ANI-1 | Anisotropy module (D-024) | Deferred until the spiralization tensor works; [spec](plans/anisotropy-1.md) approved | Unassigned | Known surface recovered; A1 to A5 on a first real tree |
 | TEN-10 | Literature check and paper draft | Pending | Unassigned | Draft with reproducible data |
 
@@ -100,6 +102,13 @@ separate a code fault from physics before spending more runs.
 2. The user: re-converged U and J (LDA linear response); then a full
    production tree with them, with EDIFF tightened.
 3. Try `pack.sh` on Perlmutter (PACK-1, merged in PR #28).
+4. POST-1, the user: compare the SHA-256 of the six patch files in the
+   Perlmutter tree with the pre-edit values in the
+   [POST-1 log](docs/sessions/2026-11-24_1740Z-agent-post-1.md) (Step 0); copy
+   the edited files, build, and run the acceptance set of
+   [`plans/post-1.md`](plans/post-1.md). Until A2 to A7 pass, trees made with
+   `post-1` need the new build, and the Sep 14 binary stays in the job scripts
+   for trees made from `main`.
 
 Also outstanding, for the records:
 
@@ -110,8 +119,9 @@ Also outstanding, for the records:
   build banner and SHA-256.
 
 `run.sh` and `run_dumps.sh` (SEQ-1) may replace `submit.sh` and
-`submit_dumps.sh` when one allocation is wanted, and `pack.sh` and
-`pack_dumps.sh` (PACK-1, `--slots`) run several at once in one job. The pack
+`submit_dumps.sh` when one allocation is wanted, and `pack.sh` (PACK-1,
+`--slots`) runs several at once in one job. On `post-1`, `dumps` writes one
+run and `pack_dumps.sh` is gone. The pack
 needs a one-run job script whose `srun` uses `$DMI_RUN_NODES` and `--exact`
 (`docs/seed_file.md`). The local, untracked `materials/fe/job.sh` sizes `srun`
 from `SLURM_JOB_NUM_NODES`, so `--slots` refuses it as it stands.
@@ -141,6 +151,9 @@ operations kept, `p_D 0  p_A 1  n_twist 0`, one MAGMOM override line, directions
   Stage A) is to be tightened.
 - Whether D under PBE is affected by the D-027 artifact (even in q). Not needed
   for production under D-028; D under LDA+U is clean.
+- POST-1: whether the host occupations are current at the post-loop hook on the
+  GPU build (acceptance A2 decides), and whether the local patch tree matches
+  the Perlmutter tree that built the Sep 14 binary (Step 0).
 - A VASP confirmation of the trace sign (D-020): the TEN-07b pipeline pair's
   traced dumps.
 

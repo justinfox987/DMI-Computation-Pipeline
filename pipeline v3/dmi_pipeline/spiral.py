@@ -28,11 +28,12 @@ OPTIONAL = ("spacegroup", "symprec", "directions")
 # D-022 and math Section 3.2: tetrahedron modes give no variational energy, so the
 # force theorem does not hold. This is the one check on the user's settings.
 TETRAHEDRON = (-4, -5)
-# The eleven tags the code owns (Section 3.2): one value for every run, and the tags set per run.
+# The twelve tags the code owns (Section 3.2): one value for every run, and the tags set per run.
+# LDUMPCOCC_POST makes each SCF write its own COCC.dat when it ends (Section 5, D-030).
 FIXED = {"LNONCOLLINEAR": "T", "LSPIRAL": "T", "LSORBIT": "F", "LZEROZ": "T",
-         "SAXIS": "0 0 1", "ISYM": "-1", "I_CONSTRAINED_M": "1", "LAMBDA": "0"}
+         "SAXIS": "0 0 1", "ISYM": "-1", "I_CONSTRAINED_M": "1", "LAMBDA": "0", "LDUMPCOCC_POST": "T"}
 PER_RUN = ("QSPIRAL", "MAGMOM", "M_CONSTR")
-LOGICAL = {"LNONCOLLINEAR", "LSPIRAL", "LSORBIT", "LZEROZ"}
+LOGICAL = {"LNONCOLLINEAR", "LSPIRAL", "LSORBIT", "LZEROZ", "LDUMPCOCC_POST"}
 FLOAT = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][+-]?\d+)?"
 TOTEN = re.compile(r"free\s+energy\s+TOTEN\s*=\s*(" + FLOAT + ")")
 PENALTY = re.compile(r"\blambda\s*=\s*(" + FLOAT + ")", re.I)
@@ -47,14 +48,13 @@ SBATCH_OPTION = re.compile(r"(\s*#SBATCH\s+)(--nodes|--gpus|--time|-N|-G|-t)(=|\
 TIME_FORMS = "MM, MM:SS, HH:MM:SS or D-HH:MM:SS"
 PACK_EXAMPLE = ('  gpus=$((4 * DMI_RUN_NODES))\n'
                 '  srun --nodes="$DMI_RUN_NODES" --gpus="$gpus" --ntasks="$gpus" --exact ... "$vasp" &> output.log')
-# Section 5 dump decks. A dump writes no WAVECAR or CHGCAR, so the linked parent
-# files stay untouched.
-DUMP_P = {"ISTART": "1", "ICHARG": "11", "ALGO": "Normal", "NELM": "1",
-          "LDUMPCOCC": "T", "LWAVE": "F", "LCHARG": "F"}
-# CSO depends only on the potential: read q0's CHGCAR (ICHARG = 11) and no WAVECAR.
+# Section 5 dump deck. CSO depends only on the potential: read q0's CHGCAR (ICHARG = 11)
+# and no WAVECAR. The dump writes no CHGCAR, so the linked parent file stays untouched.
 DUMP_C = {"LNONCOLLINEAR": "T", "LSORBIT": "T", "ISYM": "-1", "ISTART": "0", "ICHARG": "11",
           "ALGO": "Normal", "NELM": "1", "LDUMPCSO": "T", "LWAVE": "F", "LCHARG": "F", "SAXIS": "0 0 1"}
-SPIRAL_ONLY = ("LSPIRAL", "QSPIRAL", "LZEROZ", "I_CONSTRAINED_M", "LAMBDA", "M_CONSTR")
+# q0's tags that dump_C must not inherit: the spiral tags, and LDUMPCOCC_POST, which the
+# patch refuses in an LSORBIT = T run.
+SCF_ONLY = ("LSPIRAL", "QSPIRAL", "LZEROZ", "I_CONSTRAINED_M", "LAMBDA", "M_CONSTR", "LDUMPCOCC_POST")
 
 SPHERE = re.compile(r"^\s*ion\s+MW_int\s+M_int\s*$", re.I)
 
@@ -180,7 +180,7 @@ def species_types(species):
 def material_incar(seed):
     """The user's INCAR (D-019, D-022), and one line per owned tag it sets differently.
 
-    The code writes its own value for each of the eleven tags it owns and refuses
+    The code writes its own value for each of the twelve tags it owns and refuses
     tetrahedron smearing. It checks nothing else.
     """
     tags = incar(seed["folder"] / "INCAR")
@@ -646,47 +646,28 @@ def run_names(out):
 
 # ---- dump inputs ---------------------------------------------------------
 
-def prepare_dumps(out, job, slots=None, max_time=None):
-    """Write dump_C from q0's CHGCAR and every ok run's dump_P (Section 5); pack_dumps.sh with slots.
+def prepare_dumps(out, job):
+    """Write dump_C from q0's CHGCAR, with submit_dumps.sh and run_dumps.sh (Section 5).
 
-    Returns (dump directories in submit order, {name: error} of runs skipped).
+    Each SCF writes its own COCC.dat (D-030), so this is the one dump run. Returns its directory.
     """
     out = Path(out)
     job_parts = read_job(job)
-    states = read_runs(out)
-    if "error" in states.get("q0", {"error": "missing"}):
-        raise ValueError(f"q0 is not ok ({states.get('q0', {}).get('error', 'missing')}); dump_C needs its CHGCAR")
-    q0_tags = incar(out / "q0" / "INCAR")
-    cso_base = {k: v for k, v in q0_tags.items() if k not in SPIRAL_ONLY}   # keeps q0's MAGMOM
-    decks = [(out / "dump_C", "q0", "../q0/", ("CHGCAR",), dict(cso_base, **DUMP_C))]
-    skipped = {}
-    for name, state in states.items():
-        if "error" in state:
-            skipped[name] = state["error"]
-            continue
-        decks.append((out / name / "dump_P", name, "../", ("CHGCAR", "WAVECAR"),
-                      dict(incar(out / name / "INCAR"), **DUMP_P)))
-    pack = None if slots is None else pack_header(*job_parts[1:3], slots, len(decks), max_time)
-    for directory, name, link, files, tags in decks:
-        if directory.exists():
-            raise ValueError(f"{directory} exists; do not overwrite a dump")
-        for file in files:
-            source = out / name / file
-            if not source.is_file() or source.stat().st_size == 0:
-                raise ValueError(f"{name}: no {file}; the parent INCAR must not set LWAVE or LCHARG to F")
-        if logical(tags, "LSORBIT") and any(key in tags for key in SPIRAL_ONLY):
-            raise ValueError(f"{directory}: an LSORBIT = T deck must not contain spiral tags")
-    for directory, name, link, files, tags in decks:
-        directory.mkdir()
-        (directory / "INCAR").write_text("".join(f"{k} = {v}\n" for k, v in tags.items()), encoding="utf-8")
-        for file in ("POSCAR", "KPOINTS", "POTCAR"):
-            (directory / file).write_bytes((out / name / file).read_bytes())
-        for file in files:
-            os.symlink(link + file, directory / file)
-    dirs = [d for d, *_ in decks]
-    write_array(out, "dumps.txt", "submit_dumps.sh", [str(d.relative_to(out)) for d in dirs],
-                job_parts, "dmi dumps")
+    q0 = read_runs(out).get("q0", {"error": "missing"})
+    if "error" in q0:
+        raise ValueError(f"q0 is not ok ({q0['error']}); dump_C needs its CHGCAR")
+    directory, chgcar = out / "dump_C", out / "q0" / "CHGCAR"
+    if directory.exists():
+        raise ValueError(f"{directory} exists; do not overwrite a dump")
+    if not chgcar.is_file() or chgcar.stat().st_size == 0:
+        raise ValueError("q0: no CHGCAR; its INCAR must not set LCHARG to F")
+    tags = {k: v for k, v in incar(out / "q0" / "INCAR").items() if k not in SCF_ONLY}   # keeps q0's MAGMOM
+    tags.update(DUMP_C)
+    directory.mkdir()
+    (directory / "INCAR").write_text("".join(f"{k} = {v}\n" for k, v in tags.items()), encoding="utf-8")
+    for file in ("POSCAR", "KPOINTS", "POTCAR"):
+        (directory / file).write_bytes((out / "q0" / file).read_bytes())
+    os.symlink("../q0/CHGCAR", directory / "CHGCAR")
+    write_array(out, "dumps.txt", "submit_dumps.sh", ["dump_C"], job_parts, "dmi dumps")
     write_sequence(out, "dumps.txt", "run_dumps.sh", job_parts, "dmi dumps")
-    if pack:
-        write_pack(out, "dumps.txt", "pack_dumps.sh", job_parts, "dmi dumps", pack)
-    return dirs, skipped
+    return directory

@@ -15,6 +15,10 @@ import re
 import numpy as np
 
 ELECTRON_TOLERANCE = 1.0e-6
+# First-line labels of csodump.F. COCC is written by the SCF when it ends (LDUMPCOCC_POST)
+# or by a dump_P run from the WAVECAR it read (LDUMPCOCC), which only check M1 uses.
+POST_LOOP = "POST_LOOP final CPROJ"
+LABELS = {"cso": ("last nonzero SET_DD_PAW",), "cocc": (POST_LOOP, "PRE_LOOP input CPROJ")}
 
 
 @dataclass(frozen=True)
@@ -77,12 +81,8 @@ def _parse_text_metadata(path: Path, kind: str) -> tuple[TextMetadata, list[str]
     if not comments or not comments[0].startswith("# HEIDE_PATCH_B "):
         raise ValueError(f"{path}: missing exact '# HEIDE_PATCH_B <label>' first metadata line")
     label = comments[0][len("# HEIDE_PATCH_B "):].strip()
-    expected_labels = {
-        "cso": "last nonzero SET_DD_PAW",
-        "cocc": "PRE_LOOP input CPROJ",
-    }
-    if label != expected_labels[kind]:
-        raise ValueError(f"{path}: {kind.upper()} label is {label!r}, expected {expected_labels[kind]!r}")
+    if label not in LABELS[kind]:
+        raise ValueError(f"{path}: {kind.upper()} label is {label!r}, expected {' or '.join(map(repr, LABELS[kind]))}")
     values: dict[str, object] = {
         "lmdim": None, "nions": None, "ncdij": None, "set_dd_paw_call": None, "lsorbit": None,
         "lnoncollinear": None, "lspiral": None, "qspiral": None, "saxis": None, "nelect": None,
@@ -193,7 +193,7 @@ def load_cso(path: str | Path) -> MatrixDump:
 
 
 def load_cocc(path: str | Path) -> MatrixDump:
-    """Load a dump_P COCC. The writer emits no LSORBIT or LSPIRAL metadata; the
-    PRE_LOOP label and the file type are all the format provides."""
+    """Load a COCC.dat from an SCF or a dump_P. The writer emits no LSORBIT or LSPIRAL
+    metadata; the label (metadata.label) and the file type are all the format provides."""
 
     return _load_matrix(path, "cocc")

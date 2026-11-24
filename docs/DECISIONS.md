@@ -484,3 +484,37 @@ as the gap to experiment, so the U must be fixed by its own method before
 comparing with experiment.
 **Authority:** [`evidence/2026-11-20-bfo-ten07/README.md`](../evidence/2026-11-20-bfo-ten07/README.md),
 Stage C.
+
+## D-030 — Each spiral SCF writes its own COCC; no `dump_P` per state
+
+**Status:** decided 2026-11-24 (POST-1), on the user's instruction to implement
+[`plans/post-1.md`](../plans/post-1.md). The patch and the pipeline are changed;
+the new build is not yet compiled and the acceptance runs A0 to A7 are pending.
+Amends D-011 and D-021; reverses the "not now" on item 2.11 of
+`plans/simplify-1.md`.  
+- Patch B gains `LDUMPCOCC_POST`. With it, the SOC-free SCF writes `COCC.dat`
+  from the orbitals in memory after its first electronic minimization, with
+  the same contraction routine as before and the label `POST_LOOP final CPROJ`.
+  The pipeline sets the tag on every spiral SCF (a twelfth owned tag).
+- `dmi dumps` writes `dump_C` only. `trace_run` reads `RUN/COCC.dat` and
+  accepts only the `POST_LOOP` label. `dump_P` survives only as the by-hand
+  M1 run, once per build.
+- `LDUMPONLY` is removed from the patch, with its two `GOTO` paths.
+- D-021's one guard, "`COCC.dat` newer than its parent's OUTCAR", is dropped.
+  The SCF writes `COCC.dat` before its OUTCAR closes, so the comparison is
+  always true and has no simple replacement. The label check and the
+  missing-file error replace it.
+- The patch now stops on three conditions it used to pass silently: a dump with
+  `NCORE > 1`, a `CPROJ` or `COCC` dump with `ISYM` other than -1, and
+  `LDUMPCOCC_POST` with `LSORBIT = T` or with `LDUMPCOCC`.
+
+**Reason:** in TEN-07 Stage A the 31 `dump_P` runs took about 155 s each
+against about 400 s per SCF, 28% of the tree, to reread a state the SCF already
+held. The dump from memory also avoids the single-precision WAVECAR.
+`LDUMPONLY` had one use, a cheap `dump_P`, and two faults (it rewrote CHGCAR,
+and it always failed with `LDUMPCSO`).
+**Not established:** that the host occupations are current at the hook on the
+GPU build. Acceptance check A2 compares the new dump with an old-style `dump_P`
+on three runs and decides it. Until A2 to A7 pass, the Sep 14 binary and the
+`dump_P` route remain the validated ones.
+**Authority:** [`plans/post-1.md`](../plans/post-1.md).

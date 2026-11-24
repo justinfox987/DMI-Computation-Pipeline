@@ -88,6 +88,7 @@ def test_prepare_writes_paired_f0_inputs(tmp_path, capsys):
         assert np.allclose(lab[[2, 3]], expected, atol=1e-11) and not lab[[0, 1, 4]].any()
         assert np.allclose(numbers(tags["MAGMOM"]).reshape(-1, 3), 4 * lab, atol=1e-10)
         assert tags["LSPIRAL"] == "T" and tags["LAMBDA"] == "0" and tags["ENCUT"] == "600"
+        assert tags["LDUMPCOCC_POST"] == "T"            # every SCF writes its own COCC.dat (D-030)
         assert config["q_frac"] == pytest.approx(q.tolist(), abs=0)
     assert incar(out / "q0" / "INCAR")["QSPIRAL"] == "0 0 0"
     plus, minus = (manifest.load(out / f"d1_t2_{side}" / "config.json") for side in ("plus", "minus"))
@@ -162,7 +163,7 @@ def test_prepare_writes_paired_f0_inputs(tmp_path, capsys):
     assert {"failed c (exit 1)", "done a", "done f"} <= set(done.stdout.splitlines())
     assert "#SBATCH --nodes=4\n#SBATCH --time=00:30:00\n" in (tree / "pack.sh").read_text()
 
-    # D-022: the code owns eleven tags and overrides the user's value with one line each.
+    # D-022: the code owns twelve tags and overrides the user's value with one line each.
     capsys.readouterr()
     material(tmp_path, incar_text="ISMEAR = 1\nMAGMOM = 10*0\nLSPIRAL = F\nKSPACING = 0.2\n")
     assert main(["prepare", str(path), "--job", str(tmp_path / "job.sh"), "--out", str(tmp_path / "over")]) == 0

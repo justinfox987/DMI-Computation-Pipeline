@@ -98,6 +98,10 @@ Section~\ref{sec:fit} states that the parity $\sigma$ does not measure model err
 Amended 18 November 2026 (D-027): Section~\ref{sec:checks} warns that VASP's
 locally collinear GGA adds a term linear in $|q|$ to $g$ wherever $\vct m$
 changes sign, so the quadratic model fails under PBE.
+Amended 24 November 2026 (D-030): each spiral SCF writes its own \code{COCC}
+when it ends, so Sections~\ref{sec:frames}, \ref{sec:inputs} and
+\ref{sec:walkthrough} no longer have a \code{dump_P} run per state. No
+equation changes.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -239,6 +243,7 @@ at $-\qh$, and the $q=0$ reference is the same formula at $\qh=0$.
 \code{LZEROZ}, \code{SAXIS} & \code{T} and \code{0 0 1}: flat spiral about $z$.\\
 \code{ISYM} & $-1$. VASP symmetry does not account for the spiral~\cite{spiralhowto}.\\
 \code{I_CONSTRAINED_M}, \code{LAMBDA} & $1$ and $0$. This gives sphere moments with no penalty.\\
+\code{LDUMPCOCC_POST} & \code{T}. Patch B then writes \code{COCC} when the SCF ends (Section~\ref{sec:inputs}).\\
 \code{RWIGS} & The user's. VASP needs it to print sphere moments.\\
 \code{ENCUT}, \code{ENINI} & The user's. \code{ENINI} is VASP's spiral cutoff~\cite{spiralhowto}.\\
 \code{ISMEAR}, \code{SIGMA} & The user's, identical across all $q$ of one material. One rule: tetrahedron modes are refused, because their energy is not variational.\\
@@ -447,17 +452,21 @@ rule~\cite{projectcore}.
 \code{dump_C} & Full \code{CSO} with SOC on and \code{LSPIRAL = F}, from a
 converged SOC-free in-plane reference. One per material.\\
 Spiral SCF & SOC-free state at $\pm\qh$ and at $\qh=0$. Supplies
-$E$ and \code{M_int}.\\
-\code{dump_P} & \code{COCC} from one SOC-free \code{PRE_LOOP} capture, after
-\code{PROALL} and before orbital updates. \code{CPROJ} and \code{FERWE} are
-added by hand on one state per build, for check M1.\\
+$E$ and \code{M_int}, and \code{COCC}, contracted from the converged
+projections when the electronic minimization ends.\\
+\code{dump_P} & By hand, on one state per build, for check M1 only:
+\code{COCC}, \code{CPROJ} and \code{FERWE} from one SOC-free \code{PRE_LOOP}
+capture of that state's \code{WAVECAR}, after \code{PROALL} and before orbital
+updates.\\
 Exchange SCF & SOC-free state on a coarse $q$ grid. No dump, no patch.\\
 Anisotropy runs & Self-consistent SOC runs at $q=0$, one per direction
 (Section~\ref{sec:mca}). No patch.\\
 \bottomrule
 \end{tabularx}
 \end{center}
-A dump stage is not a substitute for a converged parent SCF. A common
+A dump stage is not a substitute for a converged parent SCF. \code{COCC} is
+contracted from the projections, not taken from VASP's mixed occupancies, and
+it must come from a SOC-free run. A common
 \code{CSO} is an approximation across states, because its radial factors depend
 on the potential. This is expected to be small for small $q$, and the
 supercell anchor in Section~\ref{sec:checks} tests it.
@@ -1023,7 +1032,7 @@ Eqs.~\eqref{eq:project}--\eqref{eq:ntwist}.
 \item Choose directions and magnitudes, and test both rank conditions of
 Section~\ref{sec:qplan}.
 \item Write targets from Eq.~\eqref{eq:target} at $\pm\qh$, at $q=0$ and on the
-exchange grid. Run the SCFs, the \code{dump_P} captures and the one \code{dump_C} run.
+exchange grid. Run the SCFs, each of which writes its \code{COCC}, and the one \code{dump_C} run.
 \item Read $E$ and \code{M_int}. Compute $\delta_a$ from Eq.~\eqref{eq:delta}.
 \item Form $\Lambda_\alpha$ from Eq.~\eqref{eq:lambda} and $\vct T$ from
 Eq.~\eqref{eq:rho} for each state, with the conjugate of Section~\ref{sec:paw}.
@@ -1212,7 +1221,7 @@ All-electron one-center SOC approximation.
 \bibitem{vaspsrc}
 VASP 6.4.2 source: \code{relativistic.F} (\code{SPINORB_STRENGTH},
 \code{CALC_SPINORB_MATRIX_ELEMENTS}) and \code{us.F} (\code{DEPSUM}); Patch B
-\code{csodump.F} (\code{COCC_FROM_INPUT}). Index order of the SOC operator and
+\code{csodump.F} (\code{COCC_FROM_CPROJ}, formerly \code{COCC_FROM_INPUT}). Index order of the SOC operator and
 the occupancy matrix, and the SOC energy contraction.
 
 \bibitem{spglib}

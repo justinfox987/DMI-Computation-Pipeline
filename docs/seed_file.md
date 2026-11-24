@@ -22,8 +22,9 @@ to the public repo. The Slurm template is passed on the command line:
 dmi plan    materials/fe/seed.toml
 dmi prepare materials/fe/seed.toml --job job.sh --out RUNS
 cd RUNS && sbatch submit.sh          # the user submits, as D-006 requires (or run.sh, below)
+                                     # each SCF writes its own COCC.dat when it ends (D-030)
 dmi collect RUNS                     # one state per run; safe to rerun
-dmi dumps   RUNS --job patchb.sh     # one z-axis dump_C and each ok run's dump_P
+dmi dumps   RUNS --job job.sh        # the one z-axis dump_C, from q0's CHGCAR
 cd RUNS && sbatch submit_dumps.sh    # the user submits (or run_dumps.sh, below)
 dmi fit     RUNS                     # trace, C0 N0 I0 P0 E0 and, with inversion, the null at every q;
                                      # then D, F, A, the pitch, 4A/M_int and 4A/M_total, and units,
@@ -45,8 +46,13 @@ A FAIL names the worst pair (and the axis for `D`). The tensors are still
 reported, but `fit` exits 1 and `tensors.json` has `passed` false. Each solve's
 check and residual vector are under `fit_check` in `tensors.json`.
 
+Every job must run the Patch B build that has `LDUMPCOCC_POST` (POST-1). The
+SCFs set that tag, and each writes `COCC.dat` in its own run directory; `fit`
+reads it there. A run that is ok but has no `COCC.dat`, in a tree with a
+`dump_C`, makes `fit` exit 1 and name the run. There is no `dump_P` per run.
+
 `prepare` writes two launch scripts over `runs.txt`, and `dumps` the same two
-over `dumps.txt`. Both keep the job script's `#SBATCH` header and run its body
+over `dumps.txt`, which lists the one directory `dump_C`. Both keep the job script's `#SBATCH` header and run its body
 in each listed directory:
 
 | Script | Runs | Start it from the run directory with |
@@ -64,12 +70,11 @@ delays the rest.
 
 ```bash
 dmi prepare materials/fe/seed.toml --job scf.sh --out RUNS --slots 4 [--max-time HH:MM:SS]
-dmi dumps   RUNS --job patchb.sh --slots 4 [--max-time HH:MM:SS]
 ```
 
-With `--slots`, `prepare` also writes `pack.sh` and `dumps` writes
-`pack_dumps.sh`, over the same list. Without it nothing changes. Start it from
-the run directory with `sbatch pack.sh`.
+With `--slots`, `prepare` also writes `pack.sh` over the same list. Without it
+nothing changes. Start it from the run directory with `sbatch pack.sh`. `dumps`
+writes one run, so it has no pack.
 
 **The job script describes one run.** Its `#SBATCH` header must set `--nodes`
 and `--time` for one run, and may set `--gpus`. Its body must size `srun` from
@@ -124,7 +129,11 @@ bash 4.3 or later (`wait -n`).
 command: `collect` prints one line per run (D-013). Every command reads the VASP
 files again; `collected.json`, `traces.json` and `tensors.json` are reports that
 no command reads back (D-021). M1 is not part of the workflow: it runs once per
-build as `python acceptance/m1.py DUMP_P_DIR`.
+build as `python acceptance/m1.py DUMP_P_DIR`, on a `dump_P` the user makes by
+hand in one run directory: that run's INCAR without `LDUMPCOCC_POST`, plus
+`ISTART = 1`, `ICHARG = 11`, `ALGO = Normal`, `NELM = 1`, `LDUMPCOCC = T`,
+`LDUMPCPROJ = T`, `LWAVE = F` and `LCHARG = F`, with links to the run's
+`WAVECAR` and `CHGCAR`.
 
 ## Example
 
@@ -166,17 +175,18 @@ A cubic material ($p_A = 1$) can be converged from one direction this way.
 
 ## INCAR rules
 
-The `INCAR` belongs to the user (D-019, D-022). The code owns eleven tags and
+The `INCAR` belongs to the user (D-019, D-022). The code owns twelve tags and
 writes its own value for each: `LNONCOLLINEAR`, `LSPIRAL`, `LSORBIT`, `LZEROZ`,
-`SAXIS`, `ISYM`, `I_CONSTRAINED_M`, `LAMBDA`, `QSPIRAL`, `MAGMOM` and
-`M_CONSTR` (math Section 3.2). Where the material `INCAR` sets one of them
+`SAXIS`, `ISYM`, `I_CONSTRAINED_M`, `LAMBDA`, `LDUMPCOCC_POST`, `QSPIRAL`,
+`MAGMOM` and `M_CONSTR` (math Section 3.2). Where the material `INCAR` sets one of them
 differently, `plan` and `prepare` print one `override` line with the user's
 value and the value used, and continue. One rule is checked: `ISMEAR = -4` or
 `-5` (tetrahedron) is refused, because its energy is not variational and the
 force theorem does not hold. Every other tag, including its absence, is the
 user's choice and is passed through unchanged. `plan` prints `ENCUT`, `ENINI`,
-`ISMEAR` and `SIGMA` when the `INCAR` sets them. The dumps need the parent's
-`WAVECAR` and `CHGCAR`, so leave `LWAVE` and `LCHARG` at `T`.
+`ISMEAR` and `SIGMA` when the `INCAR` sets them. `dump_C` needs q0's `CHGCAR`,
+so leave `LCHARG` at `T`. No workflow step reads a `WAVECAR`; only the M1
+`dump_P` does.
 
 ## Rules
 

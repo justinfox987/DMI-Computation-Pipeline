@@ -26,7 +26,7 @@ def test_vasp_file_layout_fixes_the_trace_sign(tmp_path):
     """Math Section 4.4 layout test (D-020): both files written as VASP writes them.
 
     relativistic.F stores CSO(lm, l'm', 1 + a + 2a') = <a'|<l'm'|C|lm>|a>; DEPSUM and
-    COCC_FROM_INPUT store COCC(LP, L, 1 + s_ + 2s) = sum w f c(L, s) conj(c(LP, s_)).
+    COCC_FROM_CPROJ store COCC(LP, L, 1 + s_ + 2s) = sum w f c(L, s) conj(c(LP, s_)).
     """
     xi = 0.3
     eps = np.zeros((3, 3, 3))

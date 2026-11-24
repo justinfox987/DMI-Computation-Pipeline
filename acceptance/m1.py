@@ -1,9 +1,10 @@
 """M1, once per production build (D-021; math Section 11).
 
 Compares the dump_P COCC.dat with the density matrix rebuilt from CPROJ and
-FERWE of the same capture. It tests the Fortran routine COCC_FROM_INPUT, a
-property of the build, so it runs on one state whose dump_P the user gave
-LDUMPCPROJ = T. Usage:
+FERWE of the same capture. It tests the Fortran routine COCC_FROM_CPROJ, which
+also writes each SCF's COCC.dat (D-030). That is a property of the build, so it
+runs on one state, on a dump_P the user makes by hand with LDUMPCOCC = T and
+LDUMPCPROJ = T (docs/seed_file.md). Usage:
 
     python acceptance/m1.py DUMP_P_DIR
 

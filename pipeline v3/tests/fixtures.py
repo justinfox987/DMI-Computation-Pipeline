@@ -10,6 +10,9 @@ import numpy as np
 CPROJ_MAGIC = "HEIDE_CPROJ_PATCH_B"
 CPROJ_BUILD_ID = "VASP 6.4.2 HEIDE PATCH B"
 CPROJ_DUMP_TAG = "PRE_LOOP"
+CSO_LABEL = "last nonzero SET_DD_PAW"
+COCC_POST = "POST_LOOP final CPROJ"      # an SCF's own dump (LDUMPCOCC_POST)
+COCC_PRE = "PRE_LOOP input CPROJ"        # a dump_P (LDUMPCOCC), which only M1 reads
 
 
 @dataclass(frozen=True)
@@ -32,11 +35,10 @@ def _fixed(value: str, width: int) -> bytes:
 
 
 def _write_matrix(path: Path, matrix: np.ndarray, kind: str, *, nelect: float | None = None,
-                  saxis: tuple[float, float, float] = (0.0, 0.0, 1.0)) -> None:
+                  saxis: tuple[float, float, float] = (0.0, 0.0, 1.0), label: str = CSO_LABEL) -> None:
     ncdij, nions, lmdim, second_lmdim = matrix.shape
     if lmdim != second_lmdim:
         raise ValueError("matrix orbital dimensions must be square")
-    label = "last nonzero SET_DD_PAW" if kind == "cso" else "PRE_LOOP input CPROJ"
     lines = [f"# HEIDE_PATCH_B {label}"]
     if kind == "cso":
         lines.extend(
@@ -92,7 +94,7 @@ def write_fake_dump(
     seed: int = 0,
     collinear: bool = False,
 ) -> DumpPaths:
-    """Write the native stream layout from csodump.F lines 141--184."""
+    """A dump_P with LDUMPCPROJ: the native stream layout from csodump.F lines 141--184."""
 
     directory = Path(tmpdir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -203,7 +205,7 @@ def write_fake_dump(
                                 * weight
                             )
     cocc_path = directory / "COCC.dat"
-    _write_matrix(cocc_path, cocc, "cocc", nelect=float(nelect))
+    _write_matrix(cocc_path, cocc, "cocc", nelect=float(nelect), label=COCC_PRE)
     return DumpPaths(
         directory=directory,
         cproj_paths=tuple(cproj_paths),
@@ -240,10 +242,10 @@ def write_cso(path: str | Path, matrix: np.ndarray, *,
     return output
 
 
-def write_cocc(path: str | Path, matrix: np.ndarray, *, nelect: float) -> Path:
-    """A COCC.dat alone, as a production dump_P writes it without CPROJ."""
+def write_cocc(path: str | Path, matrix: np.ndarray, *, nelect: float, label: str = COCC_POST) -> Path:
+    """A COCC.dat alone: by default as an SCF writes it when it ends, in its run directory."""
     output = Path(path)
-    _write_matrix(output, matrix, "cocc", nelect=nelect)
+    _write_matrix(output, matrix, "cocc", nelect=nelect, label=label)
     return output
 
 

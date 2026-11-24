@@ -1,7 +1,7 @@
 """First-order SOC trace (math Section 4).
 
-The trace vector of Eq (4.8) from a run's dump_P COCC and the material's z-axis
-CSO from dump_C. Both files are read again on every call (D-021).
+The trace vector of Eq (4.8) from the COCC a run's SCF wrote when it ended (D-030)
+and the material's z-axis CSO from dump_C. Both files are read again on every call (D-021).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from . import conventions, manifest
-from .dumpio import MatrixDump, load_cocc
+from .dumpio import POST_LOOP, MatrixDump, load_cocc
 from .realized import poscar
 
 
@@ -37,16 +37,18 @@ def trace_vector(cocc: MatrixDump, lam: np.ndarray) -> np.ndarray:
 
 
 def trace_run(run: Path, cso: MatrixDump) -> dict:
-    """Trace vector of one run from its dump_P/COCC.dat and the material CSO.
+    """Trace vector of one run from its own COCC.dat and the material CSO.
 
-    The one guard of D-021: a COCC.dat older than its parent's OUTCAR belongs to
-    an earlier state of that run.
+    Only the SCF's end-of-run dump is accepted: a PRE_LOOP file is a dump_P copy
+    and may describe another state.
     """
     run = Path(run)
-    path = run / "dump_P" / "COCC.dat"
-    if path.stat().st_mtime_ns < (run / "OUTCAR").stat().st_mtime_ns:
-        raise ValueError("dump_P/COCC.dat is older than the run's OUTCAR; rerun its dump")
+    path = run / "COCC.dat"
+    if not path.is_file():
+        raise ValueError("no COCC.dat; the SCF must run on the POST-1 build, which writes it (LDUMPCOCC_POST = T)")
     cocc = load_cocc(path)
+    if cocc.metadata.label != POST_LOOP:
+        raise ValueError(f"COCC.dat is labelled {cocc.metadata.label!r}; the trace needs the SCF's own {POST_LOOP!r} dump")
     nions = len(poscar(run / "POSCAR")[1])
     shapes = {(m.nions, m.lmdim, m.ncdij) for m in (cso.metadata, cocc.metadata)}
     if len(shapes) != 1 or cso.metadata.nions != nions:
