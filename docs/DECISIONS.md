@@ -281,6 +281,13 @@ layout. A bookkeeping test with those layouts returns minus the exact value
 without the conjugate. The real BFO `CSO.dat` has the handedness that layout
 predicts (-0.707 on O). This is source reading and a bookkeeping test, not a
 VASP run; the supercell control confirms it.
+**Amended 2026-11-24 (SIGN-1): sign confirmed by TEN-07b.** On BFO with LSDA+U,
+the first-order trace of the pipeline pair at q_frac = (1/4, 0, 0) gives
+y_x = +1.266 meV per Fe. The self-consistent SOC energy of a 4x1x1 supercell
+with the same q, n, U, J and datasets gives (E_plus - E_minus) / 8 =
++1.2659 meV per Fe: the same sign, within the four printed digits. The limits
+are one q and one rotation axis, on-site SOC in both calculations, and 700 eV
+against an effective 600 eV cutoff ([`evidence/2026-11-23-bfo-supercell/README.md`](../evidence/2026-11-23-bfo-supercell/README.md)).
 **Authority:** math Revision 3.2, Sections 4.2 and 4.4; `plans/simplify-1.md`
 item 1.1.
 

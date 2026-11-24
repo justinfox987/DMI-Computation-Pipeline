@@ -210,7 +210,7 @@ def test_command_chain(tmp_path, capsys):
     assert np.allclose(report["micromagnetic"]["D_mJ_per_m2"], 1e3 * big_d / volume * 16.02, rtol=1e-6, atol=1e-12)
     assert np.allclose(report["micromagnetic"]["A_pJ_per_m"], 1e3 * big_a / volume * 1.602, rtol=1e-6, atol=1e-12)
     assert np.allclose(report["D_by_species"]["Fe"]["D"], report["D"]["value"], atol=1e-12)
-    assert report["sign"] == "follows VASP's SOC energy (D-020); not yet confirmed by a VASP run"
+    assert report["sign"] == "follows VASP's SOC energy (D-020); confirmed against a full-SOC supercell (TEN-07b, BFO)"
     assert report["D_sw"]["M_int"]["value"] is None and report["D_sw"]["M_total"]["value"] is None   # not a ferromagnet
     assert report["noise"]["sigma_y"] == 0 and report["noise"]["n_g"] == 9
     assert report["null"]["passed"] is None and "not applicable" in report["null"]["detail"]           # R3c: no inversion

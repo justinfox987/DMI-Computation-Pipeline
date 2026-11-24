@@ -9,15 +9,17 @@ made without a prior spec. Pipeline commit and collection time:
 **Purpose.** To check the overall sign of D (D-020) with an independent route:
 self-consistent SOC energies of the two rotation senses of a commensurate spiral.
 
-**Status: sign supported, not yet confirmed.** The pipeline pair at the same q
-has no traced dumps in this record (below).
+**Status: D-020's sign confirmed** (2026-11-23, recorded on branch `sign-1`).
+The first-order trace of the pipeline pair at this q gives y_x = +1.266 meV per
+Fe. The self-consistent SOC supercell gives +1.2659 meV per Fe: the same sign,
+and agreement within the four printed digits (below).
 
 ## Contents
 
 | Folder | Contents |
 |---|---|
 | `supercell/plus/`, `supercell/minus/` | INCAR, KPOINTS, POSCAR, `POTCAR.info`, the full OSZICAR, and `OUTCAR.summary` (energy, build line, k points and bands, wall time) |
-| `supercell_pair/` | the pipeline pair at the same q: `inputs/` (INCAR, KPOINTS, POSCAR, `POTCAR.info`, `seed.toml`), `plan.json`, `runs.txt`, `collected.json`, `job_resources.txt`, `walltimes.txt` |
+| `supercell_pair/` | the pipeline pair at the same q: `inputs/` (INCAR, KPOINTS, POSCAR, `POTCAR.info`, `seed.toml`), `plan.json`, `runs.txt`, `collected.json`, `job_resources.txt`, `walltimes.txt`; `traces.json` and `fit.log` are to be added by the user |
 
 ## The supercell runs
 
@@ -56,8 +58,33 @@ OSZICARs. **The minus sense is lower.**
 - **The pipeline pair at the same q** (`supercell_pair/`): 8x8x8,
   `QSPIRAL = 0.249999965 0 0` (run d3_t3, seed t = 0.03, 0.07, 0.342876;
   EDIFF 1E-07). Energies: g = 14.257 meV per Fe, M_int 4.297 μB.
-  - **y_x: [placeholder: dumps not yet traced].**
-  - `walltimes.txt` lists elapsed times for `q0 dump_P`, `d3_t3_plus dump_P`
-    and `dump_C`, so the dumps may already have run on Perlmutter. No COCC,
-    CSO, `traces.json` or `fit.log` is in this record.
-- **Verdict: [placeholder].** D-020's sign is supported, not yet confirmed.
+  - **Traces** (`dmi fit` on the pair, the user's run of 2026-11-23; the
+    same U, J and datasets as the supercell):
+
+    ```text
+    q0          T = +4.638e-09 +9.134e-09 -2.145e-07 eV
+    d3_t3_plus  T = +1.266e-03 -1.809e-08 -6.389e-07 eV
+    d3_t3_minus T = -1.266e-03 +1.651e-08 +2.923e-07 eV
+    ```
+
+  - **y_x = [T_x(q) - T_x(-q)] / 2 = +1.266 meV per Fe**, from the printed
+    four-digit values. The pair's `traces.json` and `fit.log` will be added to
+    `supercell_pair/` by the user; they were not present when this was
+    recorded, so the unrounded value is not yet in the record.
+- **Verdict: D-020's sign is confirmed.** The first-order trace reproduces the
+  full-SOC chirality energy at this q:
+
+  | Route | Value (meV per Fe) |
+  |---|---|
+  | Pipeline pair, y_x | +1.266 |
+  | Supercell, (E_plus - E_minus) / 8 | +1.2659 |
+
+  Same sign, and agreement within the four printed digits.
+
+  Limits:
+
+  - One q and one rotation axis.
+  - SOC is on-site in both calculations, so the on-site approximation itself is
+    not tested.
+  - The cutoffs differ: 700 eV in the supercell against an effective 600 eV
+    (ENINI) in the spirals.

@@ -40,12 +40,21 @@ range.
 - **Order in SOC.** The supercell is self-consistent in SOC; the pipeline is
   first order.
 
-## Result so far
+## Result
 
 - **Supercell:** E_plus - E_minus = +1.2659 meV per Fe (constrained); the
   unconstrained difference was +10.124 meV per cell, user-reported. The minus
   sense is lower.
 - **Small-q tensor:** +1.40 meV per Fe, the same sign.
-- **Pipeline pair:** energies only (g = 14.257 meV per Fe); y_x is pending its
-  traced dumps.
-- **Verdict:** pending. D-020's sign is supported, not yet confirmed.
+- **Pipeline pair:** g = 14.257 meV per Fe; y_x = [T_x(q) - T_x(-q)] / 2 =
+  +1.266 meV per Fe (`dmi fit`, 2026-11-23).
+- **Verdict (2026-11-23): D-020's sign is confirmed.** The first-order trace
+  reproduces the full-SOC chirality energy at this q (+1.266 against +1.2659
+  meV per Fe: the same sign, and agreement within the four printed digits).
+  Limits:
+
+- One q and one rotation axis.
+- SOC is on-site in both calculations, so the on-site approximation itself is
+  not tested.
+- The cutoffs differ: 700 eV in the supercell against an effective 600 eV
+  (ENINI) in the spirals.

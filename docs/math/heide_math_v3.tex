@@ -88,7 +88,8 @@ sign of every trace. It replaces the pooled fit variance by the measured parity
 residual, runs M1 once per build, replaces T3 by a handedness check, narrows the
 smearing rule, and adds Section~\ref{sec:mca} on anisotropy. Every existing
 equation keeps its number; new displays in old sections are unnumbered. The sign
-correction rests on the VASP source and a bookkeeping test, not on a VASP run.
+correction rests on the VASP source and a bookkeeping test, not on a VASP run;
+the BFO supercell control of 24 November 2026 has since confirmed it (below).
 Amended 12 November 2026 (D-023): the forbidden-part bound of
 Section~\ref{sec:checks} gains a floor of $1\%$ of $\max|\Dt_{\rm free}|$, and
 the rank test of Section~\ref{sec:fit} is on the geometry alone, with two
@@ -98,6 +99,9 @@ Section~\ref{sec:fit} states that the parity $\sigma$ does not measure model err
 Amended 18 November 2026 (D-027): Section~\ref{sec:checks} warns that VASP's
 locally collinear GGA adds a term linear in $|q|$ to $g$ wherever $\vct m$
 changes sign, so the quadratic model fails under PBE.
+Amended 24 November 2026 (D-020 amended): Sections~\ref{sec:fit} and
+\ref{sec:checks} record that the BFO supercell control confirms the sign of the
+trace.
 
 \textbf{Build.} Run \code{latexmk -pdf heide_math_v3.tex}, or run
 \code{pdflatex} twice. All text, equations and references are in this file.
@@ -741,7 +745,10 @@ Its forbidden part is
 \end{equation}
 This should vanish within error. An axis, frame or transpose error generally
 makes it nonzero. An overall sign error does not, so the sign must come from an
-external anchor.
+external anchor. That anchor has run: on BFO, the trace of one pair at
+$q_{\rm frac}=(1/4,0,0)$ gives $+1.266$~meV per Fe against $+1.2659$~meV per Fe
+from the self-consistent SOC energies of a $4\times1\times1$ supercell
+(Section~\ref{sec:checks}; D-020, amended 24 November 2026).
 
 The reported tensor uses the symmetry basis. Minimize
 \begin{equation}\label{eq:dfit}
@@ -998,7 +1005,12 @@ $q$, not only in the slope. Bcc Fe is the first such test. The sign of $T$
 follows VASP's own SOC energy (Section~\ref{sec:paw}), and the sense of rotation
 follows the measured relative site phases. A comparison with direct SOC
 energies on a commensurate supercell of a cheap noncentrosymmetric control
-confirms both, and the magnitude. For the method,
+confirms both, and the magnitude. Done on BFO itself (24 November 2026): a
+$4\times1\times1$ supercell at $q_{\rm frac}=(1/4,0,0)$ with rotation axis
+$+\hat{\vct x}$ gives $(E_+-E_-)/8=+1.2659$~meV per Fe from self-consistent SOC,
+and the pipeline pair gives $y_x=+1.266$~meV per Fe. That confirms the sign for
+one $q$ and one axis; SOC is on-site in both, so the on-site approximation is
+not tested. For the method,
 compare with FLEUR first-order spiral results for BFO~\cite{xu} and
 FeGe~\cite{grytsiuk}, matching structure, functional and normalization. These are
 tests of the code, not of experiment: those calculations give about 80~nm against

@@ -7,7 +7,9 @@ Section and equation numbers are those of the TeX.
 
 Evidence: the equations were checked numerically on spin models and repository
 fixtures. The sign correction of Section 4 rests on the VASP source and a
-bookkeeping test. No VASP calculation has tested this revision. Do not describe
+bookkeeping test. The BFO supercell control has since confirmed that sign
+(D-020 amended 24 November 2026: +1.266 against +1.2659 meV per Fe, one q and
+one axis). No VASP calculation has tested this revision. Do not describe
 any result as physically validated on that basis.
 
 ## Where each part lands in the code
