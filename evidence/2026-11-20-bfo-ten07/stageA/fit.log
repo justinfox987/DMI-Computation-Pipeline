@@ -1,0 +1,74 @@
+C0  pass
+q0                       T = +6.764e-09 +1.987e-08 -2.143e-07 eV
+d1_t1_plus               T = -1.037e-08 +1.884e-08 +2.643e-07 eV
+d1_t1_minus              T = +1.382e-09 +2.185e-08 +2.089e-07 eV
+d1_t2_plus               T = -1.430e-08 +2.321e-08 -5.046e-07 eV
+d1_t2_minus              T = -1.579e-08 +3.113e-08 +2.168e-07 eV
+d1_t3_plus               T = -1.471e-09 -1.009e-08 -2.218e-07 eV
+d1_t3_minus              T = +1.179e-08 +3.404e-08 +3.842e-07 eV
+d1_t4_plus               T = -2.390e-08 +1.291e-08 +2.417e-07 eV
+d1_t4_minus              T = -4.092e-09 -4.975e-09 +4.639e-08 eV
+d1_t5_plus               T = -3.220e-08 +1.624e-08 +4.470e-07 eV
+d1_t5_minus              T = +9.553e-10 +2.792e-08 -9.032e-08 eV
+d2_t1_plus               T = +1.122e-04 +6.482e-05 +4.508e-07 eV
+d2_t1_minus              T = -1.122e-04 -6.480e-05 +2.036e-08 eV
+d2_t2_plus               T = +1.865e-04 +1.077e-04 -8.662e-08 eV
+d2_t2_minus              T = -1.865e-04 -1.077e-04 +1.732e-07 eV
+d2_t3_plus               T = +2.601e-04 +1.501e-04 -3.864e-08 eV
+d2_t3_minus              T = -2.601e-04 -1.502e-04 +3.968e-07 eV
+d2_t4_plus               T = +3.327e-04 +1.920e-04 +1.816e-08 eV
+d2_t4_minus              T = -3.327e-04 -1.921e-04 +1.494e-07 eV
+d2_t5_plus               T = +4.392e-04 +2.536e-04 +2.563e-07 eV
+d2_t5_minus              T = -4.392e-04 -2.536e-04 +9.091e-08 eV
+d3_t1_plus               T = +1.225e-04 +1.830e-08 +2.044e-07 eV
+d3_t1_minus              T = -1.225e-04 -1.049e-08 +1.782e-07 eV
+d3_t2_plus               T = +2.039e-04 +3.097e-09 +4.217e-07 eV
+d3_t2_minus              T = -2.039e-04 -2.160e-08 +4.195e-07 eV
+d3_t3_plus               T = +2.846e-04 +1.079e-08 +5.761e-07 eV
+d3_t3_minus              T = -2.846e-04 -2.326e-08 -8.690e-08 eV
+d3_t4_plus               T = +3.646e-04 +9.031e-09 +2.839e-07 eV
+d3_t4_minus              T = -3.646e-04 -4.292e-09 -3.400e-07 eV
+d3_t5_plus               T = +4.829e-04 -2.226e-09 +3.600e-07 eV
+d3_t5_minus              T = -4.829e-04 +3.663e-09 -7.696e-08 eV
+N0  pass
+Null  not applicable: inversion is not kept
+P0  d1_t1        pass
+P0  d1_t2        pass
+P0  d1_t3        pass
+P0  d1_t4        pass
+P0  d1_t5        pass
+P0  d2_t1        pass
+P0  d2_t2        pass
+P0  d2_t3        pass
+P0  d2_t4        pass
+P0  d2_t5        pass
+P0  d3_t1        pass
+P0  d3_t2        pass
+P0  d3_t3        pass
+P0  d3_t4        pass
+P0  d3_t5        pass
+E0  d1_t1        pass
+E0  d1_t2        pass
+E0  d1_t3        pass
+E0  d1_t4        pass
+E0  d1_t5        pass
+E0  d2_t1        pass
+E0  d2_t2        pass
+E0  d2_t3        pass
+E0  d2_t4        pass
+E0  d2_t5        pass
+E0  d3_t1        pass
+E0  d3_t2        pass
+E0  d3_t3        pass
+E0  d3_t4        pass
+E0  d3_t5        pass
+D (meV A per site)  [+2.323e-64 -2.162 +8.488e-16; +2.162 +0 +0; +0 +0 +1.885e-32]
+F norm 0.00815 meV A, max|F|/max|D_free| 0.0032: pass
+A (meV A^2 per site) [+131.2 +0 +0; +1.114e-33 +131.2 -7.004e-16; +0 -7.004e-16 +151.4]  eigenvalues 131.2 131.2 151.4
+sigma_y 1.12e-07 eV (45 samples)  sigma_g 8.97e-09 eV (15 samples)
+pitch 76.24 +- 0.019 nm, n* degeneracy 2
+Fit A  pass, worst residual 0.0184 meV of bound 0.0214 meV
+Fit D  pass, worst residual 0.000374 meV of bound 0.00516 meV
+Fit D_free  pass, worst residual 0.000276 meV of bound 0.00516 meV
+Null at every q: not applicable: inversion is not kept
+sign follows VASP's SOC energy (D-020); not yet confirmed by a VASP run

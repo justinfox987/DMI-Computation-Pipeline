@@ -25,8 +25,8 @@ is corrected from it.
 | Item | Value |
 |---|---|
 | Structure | BFO R3c, 10-atom rhombohedral cell, G-type; the PBE+U structure. V_m = 63.329 Å³ per Fe |
-| Functional | LDA, set by `GGA = CA` on the PBE POTCARs (**to confirm**) |
-| DFT+U | `LDAUTYPE = 1` (Liechtenstein), `LDAUL = 2 1 1`, `LDAUU = 5.2 0.8 9.7`, `LDAUJ = 0.4 0.8 1.9`, in POSCAR species order with Fe first (**to confirm**: the order of the other two). Carried over unchanged from the PBE+U setup |
+| Functional | LDA, set by `GGA = CA` on the PBE POTCARs (confirmed by the user, 2026-11-23) |
+| DFT+U | `LDAUTYPE = 1` (Liechtenstein), `LDAUL = 2 1 1`, `LDAUU = 5.2 0.8 9.7`, `LDAUJ = 0.4 0.8 1.9`, in POSCAR species order Fe, Bi, O (confirmed by the user, 2026-11-23). Carried over unchanged from the PBE+U setup |
 | Mesh, cutoffs, smearing | 7x7x7 Gamma-centred; ENINI 600, ENCUT 700; ISMEAR 0, SIGMA 0.08 |
 | Directions (q_frac) | d1 = [1 1 1] (Cartesian -z, the polar axis); d2 = [1 -1 0] (basal) |
 | t | 0.03, 0.06, 0.09 1/Å |

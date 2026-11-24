@@ -1,7 +1,8 @@
 # Scientific evidence
 
 Keep one small directory per deliberately retained validation record, named
-with a date and descriptive run/test ID. No production runs are included yet.
+with a date and descriptive run/test ID. Production records start with
+`2026-11-17-fe-ten06-pilot`; reports there are user-collected copies.
 
 A record should state:
 

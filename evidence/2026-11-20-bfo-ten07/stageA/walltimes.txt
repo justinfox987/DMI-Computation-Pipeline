@@ -1,0 +1,5 @@
+q0 SCF:                          Elapsed time (sec):      399.169
+q0 dump_P:                          Elapsed time (sec):      151.064
+d1_t1_plus SCF:                          Elapsed time (sec):      403.796
+d1_t1_plus dump_P:                          Elapsed time (sec):      158.148
+dump_C:                          Elapsed time (sec):      126.006

@@ -1,0 +1,6 @@
+  free  energy   TOTEN  =      -121.19032603 eV
+ vasp.6.4.2 20Jul23 (build Sep 14 2026 08:43:24) complex                         
+   k-points           NKPTS =    128   k-points in BZ     NKDIM =    128   number of bands    NBANDS=    384
+   LCOMPAT=      F    compatible to vasp.4.4
+   GGA_COMPAT  = T    GGA compatible to vasp.4.4-vasp.4.6
+                         Elapsed time (sec):      583.927

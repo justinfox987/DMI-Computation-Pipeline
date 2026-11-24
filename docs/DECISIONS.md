@@ -458,3 +458,29 @@ BFO LDA+U diagnostic of 2026-11-18 passes Fit A and Fit D, with sigma_g 80
 times smaller than the same tree under PBE+U
 ([`evidence/2026-11-18-bfo-lda-diagnostic/README.md`](../evidence/2026-11-18-bfo-lda-diagnostic/README.md)).
 **Authority:** user decision, 2026-11-18.
+
+## D-029 — D and A in BFO depend strongly on the Fe U (finding)
+
+**Status:** recorded 2026-11-23 (REC-1). A finding, not a choice of U.  
+In TEN-07, lowering the Fe U from 5.03 to 4.00 eV, with nothing else changed,
+changed the basal pair d2_t3 (t = 0.07 1/Å, 8x8x8) as follows:
+
+- |y| by +44.8%;
+- g by +18.9%;
+- the direction of y by 0.04°;
+- M_int from 4.23 to 4.155 μB.
+
+Scaling Stage A by these ratios (the reviewer's estimate from one pair) gives
+D about 3.1 meV Å, A_perp about 156 meV Å² and a pitch of about 62.6 nm,
+against 76.24 nm at U = 5.03 eV and about 62 nm in experiment.
+
+The production U is the user's first-principles value from linear response
+with the LDA datasets (D-019, D-028), not a fit to the pitch. U = 4 was chosen
+after seeing the 76 nm pitch, so it is a sensitivity probe, not a candidate.
+The final value waits for the user's re-converged linear response.
+
+**Reason:** a 20% change in U moves the predicted pitch by about 20%, as much
+as the gap to experiment, so the U must be fixed by its own method before
+comparing with experiment.
+**Authority:** [`evidence/2026-11-20-bfo-ten07/README.md`](../evidence/2026-11-20-bfo-ten07/README.md),
+Stage C.
